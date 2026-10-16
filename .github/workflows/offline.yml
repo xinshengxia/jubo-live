@@ -1,0 +1,15 @@
+name: Windows offline regression
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  net48:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build both paths from a clean clone, without platform requests
+        shell: pwsh
+        run: ./tools/Verify-CleanBuild.ps1 -Workspace "${{ runner.temp }}/livehub-verification"

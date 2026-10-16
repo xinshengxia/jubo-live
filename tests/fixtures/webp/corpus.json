@@ -1,0 +1,54 @@
+{
+  "note": "WebP 无损(VP8L) 回归语料：真值 = Pillow/libwebp 解出的 RGBA 字节的 SHA-256",
+  "generatedBy": "Pillow 12.3.0 (libwebp), lossless=True",
+  "cases": [
+    {
+      "file": "solid96.webp",
+      "width": 96,
+      "height": 96,
+      "sha256": "ae9bbeccfb2459e7df4d2904296b9eb133e5495c19c556bddd7191fc5fc4ddbb",
+      "note": "纯色不透明 96x96",
+      "bytes": 32
+    },
+    {
+      "file": "alpha64.webp",
+      "width": 64,
+      "height": 64,
+      "sha256": "c7690e2e0a7ee3d9b8ad78195d4e4ee74a9e3612e7c4baa8ff1a2910cce5d1ab",
+      "note": "RGBA 渐变 64x64：alpha 每列递增（含 alpha=0 的整列）",
+      "bytes": 84
+    },
+    {
+      "file": "palette8-48.webp",
+      "width": 48,
+      "height": 48,
+      "sha256": "81825835de1b5c72abcae08462f43ff449830855042e874b6114b693b6cc35eb",
+      "note": "调色板 8 色 48x48（触发 color-indexing 变换）",
+      "bytes": 94
+    },
+    {
+      "file": "odd257x13.webp",
+      "width": 257,
+      "height": 13,
+      "sha256": "10f97402ee247d7e7e8cb24ec7a649c1b4184dfd481b9fc4bee31166e4cbfa01",
+      "note": "奇数尺寸 257x13：行跨字节边界（padding 路径）",
+      "bytes": 374
+    },
+    {
+      "file": "noise64.webp",
+      "width": 64,
+      "height": 64,
+      "sha256": "46934ff6d9531d0b442cc5fe24f9eb3d4f65f6dcb56eefc9408ae1dded8bbd6c",
+      "note": "渐变+噪声 64x64：更丰富的 huffman / LZ77 路径",
+      "bytes": 8986
+    },
+    {
+      "file": "transparent32.webp",
+      "width": 32,
+      "height": 32,
+      "sha256": "d5ec8662fa90a2f7c9d589b361aa021bd514acf7748402af66cc108a4a41a75e",
+      "note": "几乎全透明 32x32（alpha_is_used 边界）",
+      "bytes": 42
+    }
+  ]
+}

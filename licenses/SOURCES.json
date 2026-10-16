@@ -1,0 +1,163 @@
+{
+  "schema": "livehub-third-party-sources/1",
+  "reviewedOn": "2026-10-13",
+  "scope": "License verification snapshots, not assertions of the original adoption revisions",
+  "components": [
+    {
+      "name": "douyinLive",
+      "license": "MIT",
+      "usage": "C# adaptation of native WebSocket signature and public test vectors"
+    },
+    {
+      "name": "AllLive",
+      "license": "MIT",
+      "usage": "Douyu palette data; protocol research reference"
+    },
+    {
+      "name": "libwebp",
+      "license": "BSD-3-Clause with upstream PATENTS grant",
+      "usage": "VP8L algorithms and tables adapted to C#"
+    },
+    {
+      "name": "blivedm",
+      "license": "MIT",
+      "usage": "Bilibili DANMU_MSG and SC protocol/model reference; no Python runtime or drawing-engine dependency"
+    },
+    {
+      "name": "mpv",
+      "license": "GPLv2+ / LGPLv2.1+; actual build and bundled libraries govern",
+      "usage": "Unmodified external player; upstream Copyright and both license texts"
+    },
+    {
+      "name": "yt-dlp",
+      "license": "Unlicense plus bundled third-party licenses",
+      "usage": "Unmodified Windows executable 2026.08.19"
+    },
+    {
+      "name": "ZXing.Net",
+      "license": "Apache-2.0",
+      "usage": "QR code DLL 0.16.9.0"
+    },
+    {
+      "name": "Microsoft.Web.WebView2",
+      "license": "BSD-3-Clause (official SDK package)",
+      "usage": "Unmodified Core/WinForms SDK DLLs and x86/x64 loader; optional Douyin browser-assisted search"
+    }
+  ],
+  "files": [
+    {
+      "path": "licenses/douyinLive-LICENSE.txt",
+      "sha256": "792D236D726B8BD52D4958CBBF40F160D19491C94915C4EF4416411F5051B008",
+      "upstreamRepository": "jwwsjlm/douyinLive",
+      "upstreamCommit": "0e506f3cf935beede946296602af2e52d57ecea2",
+      "upstreamPath": "LICENSE",
+      "url": "https://github.com/jwwsjlm/douyinLive/blob/0e506f3cf935beede946296602af2e52d57ecea2/LICENSE"
+    },
+    {
+      "path": "licenses/AllLive-LICENSE.txt",
+      "sha256": "8C16682851570931DF7CBF27B003F074B392A843CF01E7961F0C99972D8C34A8",
+      "upstreamRepository": "xiaoyaocz/AllLive",
+      "upstreamCommit": "6d513c040003875d1adc0915813f7009b5d62840",
+      "upstreamPath": "LICENSE",
+      "url": "https://github.com/xiaoyaocz/AllLive/blob/6d513c040003875d1adc0915813f7009b5d62840/LICENSE"
+    },
+    {
+      "path": "licenses/libwebp-COPYING.txt",
+      "sha256": "5AEC868F669E384A22372A4E8A1A6CD7D44C64CD451F960CA69CC170D1E13ACF",
+      "upstreamRepository": "webmproject/libwebp",
+      "upstreamCommit": "68dd1c3040d500f56fe7ffb754b1813fb64b5887",
+      "upstreamPath": "COPYING",
+      "url": "https://github.com/webmproject/libwebp/blob/68dd1c3040d500f56fe7ffb754b1813fb64b5887/COPYING"
+    },
+    {
+      "path": "licenses/libwebp-PATENTS.txt",
+      "sha256": "CC3273E0694EA5896145E0677699B53471B03EA43021DDC50E7923FBB9F5023C",
+      "upstreamRepository": "webmproject/libwebp",
+      "upstreamCommit": "68dd1c3040d500f56fe7ffb754b1813fb64b5887",
+      "upstreamPath": "PATENTS",
+      "url": "https://github.com/webmproject/libwebp/blob/68dd1c3040d500f56fe7ffb754b1813fb64b5887/PATENTS"
+    },
+    {
+      "path": "licenses/libwebp-AUTHORS.txt",
+      "sha256": "F251BE89FD442BD9D701360730AEA163CC8E2076FF03528F59267DC2C4F8B60A",
+      "upstreamRepository": "webmproject/libwebp",
+      "upstreamCommit": "68dd1c3040d500f56fe7ffb754b1813fb64b5887",
+      "upstreamPath": "AUTHORS",
+      "url": "https://github.com/webmproject/libwebp/blob/68dd1c3040d500f56fe7ffb754b1813fb64b5887/AUTHORS"
+    },
+    {
+      "path": "licenses/blivedm-LICENSE.txt",
+      "sha256": "2A07A2E21AC1A4DE3A3530CAA08C7F2CF3D3577FE5FA5C94B691529141418B50",
+      "upstreamRepository": "xfgryujk/blivedm",
+      "upstreamCommit": "3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6",
+      "upstreamPath": "LICENSE",
+      "url": "https://github.com/xfgryujk/blivedm/blob/3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6/LICENSE"
+    },
+    {
+      "path": "licenses/mpv-Copyright.txt",
+      "sha256": "BFE9EE4CCEABCB8ECBFADF208D04156F73D801E6A57369A5606BB8341E204A23",
+      "upstreamRepository": "mpv-player/mpv",
+      "upstreamCommit": "5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "upstreamPath": "Copyright",
+      "url": "https://github.com/mpv-player/mpv/blob/5f9e1bc7bd2f48744c57c9055f50b7bf24f32356/Copyright"
+    },
+    {
+      "path": "licenses/mpv-LICENSE.GPL.txt",
+      "sha256": "EDAEF632CBB643E4E7A221717A6C441A4C1A7C918E6E4D56DEBC3D8739B233F6",
+      "upstreamRepository": "mpv-player/mpv",
+      "upstreamCommit": "5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "upstreamPath": "LICENSE.GPL",
+      "url": "https://github.com/mpv-player/mpv/blob/5f9e1bc7bd2f48744c57c9055f50b7bf24f32356/LICENSE.GPL"
+    },
+    {
+      "path": "licenses/mpv-LICENSE.LGPL.txt",
+      "sha256": "72B672113D642CBB8EF5DCC76938DB801983C56E50B1400AB930F1A64D6DC8D9",
+      "upstreamRepository": "mpv-player/mpv",
+      "upstreamCommit": "5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "upstreamPath": "LICENSE.LGPL",
+      "url": "https://github.com/mpv-player/mpv/blob/5f9e1bc7bd2f48744c57c9055f50b7bf24f32356/LICENSE.LGPL"
+    },
+    {
+      "path": "licenses/yt-dlp-LICENSE.txt",
+      "sha256": "7E12E5DF4BAE12CB21581BA157CED20E1986A0508DD10D0E8A4AB9A4CF94E85C",
+      "upstreamRepository": "yt-dlp/yt-dlp",
+      "upstreamCommit": "3a08beaf031ab68f966401ead017ac81fe8486cf",
+      "upstreamPath": "LICENSE",
+      "url": "https://github.com/yt-dlp/yt-dlp/blob/3a08beaf031ab68f966401ead017ac81fe8486cf/LICENSE"
+    },
+    {
+      "path": "licenses/yt-dlp-THIRD_PARTY_LICENSES.txt",
+      "sha256": "472AEFE951C7DB35E1657C1D13FD337140511ED6F2B329205105AD441C5A02B7",
+      "upstreamRepository": "yt-dlp/yt-dlp",
+      "upstreamCommit": "3a08beaf031ab68f966401ead017ac81fe8486cf",
+      "upstreamPath": "THIRD_PARTY_LICENSES.txt",
+      "url": "https://github.com/yt-dlp/yt-dlp/blob/3a08beaf031ab68f966401ead017ac81fe8486cf/THIRD_PARTY_LICENSES.txt"
+    },
+    {
+      "path": "licenses/ZXing.Net-COPYING.txt",
+      "sha256": "C71D239DF91726FC519C6EB72D318EC65820627232B2F796219E87DCF35D0AB4",
+      "upstreamRepository": "micjahn/ZXing.Net",
+      "upstreamCommit": "3d870b70af174a61ae45813d36ece7e811544d70",
+      "upstreamPath": "COPYING",
+      "url": "https://github.com/micjahn/ZXing.Net/blob/3d870b70af174a61ae45813d36ece7e811544d70/COPYING"
+    },
+    {
+      "path": "licenses/WebView2-SDK-LICENSE.txt",
+      "sha256": "0AF8F1B807512AAE39C2AC1AA4D0CAE65CABECB6FD554B8439A5162A0D6ECA55",
+      "upstreamPackage": "Microsoft.Web.WebView2",
+      "upstreamVersion": "1.0.4258.31",
+      "upstreamPath": "LICENSE.txt",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4258.31/microsoft.web.webview2.1.0.4258.31.nupkg",
+      "packageSha256": "56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9"
+    },
+    {
+      "path": "licenses/WebView2-SDK-NOTICE.txt",
+      "sha256": "106423785C5B7EBA0A8E61D1837F2132E9C828E20AD530F565D981C1DF60DD90",
+      "upstreamPackage": "Microsoft.Web.WebView2",
+      "upstreamVersion": "1.0.4258.31",
+      "upstreamPath": "NOTICE.txt",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4258.31/microsoft.web.webview2.1.0.4258.31.nupkg",
+      "packageSha256": "56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9"
+    }
+  ]
+}

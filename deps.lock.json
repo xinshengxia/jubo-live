@@ -1,0 +1,1233 @@
+{
+  "schema": "livehub-deps-lock/1",
+  "generatedAt": "2026-10-10T13:56:26.4598947+08:00",
+  "hashAlgorithm": "SHA-256；文件哈希与 components/bundles.files 里的 sha256 存小写十六进制，用于比较时统一转大写",
+  "treeHashRule": "目录内每个文件写成一行 <小写相对路径（/ 分隔）>LF<大写文件 sha256>LF，行按小写相对路径字典序排列，对拼接后的 UTF-8 字节取 SHA-256（小写 hex）",
+  "sourcePackages": [
+    {
+      "id": "installed",
+      "path": "${LIVEHUB_DEPENDENCY_ROOT}",
+      "role": "通过 -DependencyRoot 或环境变量显式指定的只读依赖来源"
+    },
+    {
+      "id": "repo",
+      "path": ".",
+      "role": "当前源码检出；发布时映射到同一 commit 的干净 staging"
+    }
+  ],
+  "components": [
+    {
+      "name": "mpv",
+      "target": "bin/mpv/mpv.exe",
+      "source": "installed:bin/mpv/mpv.exe",
+      "version": "v0.41.0-337-g5f9e1bc7b",
+      "versionEvidence": "实际二进制 --version；mpv 核心提交 5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "sha256": "e4a97d13277b1592bcc8f85a21fbb3d12cc21b73a2aaa78468aa16c07f165685",
+      "size": 117594112,
+      "license": "GPLv2+ / LGPLv2.1+（实际取决于构建；附 Copyright 与两份原文）",
+      "note": "播放器主体；随包再分发需遵守 mpv 的 GPL/LGPL 条款"
+    },
+    {
+      "name": "potplayer",
+      "target": "bin/PotPlayer/PotPlayerMini64.exe",
+      "source": "installed:bin/PotPlayer/PotPlayerMini64.exe",
+      "version": "unknown",
+      "versionEvidence": "PotPlayerMini64.exe 自己没有版本资源（FileVersion=0, 0, 0, 0）；同目录 PotPlayer64.dll 报 1, 7, 23120, 0，可作 build 参考。问不到就如实写 unknown。",
+      "sha256": "6f0f63bee95d6715e0656f8b0bcbcce0cc3b27f03f012c8b8c4c34557a2e1cb7",
+      "size": 2515984,
+      "license": "专有免费软件（Kakao/Daum PotPlayer）；包内随附 License.txt 与 LGPL.TXT",
+      "note": "备选播放器；版本只能用整棵 bin\\PotPlayer 的 treeSha256 来判（见 bundles）"
+    },
+    {
+      "name": "yt-dlp",
+      "target": "bin/yt-dlp.exe",
+      "source": "installed:bin/yt-dlp.exe",
+      "version": "2026.08.19",
+      "versionEvidence": "yt-dlp.exe --version",
+      "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+      "size": 17840399,
+      "license": "Unlicense（public domain）",
+      "note": "直播流地址解析兜底"
+    },
+    {
+      "name": "zxing",
+      "target": "lib/zxing.dll",
+      "source": "repo:lib/zxing.dll",
+      "version": "0.16.9.0",
+      "versionEvidence": "仓库受跟踪的 ZXing.Net 0.16.9.0；保持原 SHA-256 校验",
+      "sha256": "c15741d83e78b0287a9034d583ec4e98903c56b1eedecd43b550ac483c87e29e",
+      "size": 536576,
+      "license": "Apache-2.0（ZXing.Net）",
+      "note": "扫码登录用；仓库里的 lib\\zxing.dll 是 tracked 文件，这里同时复核它与绿色包里的那份完全一致"
+    },
+    {
+      "name": "live-title",
+      "target": "lua/live-title.lua",
+      "source": "repo:live-title.lua",
+      "version": "repository",
+      "versionEvidence": "本次发布 commit 中的 live-title.lua；已通过控制条标题/时钟回归",
+      "sha256": "28ffc35015d7b15b89c7a6a17a546a3e652ff3cc880189b14939e767c21a4001",
+      "size": 12264,
+      "license": "live-hub 自有脚本（随仓库）",
+      "note": "mpv 窗口标题脚本；便携布局下启动器从 exe 旁边的 lua\\ 找它（livehub-paths.cs 的 Portable 分支）"
+    },
+    {
+      "name": "live-resync",
+      "target": "lua/live-resync.lua",
+      "source": "installed:bin/mpv/portable_config/scripts/live-resync.lua",
+      "version": "unknown（脚本文件没有版本号）",
+      "versionEvidence": "当前绿色版 portable_config 脚本与原锁定 SHA-256 一致，复制到显式加载目录",
+      "sha256": "c2379a47fb3fdec40c7cd8d40fe0d1d971363d8a038f55a72f33afa6f34455db",
+      "size": 3379,
+      "license": "live-hub 自有脚本（随仓库）",
+      "note": "重连/重新同步脚本；仓库里没有它，只能从绿色包锁进来"
+    },
+    {
+      "name": "webview2-Microsoft.Web.WebView2.Core.dll",
+      "target": "Microsoft.Web.WebView2.Core.dll",
+      "source": "repo:lib/webview2/Microsoft.Web.WebView2.Core.dll",
+      "version": "1.0.4258.31",
+      "versionEvidence": "Official NuGet package SHA-256 56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9",
+      "sha256": "d60e6e94245078cb56e44ebd5f360dc04bf18e460136be93bfc4cfca43b98505",
+      "size": 698208,
+      "license": "BSD-3-Clause SDK; licenses/WebView2-SDK-LICENSE.txt and NOTICE.txt",
+      "note": "WebView2 SDK only; system Runtime is not redistributed"
+    },
+    {
+      "name": "webview2-Microsoft.Web.WebView2.WinForms.dll",
+      "target": "Microsoft.Web.WebView2.WinForms.dll",
+      "source": "repo:lib/webview2/Microsoft.Web.WebView2.WinForms.dll",
+      "version": "1.0.4258.31",
+      "versionEvidence": "Official NuGet package SHA-256 56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9",
+      "sha256": "6a9e6856f23c463783c3afb0ca5d78f56324c86657162ccb16d5227b3233b32a",
+      "size": 38752,
+      "license": "BSD-3-Clause SDK; licenses/WebView2-SDK-LICENSE.txt and NOTICE.txt",
+      "note": "WebView2 SDK only; system Runtime is not redistributed"
+    },
+    {
+      "name": "webview2-x64-WebView2Loader.dll",
+      "target": "lib/webview2/x64/WebView2Loader.dll",
+      "source": "repo:lib/webview2/x64/WebView2Loader.dll",
+      "version": "1.0.4258.31",
+      "versionEvidence": "Official NuGet package SHA-256 56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9",
+      "sha256": "3426dcc55fdfb8b5e7ac623cf33b4ccf283fbf68a0c5a65bddfdb4d749a8abee",
+      "size": 194912,
+      "license": "BSD-3-Clause SDK; licenses/WebView2-SDK-LICENSE.txt and NOTICE.txt",
+      "note": "WebView2 SDK only; system Runtime is not redistributed"
+    },
+    {
+      "name": "webview2-x86-WebView2Loader.dll",
+      "target": "lib/webview2/x86/WebView2Loader.dll",
+      "source": "repo:lib/webview2/x86/WebView2Loader.dll",
+      "version": "1.0.4258.31",
+      "versionEvidence": "Official NuGet package SHA-256 56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9",
+      "sha256": "87c61e2cae380112c60853e28178b8ea9a0d63739fc03cead680d4ad3fde6b7d",
+      "size": 155488,
+      "license": "BSD-3-Clause SDK; licenses/WebView2-SDK-LICENSE.txt and NOTICE.txt",
+      "note": "WebView2 SDK only; system Runtime is not redistributed"
+    }
+  ],
+  "bundles": [
+    {
+      "name": "mpv-dist",
+      "sourceDir": "installed:bin/mpv",
+      "targetDir": "bin/mpv",
+      "exclude": [
+        "portable_config/cache/**"
+      ],
+      "note": "mpv 分发目录。排除 portable_config/cache/**：那是 mpv 运行期生成的 shader 缓存（两个绿色包里就不一样：14 个 vs 21 个），既不该进发布包，也不该参与哈希；mpv 会自己重建。",
+      "fileCount": 4,
+      "bytes": 117607081,
+      "treeSha256": "b0353953e0bd20fab08ed8780a8f844f5889ebf3dc6f534938af19aae2f9ace7",
+      "files": [
+        {
+          "path": "mpv.com",
+          "sha256": "066dd42d3136444e1c8c4af604a3acfc365878a76fd67eed682719ecd47affc0",
+          "size": 3584
+        },
+        {
+          "path": "mpv.exe",
+          "sha256": "e4a97d13277b1592bcc8f85a21fbb3d12cc21b73a2aaa78468aa16c07f165685",
+          "size": 117594112
+        },
+        {
+          "path": "portable_config/scripts/live-resync.lua",
+          "sha256": "c2379a47fb3fdec40c7cd8d40fe0d1d971363d8a038f55a72f33afa6f34455db",
+          "size": 3379
+        },
+        {
+          "path": "portable_config/scripts/live-title.lua",
+          "sha256": "7f70105dd93493dae824d1ffe0ad762e396649d7d46c851710b0ec02687c8298",
+          "size": 6677
+        }
+      ]
+    },
+    {
+      "name": "potplayer-dist",
+      "sourceDir": "installed:bin/PotPlayer",
+      "targetDir": "bin/PotPlayer",
+      "exclude": [
+        "Playlist/**"
+      ],
+      "note": "PotPlayer 完整分发目录。没有排除项 —— 整棵树的哈希就是「这是哪个 PotPlayer」的判据（它自己的 exe 没有版本资源）。",
+      "fileCount": 211,
+      "bytes": 244951758,
+      "treeSha256": "808170cd40598fbbd627e94ff399de777be83078d570402956c02784c13c8481",
+      "files": [
+        {
+          "path": "Alarm.wav",
+          "sha256": "9b511b407fbe2b6e21e0f0c6243221ef2a7bb9f61f62b5bda5d9bf386844ff11",
+          "size": 11968
+        },
+        {
+          "path": "ATextOut64.dll",
+          "sha256": "e22f2cd31db1a5d0939586ba45b6369272126b5758673f41d36eefb48abb2e53",
+          "size": 2477072
+        },
+        {
+          "path": "AviSynth/ColorBars.avs",
+          "sha256": "54f30f35711b86fc8ba2f4215bab7c78fdbba94d48e270d5382403e104d1cb2b",
+          "size": 33
+        },
+        {
+          "path": "AviSynth/FasterTrueMotion.avs",
+          "sha256": "c72e15dc6716f3f44ede35848b177c7e945a97ac5d6c953846231659287c5d1f",
+          "size": 759
+        },
+        {
+          "path": "AviSynth/FastestTrueMotion.avs",
+          "sha256": "35c6fcecf45ecf2341ecc65b2b1bbb9a64febb2a4a754721d4beafed4742438e",
+          "size": 544
+        },
+        {
+          "path": "AviSynth/FastTrueMotion.avs",
+          "sha256": "f3f3b80c9bffc698f4b7d87e3542acd06c90f9af873e4d9586eae26c30be4157",
+          "size": 209
+        },
+        {
+          "path": "AviSynth/FastTrueMotionNoGPU.avs",
+          "sha256": "449cfdb44d22945ac46f4bf50bf7ad5c94b813ed625690d4a6874371b0b44655",
+          "size": 210
+        },
+        {
+          "path": "AviSynth/OverlayText.avs",
+          "sha256": "71057c4bc793bd0974e1f147aa060e882c07e205ea2bdf6192d4da4cb4cd2779",
+          "size": 1226
+        },
+        {
+          "path": "AviSynth/TrueMotion.avs",
+          "sha256": "9a5caf081522147738d2c05b0c2a6f2bf575bb060e8092414f91176813509944",
+          "size": 192
+        },
+        {
+          "path": "AviSynth/TrueMotion2.avs",
+          "sha256": "7946db2a7b394f792fdc7bd9bc760b5f406ba75bf14e4691fd28fb5f2fb3ec84",
+          "size": 452
+        },
+        {
+          "path": "AviSynth/TrueMotion2NoGPU.avs",
+          "sha256": "21921a203c00676d23b59fba84d66d5718588a7ad027df80355ed5345aae932e",
+          "size": 453
+        },
+        {
+          "path": "AviSynth/TrueMotionNoGPU.avs",
+          "sha256": "0d4e7e8b83254db3676db2cd06d09b812cf2b222f457900a8d422ef02dd3a11a",
+          "size": 193
+        },
+        {
+          "path": "CaptureUWP64.dll",
+          "sha256": "1fcfefd038d15312171b8ed92415138ef2b2ebce4f8961d40abdfef4c90bc66f",
+          "size": 142864
+        },
+        {
+          "path": "CmdLine64.txt",
+          "sha256": "155b6fd3c6e7aae3ba42f3eefd50d013fafa8bc1a58d38dc5dd6b3e9a33a9870",
+          "size": 50906
+        },
+        {
+          "path": "d3dcompiler_43.dll",
+          "sha256": "44c3a7e330b54a35a9efa015831392593aa02e7da1460be429d17c3644850e8a",
+          "size": 2526056
+        },
+        {
+          "path": "d3dcompiler_47.dll",
+          "sha256": "e994847e01a6f1e4cbdc5a864616ac262f67ee4f14db194984661a8d927ab7f4",
+          "size": 4173928
+        },
+        {
+          "path": "d3dx9_43.dll",
+          "sha256": "84b900dbd7fa978d6e0caee26fc54f2f61d92c9c75d10b35f00e3e82cd1d67b4",
+          "size": 2401112
+        },
+        {
+          "path": "DaumCrashHandler64.dll",
+          "sha256": "ed5ca1e99615c579562f8fcdf89563478573230e59f51ba5fdc8b70c150c47a1",
+          "size": 189456
+        },
+        {
+          "path": "DesktopHook.dll",
+          "sha256": "e65b41954db6afcf9fb94459928bc5f41efb6e9cd5fd24dc2b88db964ab9e72a",
+          "size": 83472
+        },
+        {
+          "path": "DesktopHook.exe",
+          "sha256": "b3e938db80bb81e8e45038b2b7f884339feaab0b6cdbf27824eeabce157fe6bc",
+          "size": 111632
+        },
+        {
+          "path": "DesktopHook64.dll",
+          "sha256": "401dbb44405af94728a0f302f1b5e500ebb2ea2ac3540a52efa4563b5b9ea805",
+          "size": 97808
+        },
+        {
+          "path": "DesktopHook64.exe",
+          "sha256": "267eaae70d32f40233a4ca34d1059246fe7aca5d332c33d9696517251563c33d",
+          "size": 128016
+        },
+        {
+          "path": "DTDrop64.exe",
+          "sha256": "4236596e352bdcf8e1ee944e04f88b5112634c216830dbe0388cf2e05d7d2b2d",
+          "size": 134160
+        },
+        {
+          "path": "Extension/api.txt",
+          "sha256": "ad5ed93cb20e7f7f068e58939cb1ea74d42a28551e4584bbc8bf0ea074af3e68",
+          "size": 16203
+        },
+        {
+          "path": "Extension/Media/PlayParse/MediaPlayParse - YouTube.as",
+          "sha256": "ba3b7f47db9119485f79ece6a6627ca2d70e43a1893fa24962552fcd69ad0138",
+          "size": 82208
+        },
+        {
+          "path": "Extension/Media/PlayParse/MediaPlayParse - YouTube.ico",
+          "sha256": "8bb1d0fa43a17436d59dd546f6f74c76dc44735def7522c22d8031166db8911d",
+          "size": 1150
+        },
+        {
+          "path": "Extension/Media/UrlList/MediaUrlList - YouTube.as",
+          "sha256": "11313d06fcdcca9a7d0b0cc87e71c8ad36261e615cdce9e8a5c5289c4b8080ae",
+          "size": 8143
+        },
+        {
+          "path": "Extension/Media/UrlList/MediaUrlList - YouTube.ico",
+          "sha256": "b662bc977a190a8ba7943209afbf2a02e810cb1aeaadef572a15010cdb34f3a4",
+          "size": 16958
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - Napisy24.as",
+          "sha256": "5d207d229932cea54d6a41d811bee52ac4c04103782f351a26b176885a5a4cc8",
+          "size": 4431
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - Napisy24.ico",
+          "sha256": "fda3693eda5add2348b9d7b2dae63ce3903401273c1033412373fdae5dfbbb82",
+          "size": 48446
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - OpenSubtitle.as",
+          "sha256": "095ce86f278fe509f5662cad264c023e821ec334741e0094e844fd1c4bf001e1",
+          "size": 17110
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - OpenSubtitle.ico",
+          "sha256": "18effd05717e9b37eef89c3abcab9b50dc7a41bfae774d285ea0098c5db4a695",
+          "size": 894
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - podnapisi.as",
+          "sha256": "06a7128b5a988011ab95023c5da8855c3873f652044807218715bfea41de38dc",
+          "size": 11507
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - podnapisi.ico",
+          "sha256": "72eb77b803f51decbf81b8ab0dad42f9a3f719f2ead784175f61e7bf8d5acefb",
+          "size": 34806
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - SubDB.as",
+          "sha256": "5ed9ba34d6fb750281a8ea5fe7479c4995a43eb8a8df16ffa654bcecdeedc901",
+          "size": 4778
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - SubDB.ico",
+          "sha256": "ffa0d714d076ba2d1e47772f29afe04e870d89f78a3dd140d462606a95c3250d",
+          "size": 5686
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - SubDL.as",
+          "sha256": "a56509400f494e3ac24d73a43044eac98256981d15a101c62018d8632201b097",
+          "size": 6523
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - SubDL.ico",
+          "sha256": "f33b6f354d60b86ba6c1df78a49f2f1638ee788727f39118c3e5baf22dd86ade",
+          "size": 8758
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - titlovi.as",
+          "sha256": "a46d3809902a5dd926b7d49bd06d1ba567f8710093a6fe45ee6f569366d9be2d",
+          "size": 6187
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - titlovi.ico",
+          "sha256": "e11346c4fe600269d30b15dfcd9ffa3ae2501dddcc3713fba4ea513a0d66848e",
+          "size": 1406
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - ysubs.as",
+          "sha256": "53ec3d6376744b8dbc6a2723d230a7d8f05f7ae57f49c1a4361f1bdd4ef98961",
+          "size": 5865
+        },
+        {
+          "path": "Extension/Subtitle/Search/SubtitleSearch - ysubs.ico",
+          "sha256": "6daf5b18430ce6283e734a843eb25adc5969d976e0ce8a9a47569bdf721e35ff",
+          "size": 1150
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - bing.as",
+          "sha256": "d0dbecd08c89137970762d46f23287e83c5d184033425be92c4a17dad687f723",
+          "size": 5005
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - bing.ico",
+          "sha256": "90cdaf487716184e4034000935c605d1633926d348116d198f355a98b8c6cd21",
+          "size": 17174
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - DeepL.as",
+          "sha256": "fa3bf13ab9f418a6d9214bc80fc8c3097ba454f8e7843314c3991926858aa2e5",
+          "size": 4376
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - DeepL.ico",
+          "sha256": "a173c032ff7df3c058ec9000e742fda42306a8bab93fddda4449a42e8710f137",
+          "size": 5430
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - google.as",
+          "sha256": "f6e0f01917623a346e28f283b625571b9d286905f60f0b3bd1a2926f7850611a",
+          "size": 8349
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - google.ico",
+          "sha256": "6da5620880159634213e197fafca1dde0272153be3e4590818533fab8d040770",
+          "size": 5430
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - Libre.as",
+          "sha256": "ae226868c659ec90fca5075e42d1e5e156af4c996f6345976755f8e9abb32826",
+          "size": 4007
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - Libre.ico",
+          "sha256": "441c977fc7a116d0045b34c455940bcf37e3a25041cb130c6eaee4cfda59a579",
+          "size": 268350
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - LM Studio.as",
+          "sha256": "436bfab5eea9f94a61cf9c4f8b56e45e5046eb2d44ed6b16234c9511049d8f9b",
+          "size": 5389
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - LM Studio.ico",
+          "sha256": "94ce3375c26e76cf76a446ffad15cc290f4248873a5bcd4fd59d711fa5439724",
+          "size": 15406
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - papago.as",
+          "sha256": "d86dabb2b862c80c6cdfeda532f44909cc8baf353e05a3f05e5822c09ce595e2",
+          "size": 64
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - papago.ico",
+          "sha256": "b420e9728c29b2c959b589e5e7d5f5fd870187958d32975386d0ec7062dbf94a",
+          "size": 7886
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - papagoNMT.as",
+          "sha256": "b97876b0926ffedb536ea1b4d66fbcf317d858f4b41fb24cadb3b36b2cd2bed6",
+          "size": 3988
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - papagoNMT.ico",
+          "sha256": "b420e9728c29b2c959b589e5e7d5f5fd870187958d32975386d0ec7062dbf94a",
+          "size": 7886
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - Yandex.as",
+          "sha256": "68f89660c96943710d4001a90d03d6fb5226ec2fe821871acb65eeff8247c3ab",
+          "size": 4197
+        },
+        {
+          "path": "Extension/Subtitle/Translate/SubtitleTranslate - Yandex.ico",
+          "sha256": "32513a8c2fb5206474b5d7e55c001e49ecb5133b11d441cfe58426abdff5d00c",
+          "size": 5430
+        },
+        {
+          "path": "ffcodec64.dll",
+          "sha256": "1359b084ea070ccc17b14fb479cf5249e5852ccfe237d3aca499f4c202912de6",
+          "size": 37565440
+        },
+        {
+          "path": "FileList.txt",
+          "sha256": "f7f61cb6532a9948ef6cbd35bfb67e06ec823d223829a27fc08a12c2b493774a",
+          "size": 9971
+        },
+        {
+          "path": "GameCaptureHook.dll",
+          "sha256": "6c8514e4f3a433ed68f31106d3f5d08336dc8bcb583ad90a77505a7db158a436",
+          "size": 390160
+        },
+        {
+          "path": "GameCaptureHook64.dll",
+          "sha256": "72f5494925adf61307a8dc25c8264682ac66cde7f93d245fcefc8a7dfa339c43",
+          "size": 435216
+        },
+        {
+          "path": "History/Bulgarian.txt",
+          "sha256": "eb92e69f333a993d43f62c64b74bef79e12b910db47510301656360f0fc92037",
+          "size": 289403
+        },
+        {
+          "path": "History/Chinese(Simplified).txt",
+          "sha256": "4b6b82f861bf61f18924c961a266c316c0e1d0130d20f4423960b4b2c14cda09",
+          "size": 139359
+        },
+        {
+          "path": "History/Chinese(Traditional).txt",
+          "sha256": "67d17b012b73bc6d403df85cd99cd888b31a68a6acdc9d8804befdf9424f2d92",
+          "size": 141851
+        },
+        {
+          "path": "History/English.txt",
+          "sha256": "9132de9e66745429605541011652b3336fbd10f4f37c99dccd17c9e275e67383",
+          "size": 160787
+        },
+        {
+          "path": "History/Hungarian.txt",
+          "sha256": "8d7500de9a38c19446e912621df1cd70cc49d6971a3e5869c693edb9182da35f",
+          "size": 96351
+        },
+        {
+          "path": "History/Japanese.txt",
+          "sha256": "9f02bb38765267ef2ab73af96346982fb1c8cc21330af6fb04f4dbaf3db328db",
+          "size": 92225
+        },
+        {
+          "path": "History/Korean.txt",
+          "sha256": "b8d1e3b2696e536f763c65e88f53a93600498251bb7b57f65d6940537ef84e86",
+          "size": 162377
+        },
+        {
+          "path": "History/Kurdish.txt",
+          "sha256": "cda09d482fee0d226d4a14b9630d505e2b0ba02b3593c2456cd12c22fe5bbdf4",
+          "size": 236366
+        },
+        {
+          "path": "History/Polish.txt",
+          "sha256": "36a6927576c11d6d34485e58d6ec11c97ab16fcd0cd29bf5610503818865cbf5",
+          "size": 177038
+        },
+        {
+          "path": "History/Russian.txt",
+          "sha256": "5887f6e8febcd43e13f0985e2db417d2b5f5d6da7a26d980328112ee5bf5056e",
+          "size": 233842
+        },
+        {
+          "path": "History/Serbian.txt",
+          "sha256": "9733888682fe98fe51cd170051238ba3805ed5f88dab144cc00043715e95504d",
+          "size": 91039
+        },
+        {
+          "path": "History/Turkish.txt",
+          "sha256": "b8cb06f94f09977fa1b677e84be5c9a8cf942a08246b37aaf71f2109c91571d2",
+          "size": 177637
+        },
+        {
+          "path": "History/Ukrainian.txt",
+          "sha256": "3a3007160657371ba622637a637abb7772c7430d55f0e9e2a15a9d6d404cfe03",
+          "size": 146823
+        },
+        {
+          "path": "Html/ErrorList.htm",
+          "sha256": "50af11693eae5b9c5f8380f4722056acbae73e5a4d031c60be15f02fd5b7ce53",
+          "size": 2385
+        },
+        {
+          "path": "Html/ErrorListMini.htm",
+          "sha256": "bb4b163153c867cdbef78adbfcec5eeddc168628ae204d10b53b204827bc3f87",
+          "size": 2301
+        },
+        {
+          "path": "Html/Init.htm",
+          "sha256": "f5299de4b0bf6a80f0955772f3aa21df3bdf3e81335c222c5498834170245e6c",
+          "size": 1894
+        },
+        {
+          "path": "Html/InitMini.htm",
+          "sha256": "a5f0f7ea863f8a84e2fa9b9765a51853b8b815bcce0b9ab979918ee2fdf08be1",
+          "size": 1855
+        },
+        {
+          "path": "Html/loading.gif",
+          "sha256": "5713a10b5d285ce4fbd0c5749dd927c09e376d9a5f4fbaa8ee13a1bec438550c",
+          "size": 21448
+        },
+        {
+          "path": "IconPack/OldIconPack.dll",
+          "sha256": "cb6371eeca561bca41e7c582ec67f9cf928064b9b3c775fbccc793eb0720665d",
+          "size": 1547280
+        },
+        {
+          "path": "IconPack/PotIconsNew.dll",
+          "sha256": "b76bfeffa667b7bee1aa03dd78ec39af5c3dd80579d209eb49e5b0f7721bd48d",
+          "size": 2602000
+        },
+        {
+          "path": "KakaoUtil64.dll",
+          "sha256": "cc6f5669519f10ac8527f9c55460e718c80640ae8f97439b5d5eb1ea717afe60",
+          "size": 3288592
+        },
+        {
+          "path": "KakaoUtil64.exe",
+          "sha256": "8e956ab571aa215c858ca3621364180ce16407469890161cd5a82685f4553d28",
+          "size": 3286032
+        },
+        {
+          "path": "KillPot64.exe",
+          "sha256": "6119ec824a9a21df1518d61526aa035e8be4e33dac524e4bd21f6845a78bdf2e",
+          "size": 116240
+        },
+        {
+          "path": "Language/Arabic.ini",
+          "sha256": "c6b89ec6255354dd77637122ed2dee85d2859105dc424b96612357161e226e35",
+          "size": 324318
+        },
+        {
+          "path": "Language/Armenian.ini",
+          "sha256": "944ef8d01d38c1cf2895bd575c8f663a0c5353c3c615448adbc0aa9685b6929e",
+          "size": 284162
+        },
+        {
+          "path": "Language/Azerbaijan.ini",
+          "sha256": "ba642c12a47e153e6796f968a63876d56ec88a9457104fde7bf7f165ed89e52a",
+          "size": 273656
+        },
+        {
+          "path": "Language/Belarusian.ini",
+          "sha256": "ade05858d2b1efba04163f9421a02168f52081759b7eacca753b3f7ff4be3eda",
+          "size": 281122
+        },
+        {
+          "path": "Language/Bulgarian.ini",
+          "sha256": "efe531c43d780119d53ba9165312995c4b96b5c813985fa96ee4f2088455f10b",
+          "size": 368694
+        },
+        {
+          "path": "Language/Catalan.ini",
+          "sha256": "57eaf1144c882ab74917cc8ed7bad895ad592cd8d225e084b40ba30b4ab25601",
+          "size": 332982
+        },
+        {
+          "path": "Language/Chinese(Simplified).ini",
+          "sha256": "3d0fbeea1d71953575351d7ab8dc330e81b628cc9b66d9fa152465971f22b00c",
+          "size": 151096
+        },
+        {
+          "path": "Language/Chinese(Traditional).ini",
+          "sha256": "d4c8e87648cacca15e925c3eb6c7b9416dd24fc0130c012bf1ee6fdf71db529d",
+          "size": 153230
+        },
+        {
+          "path": "Language/Czech.ini",
+          "sha256": "d8efa3ccbd546f9a716ae2be891d93d176372965454d2dd887a24648cb7e2ca3",
+          "size": 346876
+        },
+        {
+          "path": "Language/Dutch.ini",
+          "sha256": "5940c23f7b181af9b7d33607e0ba90aad87b9c867d6b54f9de7bdcdb3c8b5f83",
+          "size": 339866
+        },
+        {
+          "path": "Language/English.ini",
+          "sha256": "e65847a686db6d1feaef3966d1f2115806c80a7fd56b298e6ae402c04cdbecd2",
+          "size": 164077
+        },
+        {
+          "path": "Language/French.ini",
+          "sha256": "a7722004214f3010c23b227a7b8817182c9303c1400b8e3aa5e6e99ad9f99056",
+          "size": 189083
+        },
+        {
+          "path": "Language/German.ini",
+          "sha256": "db249bacc65974881223eafacd38941adff7f9e19b6302f1496f0a3b800a90c7",
+          "size": 255998
+        },
+        {
+          "path": "Language/Greek.ini",
+          "sha256": "361c4f58428cbab229360b85c3d81ff2a5c375eb44919c783ab879e0cd61ea35",
+          "size": 272158
+        },
+        {
+          "path": "Language/Hebrew.ini",
+          "sha256": "cd2e05c06229ee09108922ee8d66798c9f0f527123aa92aaefc4fcb5df1ac391",
+          "size": 211742
+        },
+        {
+          "path": "Language/Hongkonglocale.ini",
+          "sha256": "aa0ba3ec0feb1f20fff2f31875ae52eadf32b769276c1aec081dd6100040eab3",
+          "size": 152706
+        },
+        {
+          "path": "Language/Hungarian.ini",
+          "sha256": "cf7c41f90d8a4753ed09b03dad9f5c64cac390863a5b967177f251b18e696696",
+          "size": 363116
+        },
+        {
+          "path": "Language/Indonesian.ini",
+          "sha256": "766293caf037ce31898bc0aca23969b1c58dc5963069fed044c11144af65e6f5",
+          "size": 315320
+        },
+        {
+          "path": "Language/Italian.ini",
+          "sha256": "403f256c313cce18521db1daa230b88cb6db531ec5863c9c7053fe503afdda78",
+          "size": 344902
+        },
+        {
+          "path": "Language/Japanese.ini",
+          "sha256": "9bebac4c81a0de5d69a3a92e2889600b747f0de8e86c38971e5ab229b8b0855b",
+          "size": 217084
+        },
+        {
+          "path": "Language/Korean.ini",
+          "sha256": "86e6ed48d55497f127eba8acf5b2db25b5ff62eb7f1d3acae86bba6c388e8bac",
+          "size": 175538
+        },
+        {
+          "path": "Language/Kurdish.ini",
+          "sha256": "b15bc47fdd85c0e90ceff3f4c1b00f3c8e8ab198a5a385bcc1d18ff7ba2f42f5",
+          "size": 351820
+        },
+        {
+          "path": "Language/Persian.ini",
+          "sha256": "f2b688cc21613fc57f460c2511728ea452ff3e41269be08214dfcc2bd064d875",
+          "size": 315312
+        },
+        {
+          "path": "Language/Polish.ini",
+          "sha256": "2ee4c433c07b8773ccd5400b3e3e76dbe95c6ab36d2b7262206c6215b4225d5f",
+          "size": 391492
+        },
+        {
+          "path": "Language/Portuguese.ini",
+          "sha256": "084e4367b0dbc13cd8bdf43d1b7d1a64eb0b8b26ad1a2f0897e51c4fc45f0732",
+          "size": 191829
+        },
+        {
+          "path": "Language/Russian.ini",
+          "sha256": "a1f03e2a8369e0b0022ba4c200bfed9babdc9e2dc306151900b146a033736ce1",
+          "size": 331616
+        },
+        {
+          "path": "Language/Serbian.ini",
+          "sha256": "e43828d185a51f90a596fc44b77c6f77598d2cf61361f94499c5dece8feb7a0c",
+          "size": 280636
+        },
+        {
+          "path": "Language/Spanish.ini",
+          "sha256": "08997d65899e2cc0c799164c9557dad360774370e847fd9d24198f1a846dc2c6",
+          "size": 339174
+        },
+        {
+          "path": "Language/Swedish.ini",
+          "sha256": "c960f947687097379fde732c41232524774df4686db1f0bec224e0be76066100",
+          "size": 271070
+        },
+        {
+          "path": "Language/Tajik(Cyrillic).ini",
+          "sha256": "0f85fde0238d2cf7a0ae025f78cc08a23d434b646eea6fde3b0492d939205032",
+          "size": 247776
+        },
+        {
+          "path": "Language/Tamil.ini",
+          "sha256": "299e0628d4c28b0906fa0b4cab633e2230eb3c4d17fd9068b2dc67759fc3a73d",
+          "size": 344384
+        },
+        {
+          "path": "Language/Thai.ini",
+          "sha256": "2a61847f5f92f558250e7bbae83858f2283c9b91e2e1bcbed120631b6328d285",
+          "size": 228198
+        },
+        {
+          "path": "Language/Turkish.ini",
+          "sha256": "8806794d880624720c1f42d6f07853601b7dccdc23496fa4188d2488b257520a",
+          "size": 330904
+        },
+        {
+          "path": "Language/Ukrainian.ini",
+          "sha256": "f49b151f85a001037d396b9001f281f78fcf12bf816da69e68bc9f56eca5da0f",
+          "size": 321916
+        },
+        {
+          "path": "Language/Uyghur.ini",
+          "sha256": "1904b169076d3fc83aee02cbcff3f53db835fcb53a9bbfee6cf9cfaaa40033f6",
+          "size": 279216
+        },
+        {
+          "path": "Language/Uzbek(Latin).ini",
+          "sha256": "86a7c6ab8cfeba315df555b97e3ae197de1310eb5d3e166567c62645a9f7a220",
+          "size": 308988
+        },
+        {
+          "path": "Language/Vietnamese.ini",
+          "sha256": "8b7b1e04938710d01ec0870c3c886aff1dc47310ac4df03fce9f41ed934affc0",
+          "size": 209730
+        },
+        {
+          "path": "LGPL.TXT",
+          "sha256": "300435e74c7a4afbf86de25e23b5535783a2e274c18b50fa2fc60993eb17bc73",
+          "size": 26929
+        },
+        {
+          "path": "License.txt",
+          "sha256": "ba8b5205b67d1407ee6ca14d6eeff5f3d2e635f9405a3f7246915a1948d2430a",
+          "size": 53681
+        },
+        {
+          "path": "Logos/PotPlayer.png",
+          "sha256": "3c9cd54d327ed13ea5779fe87c9558303afeb7467c824946268741e6dc646b75",
+          "size": 8770
+        },
+        {
+          "path": "MediaDB64.dll",
+          "sha256": "f0e5ac4b7d531bb64b4f5325058a13ca3aa1a374fa585f9d982dc3b6817a6fd9",
+          "size": 4259344
+        },
+        {
+          "path": "Menus/SimpleMenu.xml",
+          "sha256": "1b0521d79e2aed1e889278c02ddc708cdd97ff70abc13f177003840a12e5a104",
+          "size": 1759
+        },
+        {
+          "path": "Module/AcmVorbis64.dll",
+          "sha256": "c55eec4cd341b27df7b1b27de69cd70a496038a4b2a0a7f4798fcacc72926e68",
+          "size": 754176
+        },
+        {
+          "path": "Module/Bass64/bass_ape.dll",
+          "sha256": "55d44326d157e021e3e1bfd9d9454b556b017060a4aeaf2d98655815e0e28056",
+          "size": 69120
+        },
+        {
+          "path": "Module/Bass64/bass_flac.dll",
+          "sha256": "5f0803d3dcc037670adb60bd53a466bc5c30bef7c2172b74df876441dad868d1",
+          "size": 47616
+        },
+        {
+          "path": "Module/Bass64/bass_mpc.dll",
+          "sha256": "1d967a699e0f3eff690ced938c04a4d3ed2d79e7b0fdf0567186a662bc0a3c46",
+          "size": 50688
+        },
+        {
+          "path": "Module/Bass64/bass_ofr.dll",
+          "sha256": "32aad81baef7468940c9ada6ecec96b4fc457959c67eacc1192ae530484aaf27",
+          "size": 8704
+        },
+        {
+          "path": "Module/Bass64/bass_tta.dll",
+          "sha256": "5e4dc960a39e9d85719e512850b0efeaa49d53e5f390a04f9075e228f8d5ba62",
+          "size": 12288
+        },
+        {
+          "path": "Module/Bass64/bass_wv.dll",
+          "sha256": "8f12cd50d718b7b4619cccc83a15d4c8f1c6a6128836b656a8cf5e8c239a366d",
+          "size": 65536
+        },
+        {
+          "path": "Module/Bass64/bass.dll",
+          "sha256": "93a913ca11a3466c73a0984f23fee570bcb29576a00fabe39e3ca1565588bef3",
+          "size": 230912
+        },
+        {
+          "path": "Module/Bass64/OptimFROG.dll",
+          "sha256": "af27347767d7b9a5f24c1d0a7f3f74fbfe0fd74082463e8f74da27c231649a94",
+          "size": 208896
+        },
+        {
+          "path": "Module/FFmpeg63/FFmpegMininum64.dll",
+          "sha256": "9dcd712348ace629bd8596f277ac112340f00c2df04325746f5cf42a72caeb00",
+          "size": 492544
+        },
+        {
+          "path": "Module/libmfxsw64.dll",
+          "sha256": "704384b644eab441be4d60d2000fd8cf63b1206093accae753e98f4b36c281dc",
+          "size": 22189288
+        },
+        {
+          "path": "Module/MediaInfo64.dll",
+          "sha256": "89908dcc11c7f99d804ce4ef0c7a6bd9efda249adb51f74dd105a33c750e5c3c",
+          "size": 6794752
+        },
+        {
+          "path": "Module/OpenCodec/OpenCodecUnity64.dll",
+          "sha256": "1ccb894331b3c2f3c481dff8fcb07c4ce38d9aaaf823df756ebf736c9581473a",
+          "size": 5343744
+        },
+        {
+          "path": "Module/QuickSync64.dll",
+          "sha256": "184f9d9188e8a4ea0f246decff9fd1d492868eabcb5a3b99ddbbe4005210f26b",
+          "size": 552976
+        },
+        {
+          "path": "Module/Whisper/Const-me/main.exe",
+          "sha256": "d27da96cf9457afd0b2c0aecd02c9eaedab05f2a1f25b5a0f080e7b8ae838651",
+          "size": 227328
+        },
+        {
+          "path": "Module/Whisper/Const-me/Whisper.dll",
+          "sha256": "dc32e2eae92adf9658560f0f03be96ca65814f2dd91fab253782ec7a0fc6d7fb",
+          "size": 590336
+        },
+        {
+          "path": "Module/Whisper/CPU/main64.exe",
+          "sha256": "a6e5372c1c89ca3f17082cc673fbc94ba9882ce424a2c58a998fcefd9ceed3e8",
+          "size": 777216
+        },
+        {
+          "path": "Module/Whisper/CPU/whisper64.dll",
+          "sha256": "5b51dc1640ab9ffe5dc3e64b56ae2a7dc641c2911b16236c2991a2a5dc210b86",
+          "size": 4306944
+        },
+        {
+          "path": "Module/Whisper/Vulkan/main.exe",
+          "sha256": "b19513eb299d86da741d95f34996b784cca64ede203193f504db0845fc8b873f",
+          "size": 453632
+        },
+        {
+          "path": "Module/Whisper/Vulkan/main64.exe",
+          "sha256": "80cbcb05ba3b7d50b768ad66eb736c0e4dea170ad94709541d7b7aa1daf052dd",
+          "size": 777216
+        },
+        {
+          "path": "Module/Whisper/Vulkan/whisper.dll",
+          "sha256": "295c0c89c4c677200013404d0bb2c74bbe6c04e0681af85960675ec10510d13d",
+          "size": 22290432
+        },
+        {
+          "path": "Module/Whisper/Vulkan/whisper64.dll",
+          "sha256": "64a1008fec7106517aee3e48601d84c347fee3e6654ee289145007a5052f4ba3",
+          "size": 56185856
+        },
+        {
+          "path": "Module/Whisper/whisper.bin",
+          "sha256": "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+          "size": 885098
+        },
+        {
+          "path": "PotIcons64.dll",
+          "sha256": "94cf9b2f2e4f0cb6bc0e201eb46a02af050df2829c1a4047e11b8e5fa6c26d0c",
+          "size": 2523152
+        },
+        {
+          "path": "PotPlayer64.dll",
+          "sha256": "ce9d2bc66116f9b6de81b9398df16571e2c25d250249516d031b3c9e22c9be6b",
+          "size": 30013968
+        },
+        {
+          "path": "PotPlayer64.exe",
+          "sha256": "87826627635c5db59d9cae2516e611ee352415ac419a6049ca4ccd0338f97cf0",
+          "size": 2551824
+        },
+        {
+          "path": "PotPlayerMini64.exe",
+          "sha256": "6f0f63bee95d6715e0656f8b0bcbcce0cc3b27f03f012c8b8c4c34557a2e1cb7",
+          "size": 2515984
+        },
+        {
+          "path": "PotScreenSaver64.scr",
+          "sha256": "ac5f93619298f1bc81488f1b5c43a85edd1c10dee62248a7db693991f3c9a91d",
+          "size": 2591776
+        },
+        {
+          "path": "PxShader/Adaptive sharpen.txt",
+          "sha256": "4410169d5ebbcb3b6f3f1cd4053a2fc222c3c49e824f4c7e0608ae465890ae82",
+          "size": 9902
+        },
+        {
+          "path": "PxShader/Adaptive sharpen(Contrast).txt",
+          "sha256": "12c70ab338c26b68b100f169c26fbf79c4426be76805da3190d2ec03c0ca1d86",
+          "size": 4013
+        },
+        {
+          "path": "PxShader/BT601BT709.txt",
+          "sha256": "4ca618f0103cbece90785b0ca9f5132692094839aa45fd7b403d29902e0917f4",
+          "size": 692
+        },
+        {
+          "path": "PxShader/Contour.txt",
+          "sha256": "3b98918a189635417b592f1412b215de26ae25d6d6e270bcc0ea129a7be8ba55",
+          "size": 598
+        },
+        {
+          "path": "PxShader/Deinterlace (blend).txt",
+          "sha256": "df6caa600b2cedc91f0265a2818053a8c88a7196deebccb6e396779c904a34d5",
+          "size": 376
+        },
+        {
+          "path": "PxShader/Denoise.txt",
+          "sha256": "6aae0037bee312f3426f73d1f81ceb12f72dda1e54591439cf96af324d8e30da",
+          "size": 935
+        },
+        {
+          "path": "PxShader/DisplayLessThan16 v1_1.txt",
+          "sha256": "900e264e7afb420fff439a0c8a79daf2993866bd378b8b88456ecc3048f8a045",
+          "size": 709
+        },
+        {
+          "path": "PxShader/EdgeSharpen v1_1.txt",
+          "sha256": "22e616e18273a12deebdacc4108437aa77aabad3e941afc8d7e6fcc86b20e47c",
+          "size": 2007
+        },
+        {
+          "path": "PxShader/EdgeSharpen v1_1(jim ro).txt",
+          "sha256": "b589ca2f67519b94f7d66f41a7d061fb55106fe6e926595fc725b962045cf0d7",
+          "size": 1696
+        },
+        {
+          "path": "PxShader/Emboss.txt",
+          "sha256": "0daebb816c3fa61ac16a0bc8f879b2065dd51580db14cda58a8b33651e6c7d49",
+          "size": 649
+        },
+        {
+          "path": "PxShader/GrayScale.txt",
+          "sha256": "c1efec79b59be38c64f1d901013a2e1289a9152d78101e01271df107ac100202",
+          "size": 371
+        },
+        {
+          "path": "PxShader/HorzFlip.txt",
+          "sha256": "8b771a281ddce61786f4167c29226d78772de9d46ab612063a1f6cd40e86ec4a",
+          "size": 436
+        },
+        {
+          "path": "PxShader/Invert.txt",
+          "sha256": "3f5a2671c51b39d4bdb1644408a7e70dd7e3681f386493a455bdeefae97d0a9d",
+          "size": 184
+        },
+        {
+          "path": "PxShader/LCD angle correction.txt",
+          "sha256": "5597be1e5a511d9333e7276aaee55637ce926114469af3f4169c6ad6fae07556",
+          "size": 1613
+        },
+        {
+          "path": "PxShader/Letterbox.txt",
+          "sha256": "a9d315d3d6722e7913949bc4b56055ae445584b8aeeb7c7b701ce8378d528d1e",
+          "size": 367
+        },
+        {
+          "path": "PxShader/Levels.txt",
+          "sha256": "60218e8b36bd53a13fc880416635a1b01e63b3619d689054ef90be0b20f5aa5a",
+          "size": 269
+        },
+        {
+          "path": "PxShader/Levels2.txt",
+          "sha256": "f45fa0ba27f79a94c8451ba320df92b7e25e3a6831efc421ed35317a7f1a255e",
+          "size": 422
+        },
+        {
+          "path": "PxShader/MaskBox.txt",
+          "sha256": "e93d88105b923a252e1c654615c4874911cffa97d1f087fd520cda6e606ecb08",
+          "size": 415
+        },
+        {
+          "path": "PxShader/NightVision.txt",
+          "sha256": "6206ce1ffc6ba2a19dc0fb0a02cd73d98bb970bd2da2c17445f2c76d6824da64",
+          "size": 210
+        },
+        {
+          "path": "PxShader/Procamp.txt",
+          "sha256": "39af5fdb80b152ae7422ee5931e4701d927dedf247d52488280be08c34027be8",
+          "size": 1980
+        },
+        {
+          "path": "PxShader/Remap_16_235.txt",
+          "sha256": "1ae8cbf27e94371b50406659a1cd00d05e16d401f6cae5cf57a82a503a947015",
+          "size": 543
+        },
+        {
+          "path": "PxShader/Sharpen_3x3.txt",
+          "sha256": "e9c12810d1a4b320b7a7acc6b8a05b03e236378fe230fec0bd00ddd9f4eb35ed",
+          "size": 1061
+        },
+        {
+          "path": "PxShader/Sharpen_5x5.txt",
+          "sha256": "a13e8e0cf65bc33fbf9f32068d4e52e1ecbb77a7a5c6e0eb289ca6c84ff934e3",
+          "size": 2226
+        },
+        {
+          "path": "PxShader/Sharpen.txt",
+          "sha256": "9e1f44acc802aa168fe53efa3c47628fcbd46999271dc879b51fb8be5b44b0c0",
+          "size": 936
+        },
+        {
+          "path": "PxShader/SharpenComplex (jim ro).txt",
+          "sha256": "fd1eea4557509d4cc074d3835de197f46ff1bf2e59e0c8c178aaa587c43a47c3",
+          "size": 1893
+        },
+        {
+          "path": "PxShader/SharpenComplex2.txt",
+          "sha256": "9b1c2f769f3496e15a5ee287a75cee8823e092e38cc329ac9ea32ac970eb49d4",
+          "size": 2693
+        },
+        {
+          "path": "PxShader/SharpenFlou (jim ro).txt",
+          "sha256": "9174258eee78833865409aa08f89113f3b10ed66c2991ee4bf0fe7bd2beecd56",
+          "size": 1686
+        },
+        {
+          "path": "PxShader/Sphere.txt",
+          "sha256": "d4c064dedbc3c31fa26b298eac731218949dd2a8688c94ee4fce3fd73b0ac50b",
+          "size": 1428
+        },
+        {
+          "path": "PxShader/Spotlight.txt",
+          "sha256": "6d889e3924602183eca212c75aa9dc1f1121c9ea58e1b91ef448e184696ebb03",
+          "size": 471
+        },
+        {
+          "path": "PxShader/Undot.txt",
+          "sha256": "e7b21f0f4bede24e9bde34a7bc313b71ae6d778858ec3029c00bc5b2e9c69645",
+          "size": 1790
+        },
+        {
+          "path": "PxShader/Unsharp mask.txt",
+          "sha256": "6b61f6666d8760d43bbbfe570a352134aafa7952414f81c42ec87f0cf30ef50a",
+          "size": 1727
+        },
+        {
+          "path": "PxShader/VertFlip.txt",
+          "sha256": "2042e6e764916b90623cd0722f624195b9dc93b6ce5f26267b1a8918f773a49b",
+          "size": 436
+        },
+        {
+          "path": "PxShader/Wave.txt",
+          "sha256": "8f2b9af25d1602caa027e201038ffc3c40552b0b6c9fe28c144014fad8ffb211",
+          "size": 388
+        },
+        {
+          "path": "PxShader/YV12 Chroma Upsampling.txt",
+          "sha256": "ee1e8cc86d983410876a3f5d89b0161557f8a8aa94dd1c72d6acf25ab065809b",
+          "size": 2150
+        },
+        {
+          "path": "Skins/Default.dsf",
+          "sha256": "60c1bcb619633df03b3bc9572dcc0608b12d9cb4a32302de3f6afe3db9b6c7d5",
+          "size": 426105
+        },
+        {
+          "path": "Skins/tst2.0_noborder.dsf",
+          "sha256": "373561769d7b89a856af5336b5d91b83899a3bc67eca99d7a5f31eb927ca0dd2",
+          "size": 80541
+        },
+        {
+          "path": "Skins/tst2.0_s_noborder.dsf",
+          "sha256": "428e3b6ec5574816ed6942feb7e03ca443e2e608380bfc2672f3a3fe35cd2fcc",
+          "size": 74959
+        },
+        {
+          "path": "Skins/tst2.0_s_win.dsf",
+          "sha256": "b4e4a09d63f733dd8c61401997594b4ccd67e3b2d0a6cb146318e1d18bb841e4",
+          "size": 74968
+        },
+        {
+          "path": "Skins/tst2.0_s.dsf",
+          "sha256": "c4d974a4d605d26f38f179368c0526df97b4f3c4de021227c3647666f3e3a657",
+          "size": 74909
+        },
+        {
+          "path": "Skins/tst2.0_white_noborder.dsf",
+          "sha256": "dcb1d3d8ae6c9cc11c466b3a451354b024e628e517da58fe19f614835460710b",
+          "size": 77642
+        },
+        {
+          "path": "Skins/tst2.0_white_s_noborder.dsf",
+          "sha256": "e54c3f41b098622b18d3043d72bda5c6317bc5c5ad8927d1ac1a0afb215b2614",
+          "size": 73371
+        },
+        {
+          "path": "Skins/tst2.0_white_s_win.dsf",
+          "sha256": "ad823bc8c293722683cd6bb2f72629e4bfe31a20afde4a93d013bc824d499c90",
+          "size": 73374
+        },
+        {
+          "path": "Skins/tst2.0_white_s.dsf",
+          "sha256": "4f742425bcce847d36d7275faf087dfdb2fff69f701e17261ecf6914731f6f49",
+          "size": 73341
+        },
+        {
+          "path": "Skins/tst2.0_white_win.dsf",
+          "sha256": "073d32847bd0f8fc3b052907870f7a8c6c35c02fe2acab6c941bad92ed15defd",
+          "size": 77585
+        },
+        {
+          "path": "Skins/tst2.0_white.dsf",
+          "sha256": "5f454dc89edd765e3fd932b72ece14359fdc82efa464bb5603627051081baced",
+          "size": 77512
+        },
+        {
+          "path": "Skins/tst2.0_win.dsf",
+          "sha256": "2c0c6aee727c3758c3c645e10526acd8f688d4b74a547162a0bfac83c92bb231",
+          "size": 80545
+        },
+        {
+          "path": "Skins/tst2.0.dsf",
+          "sha256": "07740caeb12eb39423276d053eea4f39197362bf99ffdbcc2356aa2abfe890da",
+          "size": 80346
+        },
+        {
+          "path": "Skins/WindowFrame.dsf",
+          "sha256": "338563a2cbc6d38620fdf084d62ee323a1d3869a4151079c57fd699d292f6d88",
+          "size": 425271
+        },
+        {
+          "path": "uninstall.exe",
+          "sha256": "f0ec19472da7590bbf453827b7945868e254f76dd795642e8a379ae616497b31",
+          "size": 241929
+        },
+        {
+          "path": "UrlList/Radio.asx",
+          "sha256": "8c72dce17f1346bc681065e0358c6178c1155c70b1670756abee2b5a46d9bbc6",
+          "size": 76
+        },
+        {
+          "path": "UrlList/TV.asx",
+          "sha256": "795ff3ee40ed2257374c7f13102e393d51694de314a9fb66c3938ecc6c55a95e",
+          "size": 35
+        },
+        {
+          "path": "VapourSynth/Histogram.vpy",
+          "sha256": "ff63b3285cd57c94e1f76a320ba31ab97edcd93af3f55e0dced272071705b6ef",
+          "size": 87
+        },
+        {
+          "path": "VapourSynth/motioninterpolation.vpy",
+          "sha256": "932af0bb04c68689a64d9c0f8d68381feee471b7d33c5b738ee5582be2be1106",
+          "size": 2366
+        },
+        {
+          "path": "WebView2Loader64.dll",
+          "sha256": "462b36fd1be6ca9f7563466a89e57c41ef4a4def3e0a84fa885d203aea4a3aaf",
+          "size": 165968
+        }
+      ]
+    }
+  ],
+  "seed": [],
+  "notes": [
+    "四个二进制组件及未变的分发文件保持既有锁定哈希；本次不替换播放器、取流器或扫码库。",
+    "项目标题脚本已更新为发布 commit 的版本；repo: 来源必须指向该 commit 的 staging。",
+    "当前只有一个可用依赖目录，不伪造独立镜像校验。原目录只读，已安装绿色版的同步另行执行。",
+    "对外发布不从已安装目录导入任何 data/runtime 种子，排除 PotPlayer Playlist 与 mpv shader cache；自用更新保留原数据。",
+    "外部组件仍适用各自许可；原文及来源快照见 licenses/SOURCES.json。"
+  ]
+}

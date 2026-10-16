@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 2026-09-20：可选的第二条构建路径（给 IDE / 增量编译 / Roslyn 用）。
+       正式发行仍然走 Build-Hardened.ps1（legacy csc），两条路径产出同一个 exe。
+       本机没有 net48 的参考程序集（没装 VS/Build Tools），所以用 FrameworkPathOverride
+       直接指向已安装的 .NET Framework，**不需要联网还原 NuGet**。
+       dotnet build -c Release  →  bin\Release\net48\看直播-mpv.exe -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>看直播-mpv</AssemblyName>
+    <RootNamespace>LiveHub</RootNamespace>
+    <UseWindowsForms>true</UseWindowsForms>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AppConfig>app.config</AppConfig>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <FrameworkPathOverride Condition="'$(FrameworkPathOverride)' == ''">$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319</FrameworkPathOverride>
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
+  </PropertyGroup>
+
+  <!-- 2026-09-25：单文件约束解除后，弹幕/SC 的分片源码直接参与编译。
+       它们和启动器互相引用（启动器调 DanmakuClientFactory，分片调 LiveHub.RuntimeDir），
+       所以必须在同一编译单元里 —— 原来的做法是把它们生成拼进 live-hub-v2.cs。 -->
+  <ItemGroup>
+    <Compile Include="live-hub-v2.cs" />
+    <Compile Include="src\Danmaku\*.cs" />
+    <!-- 2026-09-27：partial 拆分出来的另一半（路径与配置解析） -->
+    <Compile Include="src\App\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="System.Security" />
+    <Reference Include="Microsoft.Web.WebView2.Core"><HintPath>lib\webview2\Microsoft.Web.WebView2.Core.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Microsoft.Web.WebView2.WinForms"><HintPath>lib\webview2\Microsoft.Web.WebView2.WinForms.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="emoji-sheet.png;emoji-sheet.txt;fonts\**\*;lib\zxing.dll;lib\webview2\**\*;tests\fixtures\**\*;THIRD_PARTY_NOTICES.md;licenses\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="live-title.lua">
+      <TargetPath>lua\live-title.lua</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="WriteLiveHubBuildInfo" BeforeTargets="CoreCompile">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)\tools\Write-BuildInfo.ps1&quot; -Repo &quot;$(MSBuildProjectDirectory)&quot; -Out &quot;$(MSBuildProjectDirectory)\$(IntermediateOutputPath)livehub-build-info.cs&quot;" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)livehub-build-info.cs" />
+    </ItemGroup>
+  </Target>
+</Project>

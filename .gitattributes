@@ -1,0 +1,4 @@
+# Preserve verbatim upstream license snapshots, including their original line endings.
+licenses/** -text -whitespace
+# Repository-owned Lua scripts are hash-locked release assets on Windows too.
+*.lua text eol=lf

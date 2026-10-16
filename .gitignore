@@ -1,0 +1,49 @@
+# 构建产物 / 二进制（发布靠 Build-Portable.ps1 同步到绿色包）
+*.exe
+*.pdb
+*.dll
+!lib/zxing.dll
+!lib/webview2/*.dll
+!lib/webview2/x64/*.dll
+!lib/webview2/x86/*.dll
+
+# 运行期产物：每次播放都会写状态/日志/中转文件
+runtime/
+
+# 人肉备份目录（2026-09-20 起由 git 历史取代，保留只读）
+backups/
+
+# Python 虚拟环境（Streamlink，仅开发机用于斗鱼兜底解析）
+.venv/
+
+# 日志与临时产物
+*.log
+tmp/
+
+# 编辑器 / IDE
+.vs/
+*.user
+
+# dotnet SDK 构建（可选的第二条路径，正式发行仍走 Build-Hardened.ps1）
+bin/
+obj/
+artifacts/
+
+# 当前安装的本机路径配置（不要提交或随源码快照分发）
+/live-hub.json
+/appsettings.json
+# Generated runtime configuration; source app.config is tracked.
+*.exe.config
+
+# Personal data never belongs in public source.
+/data/
+.env
+.env.*
+!.env.example
+*.dpapi
+*-cookies.txt
+*-cookies.txt.json
+*-login-profile/
+*-verify-profile/
+profiles/
+*.lnk
