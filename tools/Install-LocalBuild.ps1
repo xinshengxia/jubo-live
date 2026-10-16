@@ -39,8 +39,13 @@ foreach ($directory in @('fonts','licenses')) {
 }
 foreach ($name in @('live-title.lua','live-resync.lua')) { $files['lua/' + $name] = Join-Path $Repo $name }
 $files['live-title.lua'] = Join-Path $Repo 'live-title.lua'
-$files['LICENSE'] = Join-Path $Repo 'release-docs/LICENSE'
-$files['THIRD_PARTY_NOTICES.md'] = Join-Path $Repo 'release-docs/THIRD_PARTY_NOTICES.md'
+function Get-InstallationDocument([string]$name) {
+    $public = Join-Path $Repo ('release-docs/' + $name)
+    if ($Layout -eq 'portable' -and (Test-Path -LiteralPath $public)) { return $public }
+    return Join-Path $Repo $name
+}
+$files['LICENSE'] = Get-InstallationDocument 'LICENSE'
+$files['THIRD_PARTY_NOTICES.md'] = Get-InstallationDocument 'THIRD_PARTY_NOTICES.md'
 if ($Layout -eq 'portable') {
     $lock = Get-Content -LiteralPath (Join-Path $Repo 'deps.lock.json') -Raw | ConvertFrom-Json
     $bundle = $lock.bundles | Where-Object name -EQ 'mpv-dist'
@@ -50,7 +55,7 @@ if ($Layout -eq 'portable') {
         if ((Get-FileHash -LiteralPath $path).Hash -ne $expected.sha256) { throw 'Ordinary x64 runtime does not match dependency lock' }
         $files['bin/mpv/' + $name] = $path
     }
-    $files['使用说明.md'] = Join-Path $Repo 'release-docs/使用说明.md'
+    $files['使用说明.md'] = Get-InstallationDocument '使用说明.md'
     if (Test-Path -LiteralPath (Join-Path $targetRoot 'src')) {
         $files['src/live-hub-v2.cs'] = Join-Path $Repo 'live-hub-v2.cs'
         foreach ($directory in @('src','tests')) {
@@ -65,7 +70,7 @@ if ($Layout -eq 'portable') {
         $files['src/build-info.cs'] = $generatedVersion
         $files['src/build.ps1'] = Join-Path $Repo 'tools/portable-src-build.ps1'
         $files['src/live-title.lua'] = Join-Path $Repo 'live-title.lua'
-        $files['src/THIRD_PARTY_NOTICES.md'] = Join-Path $Repo 'release-docs/THIRD_PARTY_NOTICES.md'
+        $files['src/THIRD_PARTY_NOTICES.md'] = Get-InstallationDocument 'THIRD_PARTY_NOTICES.md'
         foreach ($name in @('Copy-WebViewAssets.ps1','Invoke-BoundedProcess.ps1','New-OfflineLayout.ps1')) { $files['tools/' + $name] = Join-Path $Repo ('tools/' + $name) }
         foreach ($file in Get-ChildItem -LiteralPath (Join-Path $Repo 'tests/fixtures') -Recurse -File) {
             $files['tests/fixtures/' + $file.FullName.Substring((Join-Path $Repo 'tests/fixtures').Length + 1).Replace('\','/')] = $file.FullName
