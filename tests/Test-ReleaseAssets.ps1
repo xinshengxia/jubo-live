@@ -57,7 +57,7 @@ foreach ($record in (Get-Content -LiteralPath (Join-Path $Source 'licenses/SOURC
 }
 Write-Output 'PASS: 默认运行包包含声明与完整许可原文'
 
-function New-SyntheticArchive([string]$name, [bool]$includeConfig, [bool]$validConfig, [string]$omitNotice = '', [switch]$TamperLicense) {
+function New-SyntheticArchive([string]$name, [bool]$includeConfig, [bool]$validConfig, [string]$omitNotice = '', [switch]$TamperLicense, [string]$BundleCase = '') {
     $zipPath = Join-Path $Workspace $name
     $config = if ($validConfig) { [IO.File]::ReadAllText($exePath + '.config') } else { '<configuration />' }
     $contents = [ordered]@{ '看直播.exe' = 'synthetic executable' }
@@ -72,12 +72,26 @@ function New-SyntheticArchive([string]$name, [bool]$includeConfig, [bool]$validC
     }
     if ($omitNotice) { $contents.Remove($omitNotice) }
     if ($TamperLicense) { $contents['licenses/douyinLive-LICENSE.txt'] = 'tampered notice with internally consistent archive hashes' }
+    $components = @()
+    if ($BundleCase) {
+        $contents['LICENSE'] = 'Synthetic fixture license'
+        $contents['bin/fixture/tool.txt'] = 'Synthetic tool'
+        $bytes = [Text.Encoding]::UTF8.GetBytes($contents['bin/fixture/tool.txt'])
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+        $treeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("tool.txt`n$hash`n")))
+        $bundle = @{name='fixture';targetDir='bin/fixture';treeSha256=$treeHash;files=@(@{path='tool.txt';size=$bytes.Length;sha256=$hash})}
+        $components = @(@{name='fixture';target='bin/fixture';kind='bundle';sha256=$treeHash;size=$bytes.Length})
+        if ($BundleCase -eq 'tree') { $components[0].sha256 = '0' * 64 }
+        if ($BundleCase -eq 'member') { $contents['bin/fixture/tool.txt'] = 'Modified member with consistent artifact hash' }
+        if ($BundleCase -eq 'omitted') { $components = @(@{name='unknown';kind='file';target='bin/fixture/tool.txt';sha256=$hash;size=$bytes.Length}) }
+        $contents['deps.lock.json'] = @{schema='livehub-deps-lock/1';components=@();bundles=@($bundle)} | ConvertTo-Json -Depth 8
+    }
     $records = foreach ($path in $contents.Keys) {
         $bytes = if ($contents[$path] -is [byte[]]) { $contents[$path] } else { [Text.Encoding]::UTF8.GetBytes($contents[$path]) }
         @{ path = $path; size = $bytes.Length; sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) }
     }
     $manifest = @{ schema = 'livehub-release-manifest/1'; commit = @{ full = ('a' * 40) }; buildId = '1.0.0+aaaaaaaaaaaa';
-        tests = @{ failed = 0 }; buildExitCode = 0; artifacts = @($records); components = @(); credentials = @{ mode = 'strip' } }
+        tests = @{ failed = 0 }; buildExitCode = 0; variant='full'; artifacts = @($records); components = $components; credentials = @{ mode = 'strip' } }
     $contents['manifest.json'] = $manifest | ConvertTo-Json -Depth 8
     $archive = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -107,3 +121,10 @@ $rejected = $false
 try { & $verifier -Zip (New-SyntheticArchive 'tampered-license.zip' $true $true -TamperLicense) } catch { $rejected = $true }
 if (-not $rejected) { throw 'FAIL: 归档验收接受了与上游快照哈希不同的许可原文' }
 Write-Output 'PASS: 缺失声明/许可/专利授权或修改许可原文的归档均被拒绝'
+& $verifier -Zip (New-SyntheticArchive 'valid-bundle.zip' $true $true -BundleCase 'valid')
+foreach ($case in @('tree','member','omitted')) {
+    $rejected = $false
+    try { & $verifier -Zip (New-SyntheticArchive ($case + '-bundle.zip') $true $true -BundleCase $case) } catch { $rejected = $true }
+    if (-not $rejected) { throw ('FAIL: inconsistent locked bundle accepted: ' + $case) }
+}
+Write-Output 'PASS: valid locked bundle accepted; modified tree, member and missing component rejected'

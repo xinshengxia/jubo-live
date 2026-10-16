@@ -47,7 +47,7 @@ Windows 绿色版四平台直播启动器：把 **B站 / 虎牙 / 斗鱼 / 抖�
 
 ```powershell
 pwsh -NoProfile -File Build-Hardened.ps1          # 编译 + 离线回归 + 自检
-pwsh -NoProfile -File tools\Publish-Release.ps1 -Variant full -DependencyRoot .\vendor\portable   # 打发布包
+pwsh -NoProfile -File tools\Verify-CleanBuild.ps1 -Workspace .\artifacts\clean-check
 ```
 
 目录约定：`src/` 应用与弹幕源码、`tests/` 离线用例（无网络、可重复跑）、`tools/` 构建与发布脚本、`lib/` 与 `fonts/` 随包资源、`licenses/` 第三方许可原文。外部依赖（mpv、yt-dlp、ZXing.Net、WebView2 SDK 等）的版本与哈希由 `deps.lock.json` 锁定。
@@ -60,3 +60,12 @@ pwsh -NoProfile -File tools\Publish-Release.ps1 -Variant full -DependencyRoot .\
 - 本项目采用 **GPL-3.0**（见 [LICENSE](LICENSE)）：可以自由使用、修改、再分发，但**再分发衍生作品时必须同样以 GPL-3.0 授权，并提供对应源码**。第三方组件（mpv、yt-dlp 等）各自保留其原始许可，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 `licenses/`。
 
 依赖目录通过 `-DependencyRoot` 或 `LIVEHUB_DEPENDENCY_ROOT` 指定，仅在本机构建时使用，不写入公开锁文件或发布清单。打包前和打包后执行隐私检查；发布包只使用面向用户的说明文档。
+
+构建、发布版本以已提交的 `VERSION` 为准；正式交付从干净 HEAD 构建，build ID 保留真实 commit。两条离线构建路径都要通过，超时按失败处理。离线回归不代表真实平台播放和桌面交互已验证。
+
+自用更新与公开发布使用不同入口：
+
+- `Build-Portable.ps1` 更新已有安装，必须显式传入 `-Package`、全新 `-Workspace`、安装目录之外的全新 `-Backup` 和普通 x64 播放器目录 `-MpvDirectory`。先隔离构建验收，再备份并覆盖受控程序文件；保留配置、收藏、历史、Cookie 和 profile，失败时回退文件。
+- `tools/Prepare-PublishDependencies.ps1 -Source .\vendor\reference -MpvDirectory .\vendor\mpv-x64 -Out .\artifacts\dependencies` 只把哈希匹配的必要依赖复制到全新目录，不复制个人数据或 PotPlayer。目录参数仅为示例；输入必须具有依赖锁要求的布局与内容。
+- `tools/Publish-Release.ps1 -Variant full -DependencyRoot .\artifacts\dependencies -Out .\artifacts\release-full` 生成公开包；lite 同理使用 `-Variant lite` 与独立输出目录。凭据剥离只作用于全新发布 staging。
+- 提交和上传前分别检查实际源码、提交范围与身份、最终 ZIP 及嵌套内容、清单、二进制字符串、许可和 CI 日志。候选人工复核；未解决或未覆盖时不上传。ZIP 文件变更后重新生成清单与 SHA-256。附件名为 `jubo-live-<版本>-win-x64-<full|lite>.zip` 和同名 `.zip.sha256`，显示标签留空。

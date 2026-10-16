@@ -1,12 +1,11 @@
 param([Parameter(Mandatory)][string]$Repo, [Parameter(Mandatory)][string]$Out)
 $ErrorActionPreference = 'Stop'
-$version = '0.0.0'; $commit = 'nogit'; $stamp = 'unknown'
+$version = & (Join-Path $PSScriptRoot 'Get-ReleaseVersion.ps1') -Repo $Repo
+$commit = 'nogit'; $stamp = 'unknown'
 if (Get-Command git -ErrorAction SilentlyContinue) {
     $head = & git -C $Repo rev-parse HEAD 2>$null
     if ($LASTEXITCODE -eq 0 -and $head -match '^[a-f0-9]{40}$') {
         $commit = $head.Substring(0, 12)
-        $tag = & git -C $Repo describe --tags --abbrev=0 2>$null
-        if ($LASTEXITCODE -eq 0 -and $tag -match '^v?(\d+\.\d+\.\d+)$') { $version = $Matches[1] }
         $state = @(& git -C $Repo status --porcelain --untracked-files=normal)
         if ($LASTEXITCODE -ne 0) { throw '无法读取 Git 工作区状态' }
         if ($state.Count) { $commit += '-dirty' }

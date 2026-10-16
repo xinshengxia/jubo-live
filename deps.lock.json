@@ -76,13 +76,13 @@
     {
       "name": "live-resync",
       "target": "lua/live-resync.lua",
-      "source": "installed:bin/mpv/portable_config/scripts/live-resync.lua",
+      "source": "repo:live-resync.lua",
       "version": "unknown（脚本文件没有版本号）",
-      "versionEvidence": "当前绿色版 portable_config 脚本与原锁定 SHA-256 一致，复制到显式加载目录",
+      "versionEvidence": "受跟踪脚本与固定 SHA-256 一致，复制到显式加载目录",
       "sha256": "c2379a47fb3fdec40c7cd8d40fe0d1d971363d8a038f55a72f33afa6f34455db",
       "size": 3379,
       "license": "live-hub 自有脚本（随仓库）",
-      "note": "重连/重新同步脚本；仓库里没有它，只能从绿色包锁进来"
+      "note": "重连/重新同步脚本；来源为当前干净源码检出"
     },
     {
       "name": "webview2-Microsoft.Web.WebView2.Core.dll",

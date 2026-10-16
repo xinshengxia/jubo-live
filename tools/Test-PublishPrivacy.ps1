@@ -18,7 +18,7 @@ function Add-Issue([string]$path, [string]$rule) { $issues.Add($path + ': ' + $r
 function Test-Content([byte[]]$bytes, [string]$path) {
     $script:checkedFiles++
     $leaf = ($path -split '/')[-1]
-    if ($leaf -match '(?i)^\.env($|\.)|\.dpapi$|^cookies?$|cookies?.*\.txt(\.json)?$|^(favorites|history|live-hub|appsettings)\.json$|\.pdb$|\.log$' -or
+    if (($leaf -ne '.env.example' -and $leaf -match '(?i)^\.env($|\.)') -or $leaf -match '(?i)\.dpapi$|^cookies?$|cookies?.*\.txt(\.json)?$|^(favorites|history|live-hub|appsettings)\.json$|\.pdb$|\.log$' -or
         $path -match '(?i)(^|/)(profiles?|[^/]*-(login|verify)-profile|backups|runtime|\.venv)(/|$)') {
         Add-Issue $path 'private data or diagnostic file'
     }
@@ -28,6 +28,10 @@ function Test-Content([byte[]]$bytes, [string]$path) {
     $binary = $bytes.Length -gt 0 -and $text.IndexOf([char]0) -ge 0
     $views = @($text)
     if ($binary) { $views += [Text.Encoding]::Unicode.GetString($bytes) }
+    if (-not $binary -and $leaf -like '*.json') {
+        try { $json = $text.TrimStart([char]0xFEFF) | ConvertFrom-Json -AsHashtable -ErrorAction Stop } catch { $json = $null }
+        if ($null -ne $json) { Test-JsonSecrets $json $path }
+    }
     foreach ($view in $views) {
         foreach ($rule in $patterns.Keys) {
             $candidateView = $view
@@ -55,6 +59,18 @@ function Test-Content([byte[]]$bytes, [string]$path) {
         if ($manifest.tests -and $manifest.tests.PSObject.Properties['logPath']) { Add-Issue $path 'local diagnostic log reference' }
     }
 }
+function Test-JsonSecrets($node, [string]$path) {
+    if ($node -is [Collections.IDictionary]) {
+        foreach ($key in $node.Keys) {
+            $value = $node[$key]
+            $secretField = $key -match '^(?i:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|passwd|secret|cookie|SESSDATA|bili_jct|sessionid|sid_guard|ttwid)$'
+            $cookieValue = $key -eq 'value' -and $node.Contains('name') -and $node['name'] -match '^(?i:SESSDATA|bili_jct|sessionid|sid_guard|ttwid|access_token|refresh_token)$'
+            if (($secretField -or $cookieValue) -and $value -is [string] -and $value.Length -gt 0 -and
+                $value -notmatch '^(?i:synthetic|placeholder|example|your[_-]|changeme|\$\{|<)') { Add-Issue $path 'structured credential value' }
+            Test-JsonSecrets $value $path
+        }
+    } elseif ($node -is [array]) { foreach ($item in $node) { Test-JsonSecrets $item $path } }
+}
 function Test-Zip([IO.Stream]$stream, [string]$prefix, [int]$depth) {
     if ($depth -gt 3) { Add-Issue $prefix 'archive nesting limit'; return }
     $zip = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $true)
@@ -80,10 +96,11 @@ if ($PSCmdlet.ParameterSetName -eq 'Archive') {
 } else {
     $root = (Get-Item -LiteralPath $Directory -Force).FullName.TrimEnd('\','/')
     if ((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Inspection root cannot be a reparse point' }
-    $items = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' })
+    $items = @(Get-ChildItem -LiteralPath $root -Recurse -Force | Where-Object { $_.FullName -notmatch '[\\/]\.git([\\/]|$)' })
     foreach ($file in $items) {
         $relative = $file.FullName.Substring($root.Length + 1).Replace('\','/')
         if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { Add-Issue $relative 'reparse point'; continue }
+        if ($file.PSIsContainer) { continue }
         Test-Content ([IO.File]::ReadAllBytes($file.FullName)) $relative
     }
 }

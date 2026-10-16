@@ -1,66 +1,53 @@
-# 带源码的绿色包（加固版）在包内自编译用的脚本 —— **模板，由 Build-Portable.ps1 复制过去**。
-#
-# 为什么要有这个模板（2026-09-28）：
-#   原来 `<包>\src\build.ps1` 是**人工维护、只存在于各绿色包内部**的文件，不在 git 里。
-#   于是往 `src\` 下加 `App\` 目录时（partial 拆分的另一半），
-#   `Build-Hardened.ps1` / `Build-Portable.ps1` 都改了，**它没跟着改** ——
-#   包内编译直接报 `CS0426: 类型"LiveHub"中不存在类型名"AclOutcome"`，整包构建不出来。
-#   现在改成从这里复制，**跟着仓库走**，不会再漂。
-#
-# ⚠️ 别再手改包内那份：每次打包都会覆盖它。
-#
-# 用法：由 Build-Portable.ps1 调用；也可单独跑 `pwsh -File <包>\src\build.ps1` 复现包内构建。
-
+# Rebuild bundled source in isolation; replace the launcher only after validation.
+param([string]$Workspace = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
-if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw '找不到 .NET Framework C# 编译器。' }
-
-# 2026-09-25 起没有生成器了：启动器 + 分片源码一起交给 csc。
-# 它们互相引用（启动器调 DanmakuClientFactory，分片调 LiveHub.RuntimeDir），必须同一编译单元。
-#
-# ⚠️ 源码列表**动态扫 `src\` 下的每个子目录**，不写死目录名 ——
-#    所以以后再加 `src\Foo\` 这种目录，这里**自动生效**，不需要改任何构建脚本。
-#    （写死过一次，代价是整包构建失败，见文件头。）
-$exe = Join-Path $root '看直播.exe'
-$srcRoot = $PSScriptRoot
-$source = @((Join-Path $srcRoot 'live-hub-v2.cs'))
-Get-ChildItem -LiteralPath $srcRoot -Directory | Sort-Object Name | ForEach-Object {
-    $source += @(Get-ChildItem -LiteralPath $_.FullName -Filter '*.cs' -File | Sort-Object Name | ForEach-Object { $_.FullName })
+if (-not $Workspace) { $Workspace = Join-Path $env:TEMP ('livehub-rebuild-' + [guid]::NewGuid().ToString('N')) }
+if (Test-Path -LiteralPath $Workspace) { throw 'Rebuild workspace must be new' }
+$sourceView = Join-Path $Workspace 'source'
+$output = Join-Path $Workspace 'output'
+New-Item -ItemType Directory -Path $sourceView,$output -Force | Out-Null
+. (Join-Path $root 'tools/Invoke-BoundedProcess.ps1')
+$compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+if (-not (Test-Path -LiteralPath $compiler)) { $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe' }
+$source = @((Join-Path $PSScriptRoot 'live-hub-v2.cs'),(Join-Path $PSScriptRoot 'build-info.cs'))
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'live-hub-v2.cs') -Destination $sourceView
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'live-title.lua') -Destination $sourceView
+New-Item -ItemType Directory -Path (Join-Path $sourceView 'tests') -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $root 'tests/fixtures') -Destination (Join-Path $sourceView 'tests') -Recurse
+foreach ($directory in Get-ChildItem -LiteralPath $PSScriptRoot -Directory) {
+    $code = @(Get-ChildItem -LiteralPath $directory.FullName -Filter '*.cs' -File)
+    if (-not $code.Count) { continue }
+    $to = Join-Path $sourceView ('src/' + $directory.Name)
+    New-Item -ItemType Directory -Path $to -Force | Out-Null
+    foreach ($file in $code) { $source += $file.FullName; Copy-Item -LiteralPath $file.FullName -Destination $to }
 }
-$source = @($source | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-foreach ($f in $source) { if (-not (Test-Path -LiteralPath $f)) { throw "缺少源文件：$f" } }
-if ($source.Count -lt 2) { throw "只找到 $($source.Count) 个源文件，src\ 布局可能不对" }
-
-# build-info.cs（版本号）由打包脚本生成，有就一起编
-$versionFile = Join-Path $srcRoot 'build-info.cs'
-$mainArgs = @('/nologo', '/target:winexe', '/optimize+', "/out:$exe", "/win32manifest:$srcRoot\app.manifest",
-    '/r:System.Windows.Forms.dll', '/r:System.Security.dll', '/r:System.Drawing.dll',
-    '/r:System.Web.Extensions.dll', '/r:Microsoft.VisualBasic.dll', "/r:$root\lib\webview2\Microsoft.Web.WebView2.Core.dll", "/r:$root\lib\webview2\Microsoft.Web.WebView2.WinForms.dll") +
-    @(if (Test-Path -LiteralPath $versionFile) { ,$versionFile } else { @() }) +
-    # 图标（2026-10-16）：与 app.manifest 同处 src\。**有才用** —— 老包没带这个文件也能照常构建。
-    @(if (Test-Path -LiteralPath (Join-Path $srcRoot 'app.ico')) { ,("/win32icon:" + (Join-Path $srcRoot 'app.ico')) } else { @() }) +
-    $source
-Copy-Item -LiteralPath (Join-Path $srcRoot 'app.config') -Destination ($exe + '.config') -Force
-Copy-Item -LiteralPath (Join-Path $srcRoot 'THIRD_PARTY_NOTICES.md') -Destination $root -Force
-Copy-Item -LiteralPath (Join-Path $srcRoot 'licenses') -Destination $root -Recurse -Force
-& (Join-Path $root 'tools\Copy-WebViewAssets.ps1') -SourceRoot $root -Destination $root
-& $compiler @mainArgs
-if ($LASTEXITCODE -ne 0) { throw "启动器编译失败：$LASTEXITCODE" }
-
-# 离线回归：tests\*.cs 是同一个 partial class 的两半，必须一起编
-$testSource = @(Get-ChildItem -LiteralPath (Join-Path $root 'tests') -Filter '*.cs' -File |
-    Sort-Object Name | ForEach-Object { $_.FullName })
-foreach ($f in $testSource) { if (-not (Test-Path -LiteralPath $f)) { throw "缺少测试源文件：$f" } }
-$testExe = Join-Path $root 'tests\HardeningTests.exe'
-& $compiler /nologo /target:exe /optimize+ "/out:$testExe" @testSource
-if ($LASTEXITCODE -ne 0) { throw "测试程序编译失败：$LASTEXITCODE" }
-& $testExe
-if ($LASTEXITCODE -ne 0) { throw "离线测试失败：$LASTEXITCODE" }
-
-# 自检（--self-test 覆盖弹幕分片、配置往返、DPI 等）
-$selfTest = Start-Process -WindowStyle Hidden -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru
-if ($selfTest.ExitCode -ne 0) { throw "启动器自检失败：$($selfTest.ExitCode)" }
-
-Write-Output '加固版编译、离线测试、自检均通过。'
-Write-Output ("  源文件 $($source.Count) 个（含 src\ 下所有子目录）")
+foreach ($asset in @('fonts','lib','licenses','tests','emoji-sheet.png','emoji-sheet.txt','THIRD_PARTY_NOTICES.md','live-title.lua')) {
+    Copy-Item -LiteralPath (Join-Path $root $asset) -Destination $output -Recurse
+}
+& (Join-Path $root 'tools/New-OfflineLayout.ps1') -Source $sourceView -Destination $output -ToolsOnly
+& (Join-Path $root 'tools/Copy-WebViewAssets.ps1') -SourceRoot $root -Destination $output
+$exe = Join-Path $output '看直播.exe'
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app.config') -Destination ($exe + '.config')
+$arguments = @('/nologo','/target:winexe','/optimize+',('/out:' + $exe),('/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')),('/win32icon:' + (Join-Path $PSScriptRoot 'app.ico')),
+    '/r:System.Windows.Forms.dll','/r:System.Security.dll','/r:System.Drawing.dll','/r:System.Web.Extensions.dll','/r:Microsoft.VisualBasic.dll',
+    ('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.Core.dll')),('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.WinForms.dll'))) + $source
+Invoke-BoundedProcess -FilePath $compiler -Arguments $arguments -Log (Join-Path $Workspace 'compile.log') -TimeoutSeconds 120
+$testExe = Join-Path $output 'tests/HardeningTests.exe'
+$testSources = @(Get-ChildItem -LiteralPath (Join-Path $root 'tests') -Filter '*.cs' -File | ForEach-Object FullName)
+Invoke-BoundedProcess -FilePath $compiler -Arguments (@('/nologo','/target:exe','/optimize+',('/out:' + $testExe)) + $testSources) -Log (Join-Path $Workspace 'test-compile.log') -TimeoutSeconds 120
+Invoke-BoundedProcess -FilePath $testExe -Arguments @('--exe',$exe,'--src',$sourceView,'--report',(Join-Path $Workspace 'tests.json')) -Log (Join-Path $Workspace 'tests.log') -TimeoutSeconds 300
+Invoke-BoundedProcess -FilePath $exe -Arguments @('--self-test') -Log (Join-Path $Workspace 'selftest.log') -TimeoutSeconds 30
+$target = Join-Path $root '看直播.exe'
+$probe = [IO.File]::Open($target,'Open','ReadWrite','None'); $probe.Dispose()
+$backup = Join-Path $Workspace 'previous-launcher'
+New-Item -ItemType Directory -Path $backup | Out-Null
+Copy-Item -LiteralPath $target,($target + '.config') -Destination $backup
+try {
+    Copy-Item -LiteralPath $exe -Destination $target -Force
+    Copy-Item -LiteralPath ($exe + '.config') -Destination ($target + '.config') -Force
+} catch {
+    Copy-Item -LiteralPath (Join-Path $backup '看直播.exe'),(Join-Path $backup '看直播.exe.config') -Destination $root -Force
+    throw
+}
+Write-Output 'PASS: bundled source build, offline regression and self-test; personal data preserved'

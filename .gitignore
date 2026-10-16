@@ -37,6 +37,7 @@ artifacts/
 
 # Personal data never belongs in public source.
 /data/
+/lua/
 .env
 .env.*
 !.env.example

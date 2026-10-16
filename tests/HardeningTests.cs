@@ -906,6 +906,7 @@ internal static partial class HardeningTests
     // ----------------------------------------------------------------------------------------
     private static int Main(string[] args)
     {
+        Console.OutputEncoding = new UTF8Encoding(false);
         if (args.Length == 4 && args[0] == "--audit-image-memory")
             return RunAuditImageMemory(args[1],args[2],args[3]);
         if (args.Length == 4 && args[0] == "--audit-flv-capture")

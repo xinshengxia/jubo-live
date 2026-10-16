@@ -33,13 +33,47 @@ try {
             if ($name -ne 'manifest.json' -and -not $listed.ContainsKey($name)) { throw "ZIP 中有未登记文件：$name" }
             if ($manifest.credentials.mode -eq 'strip' -and $name -match '(?i)(^|/)(profiles?|[^/]*-(login|verify)-profile)(/|$)|cookies[^/]*\.txt(\.json)?$|cookie[^/]*\.credential\.tmp$') { throw "ZIP 中残留凭据：$name" }
         }
+        $componentNames = @{}
+        $lock = $null
+        if (@($manifest.components).Count) {
+            if (-not $names.ContainsKey('deps.lock.json')) { throw '锁定组件缺少包内依赖清单' }
+            $reader = [IO.StreamReader]::new($names['deps.lock.json'].Open())
+            try { $lock = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+            if ($lock.schema -ne 'livehub-deps-lock/1') { throw '包内依赖锁格式无效' }
+        }
         foreach ($component in $manifest.components) {
+            if ($componentNames.ContainsKey($component.name)) { throw '重复锁定组件' }
+            $componentNames[$component.name] = $true
             if ($component.kind -eq 'file') {
+                $locked = @($lock.components | Where-Object name -EQ $component.name)
+                if ($locked.Count -ne 1 -or $locked[0].target -ne $component.target -or $locked[0].sha256 -ne $component.sha256 -or $locked[0].size -ne $component.size) { throw '组件与包内依赖锁不一致' }
                 $record = @($manifest.artifacts | Where-Object path -EQ $component.target)
                 if ($record.Count -ne 1 -or $record[0].sha256 -ne $component.sha256 -or $record[0].size -ne $component.size) {
                     throw "锁定组件未入包或哈希/大小不一致：$($component.target)"
                 }
-            }
+            } elseif ($component.kind -eq 'bundle') {
+                $locked = @($lock.bundles | Where-Object name -EQ $component.name)
+                if ($locked.Count -ne 1 -or $locked[0].targetDir -ne $component.target) { throw '目录组件与包内依赖锁不一致' }
+                $prefix = $component.target.TrimEnd('/') + '/'
+                $records = @($manifest.artifacts | Where-Object { $_.path.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) })
+                if ($records.Count -ne @($locked[0].files).Count) { throw '目录组件文件集合不一致' }
+                $lines = [Collections.Generic.List[string]]::new(); [long]$total = 0
+                foreach ($file in $locked[0].files | Sort-Object path) {
+                    $record = @($records | Where-Object path -EQ ($prefix + $file.path))
+                    if ($record.Count -ne 1 -or $record[0].sha256 -ne $file.sha256 -or $record[0].size -ne $file.size) { throw '目录组件内部文件与依赖锁不一致' }
+                    $lines.Add($file.path.ToLowerInvariant() + "`n" + $file.sha256.ToUpperInvariant() + "`n"); $total += $file.size
+                }
+                $treeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($lines -join ''))))
+                if ($treeHash -ne $locked[0].treeSha256 -or $treeHash -ne $component.sha256 -or $total -ne $component.size) { throw '目录组件整体哈希或大小不一致' }
+            } else { throw '未知组件类型' }
+        }
+        if ($lock) {
+            foreach ($required in @('LICENSE','deps.lock.json')) { if (-not $listed.ContainsKey($required)) { throw '实际发布包缺少许可或依赖锁' } }
+            if ($manifest.variant -notin @('full','lite')) { throw '发布变体无效' }
+            $expectedComponents = @($lock.components | Where-Object { $_.name -ne 'potplayer' -and ($manifest.variant -eq 'full' -or $_.name -ne 'mpv') })
+            $expectedBundles = @($lock.bundles | Where-Object { $_.name -ne 'potplayer-dist' -and ($manifest.variant -eq 'full' -or $_.name -ne 'mpv-dist') })
+            foreach ($required in @($expectedComponents) + @($expectedBundles)) { if (-not $componentNames.ContainsKey($required.name)) { throw '发布包遗漏锁定组件' } }
+            if ($componentNames.Count -ne ($expectedComponents.Count + $expectedBundles.Count)) { throw '发布包包含意外组件' }
         }
         if (-not $listed.ContainsKey('看直播.exe')) { throw 'ZIP 缺少启动器' }
         if (-not $listed.ContainsKey('看直播.exe.config')) { throw 'ZIP 缺少启动器运行配置' }

@@ -3,6 +3,7 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   net48:
     runs-on: windows-2022
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:

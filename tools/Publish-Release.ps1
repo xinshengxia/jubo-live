@@ -192,10 +192,7 @@ try {
 
     # ── 2. 输出目录 ──────────────────────────────────────────────────────
     $outDir = if ($Out) { [IO.Path]::GetFullPath($Out) } else { Join-Path (Split-Path -Parent $repoRoot) ('jubo-release-' + $headShort) }
-    # 版本号：git tag（v1.0.0）优先，没 tag 就退回短 commit —— 与 tools/Write-BuildInfo.ps1 同一来源。
-    $releaseVersion = $headShort
-    $tagLine = @(& git -C $repoRoot describe --tags --abbrev=0 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $tagLine.Count -gt 0 -and ([string]$tagLine[0]).Trim() -match '^v?(\d+\.\d+\.\d+)$') { $releaseVersion = $Matches[1] }
+    $releaseVersion = & (Join-Path $PSScriptRoot 'Get-ReleaseVersion.ps1') -Repo $repoRoot
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     Step '[2/9] 准备输出目录'
     Say ('  输出目录 : ' + $outDir)

@@ -5,6 +5,7 @@ param(
     [switch]$KeepTemp
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Invoke-BoundedProcess.ps1')
 if (-not $Workspace) { $Workspace = Join-Path (Split-Path -Parent $Repo) ('livehub-cleancheck-' + [guid]::NewGuid().ToString('N')) }
 $Workspace = [IO.Path]::GetFullPath($Workspace)
 if (Test-Path -LiteralPath $Workspace) { throw "验收目录必须是新目录：$Workspace" }
@@ -26,15 +27,12 @@ try {
     if ($LASTEXITCODE -ne 0 -or $head -notmatch '^[a-f0-9]{40}$') { throw '无法取得检出 commit' }
     foreach ($layout in @($legacy, $sdk)) { & (Join-Path $checkout 'tools\New-OfflineLayout.ps1') -Source $checkout -Destination $layout -ToolsOnly }
     $legacyExe = Join-Path $legacy '看直播-mpv.exe'
-    & pwsh -NoProfile -File (Join-Path $checkout 'Build-Hardened.ps1') -Out $legacyExe -Report (Join-Path $Workspace 'legacy-tests.json') *> (Join-Path $Workspace 'legacy-build.log')
-    if ($LASTEXITCODE -ne 0) { throw "legacy 构建失败，见 $Workspace\legacy-build.log" }
-    & dotnet build (Join-Path $checkout 'live-hub.csproj') -c Release "-p:OutputPath=$sdk\" '-p:AppendTargetFrameworkToOutputPath=false' "-p:RestoreSources=$emptySource" *> (Join-Path $Workspace 'sdk-build.log')
-    if ($LASTEXITCODE -ne 0) { throw "SDK 构建失败，见 $Workspace\sdk-build.log" }
+    Invoke-BoundedProcess -FilePath 'pwsh' -Arguments @('-NoProfile','-File',(Join-Path $checkout 'Build-Hardened.ps1'),'-Out',$legacyExe,'-Report',(Join-Path $Workspace 'legacy-tests.json')) -Log (Join-Path $Workspace 'legacy-build.log') -TimeoutSeconds 360
+    Invoke-BoundedProcess -FilePath 'dotnet' -Arguments @('build',(Join-Path $checkout 'live-hub.csproj'),'-c','Release',"-p:OutputPath=$sdk\",'-p:AppendTargetFrameworkToOutputPath=false',"-p:RestoreSources=$emptySource") -Log (Join-Path $Workspace 'sdk-build.log') -TimeoutSeconds 180
     $sdkExe = Join-Path $sdk '看直播-mpv.exe'
-    & (Join-Path $legacy 'tests\HardeningTests.exe') --exe $sdkExe --src $checkout --report (Join-Path $Workspace 'sdk-tests.json') *> (Join-Path $Workspace 'sdk-tests.log')
-    if ($LASTEXITCODE -ne 0) { throw "SDK 离线回归失败，见 $Workspace\sdk-tests.log" }
-    $process = Start-Process -WindowStyle Hidden -FilePath $sdkExe -ArgumentList '--self-test' -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw 'SDK 自检失败' }
+    Invoke-BoundedProcess -FilePath (Join-Path $legacy 'tests\HardeningTests.exe') -Arguments @('--exe',$sdkExe,'--src',$checkout,'--report',(Join-Path $Workspace 'sdk-tests.json')) -Log (Join-Path $Workspace 'sdk-tests.log') -TimeoutSeconds 300
+    Invoke-BoundedProcess -FilePath $sdkExe -Arguments @('--self-test') -Log (Join-Path $Workspace 'sdk-selftest.log') -TimeoutSeconds 30
+    & (Join-Path $checkout 'tests/Test-PublishPrivacy.ps1') -Source $checkout -Workspace (Join-Path $Workspace 'privacy-cases')
     $legacyVersion = (Get-Item -LiteralPath $legacyExe).VersionInfo.ProductVersion
     $sdkVersion = (Get-Item -LiteralPath $sdkExe).VersionInfo.ProductVersion
     if ($legacyVersion -ne $sdkVersion -or $legacyVersion -match 'dirty|nogit' -or -not $legacyVersion.Contains($head.Substring(0,12))) { throw '两条路径的版本不匹配或来源不可追踪' }
