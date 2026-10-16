@@ -97,25 +97,25 @@
       "path": "licenses/mpv-Copyright.txt",
       "sha256": "BFE9EE4CCEABCB8ECBFADF208D04156F73D801E6A57369A5606BB8341E204A23",
       "upstreamRepository": "mpv-player/mpv",
-      "upstreamCommit": "5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286",
       "upstreamPath": "Copyright",
-      "url": "https://github.com/mpv-player/mpv/blob/5f9e1bc7bd2f48744c57c9055f50b7bf24f32356/Copyright"
+      "url": "https://github.com/mpv-player/mpv/blob/a2cd83c56de859ced3fc8e6055e5878e50f45286/Copyright"
     },
     {
       "path": "licenses/mpv-LICENSE.GPL.txt",
       "sha256": "EDAEF632CBB643E4E7A221717A6C441A4C1A7C918E6E4D56DEBC3D8739B233F6",
       "upstreamRepository": "mpv-player/mpv",
-      "upstreamCommit": "5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286",
       "upstreamPath": "LICENSE.GPL",
-      "url": "https://github.com/mpv-player/mpv/blob/5f9e1bc7bd2f48744c57c9055f50b7bf24f32356/LICENSE.GPL"
+      "url": "https://github.com/mpv-player/mpv/blob/a2cd83c56de859ced3fc8e6055e5878e50f45286/LICENSE.GPL"
     },
     {
       "path": "licenses/mpv-LICENSE.LGPL.txt",
       "sha256": "72B672113D642CBB8EF5DCC76938DB801983C56E50B1400AB930F1A64D6DC8D9",
       "upstreamRepository": "mpv-player/mpv",
-      "upstreamCommit": "5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
+      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286",
       "upstreamPath": "LICENSE.LGPL",
-      "url": "https://github.com/mpv-player/mpv/blob/5f9e1bc7bd2f48744c57c9055f50b7bf24f32356/LICENSE.LGPL"
+      "url": "https://github.com/mpv-player/mpv/blob/a2cd83c56de859ced3fc8e6055e5878e50f45286/LICENSE.LGPL"
     },
     {
       "path": "licenses/yt-dlp-LICENSE.txt",

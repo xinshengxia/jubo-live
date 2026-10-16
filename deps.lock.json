@@ -1,6 +1,6 @@
 {
   "schema": "livehub-deps-lock/1",
-  "generatedAt": "2026-10-10T13:56:26.4598947+08:00",
+  "generatedAt": "2026-10-16T16:35:06Z",
   "hashAlgorithm": "SHA-256；文件哈希与 components/bundles.files 里的 sha256 存小写十六进制，用于比较时统一转大写",
   "treeHashRule": "目录内每个文件写成一行 <小写相对路径（/ 分隔）>LF<大写文件 sha256>LF，行按小写相对路径字典序排列，对拼接后的 UTF-8 字节取 SHA-256（小写 hex）",
   "sourcePackages": [
@@ -20,12 +20,14 @@
       "name": "mpv",
       "target": "bin/mpv/mpv.exe",
       "source": "installed:bin/mpv/mpv.exe",
-      "version": "v0.41.0-337-g5f9e1bc7b",
-      "versionEvidence": "实际二进制 --version；mpv 核心提交 5f9e1bc7bd2f48744c57c9055f50b7bf24f32356",
-      "sha256": "e4a97d13277b1592bcc8f85a21fbb3d12cc21b73a2aaa78468aa16c07f165685",
-      "size": 117594112,
+      "version": "v0.41.0-1186-ga2cd83c56",
+      "versionEvidence": "mpv --version; ordinary x86_64 build; binary SHA-256 verified",
+      "sha256": "7a9d8c24975c681eca6010ceeae9806344f1d343381d753e03b73dfde8d04106",
+      "size": 121010688,
       "license": "GPLv2+ / LGPLv2.1+（实际取决于构建；附 Copyright 与两份原文）",
-      "note": "播放器主体；随包再分发需遵守 mpv 的 GPL/LGPL 条款"
+      "note": "播放器主体；随包再分发需遵守 mpv 的 GPL/LGPL 条款",
+      "distribution": "x86_64",
+      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286"
     },
     {
       "name": "potplayer",
@@ -135,20 +137,20 @@
       "exclude": [
         "portable_config/cache/**"
       ],
-      "note": "mpv 分发目录。排除 portable_config/cache/**：那是 mpv 运行期生成的 shader 缓存（两个绿色包里就不一样：14 个 vs 21 个），既不该进发布包，也不该参与哈希；mpv 会自己重建。",
+      "note": "Ordinary x86_64 mpv runtime with the existing generic scripts; no personal configuration or runtime cache.",
       "fileCount": 4,
-      "bytes": 117607081,
-      "treeSha256": "b0353953e0bd20fab08ed8780a8f844f5889ebf3dc6f534938af19aae2f9ace7",
+      "bytes": 121024328,
+      "treeSha256": "f3f95dc38207b5341c49686eacae15fd9a026f0faf05d32b0176a7186dbdf0d1",
       "files": [
         {
           "path": "mpv.com",
-          "sha256": "066dd42d3136444e1c8c4af604a3acfc365878a76fd67eed682719ecd47affc0",
+          "sha256": "6a6b7bd49f04e7872cd35456ddef87c4bae7e94e0e4a9d4da2b30bcde6950918",
           "size": 3584
         },
         {
           "path": "mpv.exe",
-          "sha256": "e4a97d13277b1592bcc8f85a21fbb3d12cc21b73a2aaa78468aa16c07f165685",
-          "size": 117594112
+          "sha256": "7a9d8c24975c681eca6010ceeae9806344f1d343381d753e03b73dfde8d04106",
+          "size": 121010688
         },
         {
           "path": "portable_config/scripts/live-resync.lua",
