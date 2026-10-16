@@ -23,7 +23,7 @@ internal static partial class HardeningTests
         TestRunner.Add("审计待确认", "图片全局并发预算及退出后完成释放", TestAuditImageConcurrency);
         TestRunner.Add("审计待确认", "本地 WSS 分片上限、超限断开和新连接恢复", TestAuditWssLimit);
         TestRunner.Add("审计待确认", "B站嵌套压缩和批量展开共享预算", TestAuditBiliBudget);
-        TestRunner.Add("审计待确认", "原生 WM_DPICHANGED 建议矩形和倍率往返", TestAuditDpiMessage);
+        TestRunner.AddDesktop("审计待确认", "原生 WM_DPICHANGED 建议矩形和倍率往返", TestAuditDpiMessage);
         if (AuditDesktopEnabled) TestRunner.Add("审计桌面", "真实显示器移动、分层透明像素和资源回收", TestAuditDesktop);
     }
 

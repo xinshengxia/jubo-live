@@ -364,8 +364,8 @@ internal static partial class HardeningTests
         TestRunner.Add("主播查询", "收藏确认、备份与去重", TestLookupFavorites);
         TestRunner.Add("主播查询", "真实控件事件、取消及旧响应隔离", TestLookupUiRaces);
         TestRunner.Add("主播查询", "原型HTTP、RSS及Flight解析", TestLookupNative);
-        TestRunner.Add("主播查询", "查询窗口DPI与最小布局", TestLookupLayout);
-        TestRunner.Add("主播查询", "深浅主题输入框像素与操作布局", TestLookupTheme);
+        TestRunner.AddDesktop("主播查询", "查询窗口DPI与最小布局", TestLookupLayout);
+        TestRunner.AddDesktop("主播查询", "深浅主题输入框像素与操作布局", TestLookupTheme);
         TestRunner.Add("主播查询", "抖音账号资料与别名直播页串联", TestLookupDouyinProfile);
         TestRunner.Add("主播查询", "AI官方入口、平台迁移证据及别名缓存隔离", TestLookupAiEntries);
         TestRunner.Add("主播查询", "DeepSeek原生搜索、三阶段来源边界与取消", TestDeepSeekResearch);

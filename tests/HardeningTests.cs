@@ -973,6 +973,7 @@ internal static partial class HardeningTests
         // 离线测试只能使用合成数据，不能沿用开发机/便携包的真实 cookie。
         System.Windows.Forms.Application.SetUnhandledExceptionMode(System.Windows.Forms.UnhandledExceptionMode.ThrowException);
         InitializeReviewTestPaths();
+        if (!list) Console.WriteLine("TEST-CAPABILITIES interactiveDesktop=" + TestRunner.HasInteractiveDesktop);
         RegisterCases(launcher, Assembly.GetExecutingAssembly().Location);
         if (list) { TestRunner.List(); return 0; }
         return TestRunner.Run(filter, report, verbose) == 0 ? 0 : 1;
@@ -1011,7 +1012,7 @@ internal static partial class HardeningTests
         TestRunner.Add("弹幕-表情", "图片安全校验不阻塞渲染线程", TestImageValidationAsync);
         TestRunner.Add("弹幕-表情", "图片退避计时回绕与到期边界", TestImageBackoffWrap);
         TestRunner.Add("配置", "外部程序路径可配置（命令行/配置文件/PATH）", delegate { TestPathResolution(launcher); });
-        TestRunner.Add("启动器-UI", "控件树结构（关键控件/同行不重叠/最小宽度）", delegate { TestLauncherUiStructure(launcher); });
+        TestRunner.AddDesktop("启动器-UI", "控件树结构（关键控件/同行不重叠/最小宽度）", delegate { TestLauncherUiStructure(launcher); });
         TestRunner.Add("启动器-平台", "平台适配器表与启动计划一致", delegate { TestPlatformAdapters(launcher); });
         TestRunner.Add("启动器-UI", "深色/浅色：每个控件的背景都在正确一侧", delegate { TestThemeColors(launcher); });
         TestRunner.Add("启动器-配置", "打开配置文件不走文件关联（不弹「打开方式」）", delegate { TestOpenConfigWithoutPicker(launcher); });

@@ -12,7 +12,7 @@ internal static partial class HardeningTests
 {
     private static void RegisterDpiCases()
     {
-        TestRunner.Add("高分屏", "多倍率、窄窗口、换屏往返和独立窗口", TestAdaptiveDpi);
+        TestRunner.AddDesktop("高分屏", "多倍率、窄窗口、换屏往返和独立窗口", TestAdaptiveDpi);
         TestRunner.Add("高分屏", "重复DPI更新与滚动条不会失效或递归重建", TestDpiFontAndScrollbarLifetime);
         TestRunner.Add("高分屏", "文字像素原样贴图与实心字芯", TestDpiTextPixels);
         TestRunner.Add("高分屏", "在飞弹幕换屏后重建位图并释放旧租约", TestDpiFlyingCache);

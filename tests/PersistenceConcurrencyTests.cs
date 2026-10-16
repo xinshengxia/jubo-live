@@ -13,6 +13,7 @@ internal static partial class HardeningTests
         TestRunner.Add("持久化", "多窗口收藏合并不丢新增、改名与删除", TestConcurrentFavorites);
         TestRunner.Add("持久化", "多窗口历史合并与最近记录限额", TestConcurrentHistory);
         TestRunner.Add("持久化", "双进程收藏与历史保存互斥", delegate { TestPersistenceProcesses(launcher, self); });
+        TestRunner.Add("持久化", "连续新增收藏的备份互不覆盖", TestLookupBackupUniqueness);
     }
 
     private static bool FavoriteHas(List<KeyValuePair<string, string>> entries, string room, string name)
@@ -24,6 +25,21 @@ internal static partial class HardeningTests
                 && (string)LookupGet(target, "Room") == room && entry.Key == name) return true;
         }
         return false;
+    }
+
+    private static void TestLookupBackupUniqueness()
+    {
+        string dir = ReviewDirectory(); FieldInfo field = hub.GetField("Favorites", Flags); object old = field.GetValue(null);
+        try
+        {
+            string path = Path.Combine(dir, "favorites.json"); field.SetValue(null, path); File.WriteAllText(path, "[]");
+            var favorites = (List<KeyValuePair<string, string>>)Call("LoadFavorites");
+            for (int i = 0; i < 50; i++) LookupFavoriteForTest(favorites, (1000 + i).ToString(), "synthetic favorite " + i);
+            string[] backups = Directory.GetFiles(dir, "*.bak");
+            Check(backups.Length == 50 && File.ReadAllText(backups[0]).Length > 0, "快速连续保存为每次操作保留独立备份");
+            Check(((List<KeyValuePair<string, string>>)Call("LoadFavorites")).Count == 50, "备份文件名冲突不会中断新增收藏");
+        }
+        finally { field.SetValue(null, old); Directory.Delete(dir, true); }
     }
 
     private static void LookupFavoriteForTest(List<KeyValuePair<string, string>> entries, string room, string name)

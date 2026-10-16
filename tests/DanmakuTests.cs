@@ -101,7 +101,7 @@ internal static partial class HardeningTests
         TestRunner.Add("弹幕-协议", "虎牙 Tars 编解码逐字节复现", delegate { TestHuyaTars(launcher); });
         TestRunner.Add("弹幕-协议", "虎牙 1400 弹幕解析", delegate { TestHuyaMessageNotice(launcher); });
         TestRunner.Add("弹幕-协议", "抖音签名与 protobuf", delegate { TestDouyinSign(launcher); });
-        TestRunner.Add("弹幕-UI", "设置对话框布局不重叠", delegate { TestSettingsLayout(launcher); });
+        TestRunner.AddDesktop("弹幕-UI", "设置对话框布局不重叠", delegate { TestSettingsLayout(launcher); });
 
         // ---- 6e) 弹幕/SC 字体：随包的 HarmonyOS Sans SC ----
         // 用户要求「弹幕和 SC 也换成鸿蒙」。这条锁的是**端到端**：

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -339,7 +339,7 @@ internal static partial class LiveHub
         }
         var next = CreateFavoritesUpdate(favorites);
         next.Add(new KeyValuePair<string, string>(name.Trim(), key));
-        if (File.Exists(Favorites)) File.Copy(Favorites, Favorites + ".before-lookup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + ".bak", false);
+        if (File.Exists(Favorites)) File.Copy(Favorites, Favorites + ".before-lookup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N") + ".bak", false);
         SaveFavorites(next); favorites.Clear(); favorites.AddRange(next); return true;
     }
 }

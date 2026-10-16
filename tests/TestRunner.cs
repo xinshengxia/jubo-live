@@ -68,6 +68,21 @@ internal static class TestRunner
         Cases.Add(new TestCase(category, name, body));
     }
 
+    // Native window geometry needs an interactive desktop; CI service sessions do not provide one.
+    public static bool HasInteractiveDesktop
+    {
+        get { return Environment.UserInteractive && Process.GetCurrentProcess().SessionId != 0; }
+    }
+
+    public static void AddDesktop(string category, string name, Action body)
+    {
+        Add(category, name, delegate
+        {
+            if (!HasInteractiveDesktop) Skip("Interactive desktop unavailable; native layout/DPI unverified here");
+            body();
+        });
+    }
+
     public static int CaseCount { get { return Cases.Count; } }
 
     /// <summary>用例主动跳过：系统不具备该能力。不计失败，单独统计。</summary>

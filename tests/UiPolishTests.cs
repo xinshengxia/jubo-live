@@ -9,8 +9,8 @@ internal static partial class HardeningTests
 {
     private static void RegisterUiPolishCases()
     {
-        TestRunner.Add("界面修复", "会话表无虚构列且换尺寸列宽稳定", TestNoFillerColumns);
-        TestRunner.Add("界面修复", "设置滚动不横向溢出、末尾可达且深色无白轨道", TestSettingsScrollPolish);
+        TestRunner.AddDesktop("界面修复", "会话表无虚构列且换尺寸列宽稳定", TestNoFillerColumns);
+        TestRunner.AddDesktop("界面修复", "设置滚动不横向溢出、末尾可达且深色无白轨道", TestSettingsScrollPolish);
     }
     private static void RunUiPolish(Action action)
     {
