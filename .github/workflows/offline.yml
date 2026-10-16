@@ -13,4 +13,4 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Build both paths from a clean clone, without platform requests
         shell: pwsh
-        run: ./tools/Verify-CleanBuild.ps1 -Workspace "${{ runner.temp }}/livehub-verification"
+        run: ./tools/Verify-CleanBuild.ps1 -Headless -Workspace "${{ runner.temp }}/livehub-verification"

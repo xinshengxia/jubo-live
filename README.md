@@ -63,6 +63,8 @@ pwsh -NoProfile -File tools\Verify-CleanBuild.ps1 -Workspace .\artifacts\clean-c
 
 构建、发布版本以已提交的 `VERSION` 为准；正式交付从干净 HEAD 构建，build ID 保留真实 commit。两条离线构建路径都要通过，超时按失败处理。离线回归不代表真实平台播放和桌面交互已验证。
 
+托管 CI 显式使用 `-Headless`，原生窗口布局/DPI 用例会标为跳过，并在日志列出数量和原因；CI 通过不能替代桌面验收。正式发布默认仍执行本机完整回归和隐藏界面检查。
+
 自用更新与公开发布使用不同入口：
 
 - `Build-Portable.ps1` 更新已有安装，必须显式传入 `-Package`、全新 `-Workspace`、安装目录之外的全新 `-Backup` 和普通 x64 播放器目录 `-MpvDirectory`。先隔离构建验收，再备份并覆盖受控程序文件；保留配置、收藏、历史、Cookie 和 profile，失败时回退文件。

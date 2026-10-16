@@ -73,11 +73,13 @@ internal static class TestRunner
     {
         get { return Environment.UserInteractive && Process.GetCurrentProcess().SessionId != 0; }
     }
+    public static bool Headless;
 
     public static void AddDesktop(string category, string name, Action body)
     {
         Add(category, name, delegate
         {
+            if (Headless) Skip("Headless verification explicitly selected; native layout/DPI not run");
             if (!HasInteractiveDesktop) Skip("Interactive desktop unavailable; native layout/DPI unverified here");
             body();
         });

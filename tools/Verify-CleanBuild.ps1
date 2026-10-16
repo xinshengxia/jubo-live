@@ -2,7 +2,8 @@
 param(
     [string]$Repo = (Split-Path -Parent $PSScriptRoot),
     [string]$Workspace = '',
-    [switch]$KeepTemp
+    [switch]$KeepTemp,
+    [switch]$Headless
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Invoke-BoundedProcess.ps1')
@@ -27,10 +28,14 @@ try {
     if ($LASTEXITCODE -ne 0 -or $head -notmatch '^[a-f0-9]{40}$') { throw '无法取得检出 commit' }
     foreach ($layout in @($legacy, $sdk)) { & (Join-Path $checkout 'tools\New-OfflineLayout.ps1') -Source $checkout -Destination $layout -ToolsOnly }
     $legacyExe = Join-Path $legacy '看直播-mpv.exe'
-    Invoke-BoundedProcess -FilePath 'pwsh' -Arguments @('-NoProfile','-File',(Join-Path $checkout 'Build-Hardened.ps1'),'-Out',$legacyExe,'-Report',(Join-Path $Workspace 'legacy-tests.json')) -Log (Join-Path $Workspace 'legacy-build.log') -TimeoutSeconds 360
+    $legacyArguments = @('-NoProfile','-File',(Join-Path $checkout 'Build-Hardened.ps1'),'-Out',$legacyExe,'-Report',(Join-Path $Workspace 'legacy-tests.json'))
+    if ($Headless) { $legacyArguments += '-Headless' }
+    Invoke-BoundedProcess -FilePath 'pwsh' -Arguments $legacyArguments -Log (Join-Path $Workspace 'legacy-build.log') -TimeoutSeconds 360
     Invoke-BoundedProcess -FilePath 'dotnet' -Arguments @('build',(Join-Path $checkout 'live-hub.csproj'),'-c','Release',"-p:OutputPath=$sdk\",'-p:AppendTargetFrameworkToOutputPath=false',"-p:RestoreSources=$emptySource") -Log (Join-Path $Workspace 'sdk-build.log') -TimeoutSeconds 180
     $sdkExe = Join-Path $sdk '看直播-mpv.exe'
-    Invoke-BoundedProcess -FilePath (Join-Path $legacy 'tests\HardeningTests.exe') -Arguments @('--exe',$sdkExe,'--src',$checkout,'--report',(Join-Path $Workspace 'sdk-tests.json')) -Log (Join-Path $Workspace 'sdk-tests.log') -TimeoutSeconds 300
+    $sdkArguments = @('--exe',$sdkExe,'--src',$checkout,'--report',(Join-Path $Workspace 'sdk-tests.json'))
+    if ($Headless) { $sdkArguments += '--headless' }
+    Invoke-BoundedProcess -FilePath (Join-Path $legacy 'tests\HardeningTests.exe') -Arguments $sdkArguments -Log (Join-Path $Workspace 'sdk-tests.log') -TimeoutSeconds 300
     Invoke-BoundedProcess -FilePath $sdkExe -Arguments @('--self-test') -Log (Join-Path $Workspace 'sdk-selftest.log') -TimeoutSeconds 30
     & (Join-Path $checkout 'tests/Test-PublishPrivacy.ps1') -Source $checkout -Workspace (Join-Path $Workspace 'privacy-cases')
     $legacyVersion = (Get-Item -LiteralPath $legacyExe).VersionInfo.ProductVersion
@@ -47,6 +52,11 @@ try {
         tests = @((Get-Content -LiteralPath (Join-Path $Workspace 'legacy-tests.json') -Raw | ConvertFrom-Json).totals, (Get-Content -LiteralPath (Join-Path $Workspace 'sdk-tests.json') -Raw | ConvertFrom-Json).totals)
     }
     $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $Workspace 'verification-manifest.json') -Encoding utf8
+    foreach ($path in @('legacy','sdk')) {
+        $result = Get-Content -LiteralPath (Join-Path $Workspace ($path + '-tests.json')) -Raw | ConvertFrom-Json
+        Write-Output ('TEST-RESULT ' + $path + ' ' + ($result.totals | ConvertTo-Json -Compress))
+        foreach ($case in $result.tests | Where-Object status -EQ 'skipped') { Write-Output ('UNVERIFIED ' + $case.name + ': ' + $case.message) }
+    }
     Write-Output "两条干净构建和离线回归通过。commit=$head BUILD=$legacyVersion"
     Write-Output "证据目录：$Workspace"
 } finally {

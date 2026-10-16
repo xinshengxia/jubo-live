@@ -934,6 +934,7 @@ internal static partial class HardeningTests
             else if (args[i] == "--report" && i + 1 < args.Length) report = Path.GetFullPath(args[++i]);
             else if (args[i] == "--list") list = true;
             else if (args[i] == "--verbose") verbose = true;
+            else if (args[i] == "--headless") TestRunner.Headless = true;
             else if (args[i] == "--audit-desktop") AuditDesktopEnabled = true;
         }
 
@@ -973,7 +974,7 @@ internal static partial class HardeningTests
         // 离线测试只能使用合成数据，不能沿用开发机/便携包的真实 cookie。
         System.Windows.Forms.Application.SetUnhandledExceptionMode(System.Windows.Forms.UnhandledExceptionMode.ThrowException);
         InitializeReviewTestPaths();
-        if (!list) Console.WriteLine("TEST-CAPABILITIES interactiveDesktop=" + TestRunner.HasInteractiveDesktop);
+        if (!list) Console.WriteLine("TEST-CAPABILITIES interactiveDesktop=" + TestRunner.HasInteractiveDesktop + "; headlessSelected=" + TestRunner.Headless);
         RegisterCases(launcher, Assembly.GetExecutingAssembly().Location);
         if (list) { TestRunner.List(); return 0; }
         return TestRunner.Run(filter, report, verbose) == 0 ? 0 : 1;

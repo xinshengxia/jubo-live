@@ -10,7 +10,8 @@ param(
     [string]$Out = '',
     # 离线回归的 JSON 报告落点（评估报告 §2：要机器可读的测试摘要，别只留一屏文字）。
     # 不传就只打印；传了就额外得到 passed / failed / skipped / 每条用例的状态与耗时。
-    [string]$Report = ''
+    [string]$Report = '',
+    [switch]$Headless
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -137,6 +138,7 @@ $logDir = Join-Path $outDir 'runtime\logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logPath = Join-Path $logDir ('offline-tests-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
 $testArgs = @('--exe', $exe, '--src', $root)
+if ($Headless) { $testArgs += '--headless' }
 if ($Report) { $testArgs += @('--report', $Report) }
 . (Join-Path $root 'tools/Invoke-BoundedProcess.ps1')
 Invoke-BoundedProcess -FilePath $testExe -Arguments ($testArgs + @('--verbose')) -Log $logPath -TimeoutSeconds 240

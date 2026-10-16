@@ -15,7 +15,7 @@ internal static partial class HardeningTests
     {
         TestRunner.Add("登录恢复", "本机 CDP 获取三平台凭据并保存作用域", TestLocalCdpCookies);
         TestRunner.Add("抖音弹幕", "抖音房间请求与验证码回退", TestDouyinRoomRecovery);
-        TestRunner.Add("核对表闭环", "本地数据面板缩放与窗口伸缩", TestLocalDataLayout);
+        TestRunner.AddDesktop("核对表闭环", "本地数据面板缩放与窗口伸缩", TestLocalDataLayout);
         TestRunner.Add("核对表闭环", "升级保留旧收藏与历史路径", TestLegacyUserData);
         TestRunner.Add("核对表闭环", "Cookie URL 作用域和重定向", TestCookieUrlScope);
         TestRunner.Add("核对表闭环", "真实 HTTP 重定向逐跳重选 Cookie", TestScopedHttpRedirects);
@@ -56,7 +56,17 @@ internal static partial class HardeningTests
                     foreach (Size logical in new Size[] { new Size(700, 420), new Size(1100, 650), new Size(360, 320), new Size(700, 420) })
                     {
                         dialog.ClientSize = new Size((int)Math.Round(logical.Width * factor), (int)Math.Round(logical.Height * factor));
-                        dialog.PerformLayout(); actions.PerformLayout(); Application.DoEvents();
+                        // Dock + AutoSize can post another layout after the first message pump.
+                        // Compare steady layouts, rather than one transient frame under CPU load.
+                        string previous = null; int stable = 0;
+                        for (int pump = 0; pump < 40 && stable < 3; pump++)
+                        {
+                            dialog.PerformLayout(); actions.PerformLayout(); Application.DoEvents();
+                            string current = actions.Size + "/" + buttons[2].Top + "/" + info.Size;
+                            stable = current == previous ? stable + 1 : 0; previous = current;
+                            Thread.Sleep(5);
+                        }
+                        Check(stable >= 3, "异步布局在限定时间内稳定");
                         string context = "DPI=" + factor + " 窗口=" + logical;
                         Rectangle available = info.Parent.DisplayRectangle;
                         Check(info.Visible && info.Width > 0 && info.Height >= (int)(70 * factor), context + "：正文确实可见，有可滚动阅读空间（高度=" + info.Height + "）");
@@ -87,7 +97,7 @@ internal static partial class HardeningTests
                             }
                             else
                                 Check(buttons[2].Top == defaultButtonTop && actions.Height == defaultToolbarHeight && info.Size == defaultInfoSize,
-                                    context + "：从窄窗口恢复后布局与原尺寸一致，不残留多余操作行");
+                                    context + "：从窄窗口恢复后布局与原尺寸一致，不残留多余操作行" + " expected=" + defaultButtonTop + "/" + defaultToolbarHeight + "/" + defaultInfoSize + " actual=" + buttons[2].Top + "/" + actions.Height + "/" + info.Size);
                         }
                     }
                     Check(info.ReadOnly && info.WordWrap && info.ScrollBars == ScrollBars.Vertical, "正文长文本自动换行并保留纵向滚动");
