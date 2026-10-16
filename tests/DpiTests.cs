@@ -222,6 +222,7 @@ internal static partial class HardeningTests
     }
     private static void TestDpiTextPixels()
     {
+        Directory.CreateDirectory(Path.Combine(SourceRoot, "artifacts", "dpi-preview"));
         using (Bitmap source = new Bitmap(3, 3, PixelFormat.Format32bppPArgb))
         using (Bitmap output = new Bitmap(10, 10, PixelFormat.Format32bppPArgb))
         using (Graphics graphics = Graphics.FromImage(output))
