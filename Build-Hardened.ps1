@@ -138,25 +138,14 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logPath = Join-Path $logDir ('offline-tests-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
 $testArgs = @('--exe', $exe, '--src', $root)
 if ($Report) { $testArgs += @('--report', $Report) }
-$testOut = & $testExe @testArgs 2>&1
-$testExit = $LASTEXITCODE
-$testOut | Out-File -LiteralPath $logPath -Encoding utf8
+. (Join-Path $root 'tools/Invoke-BoundedProcess.ps1')
+Invoke-BoundedProcess -FilePath $testExe -Arguments ($testArgs + @('--verbose')) -Log $logPath -TimeoutSeconds 240
+$testOut = @(Get-Content -LiteralPath $logPath -Encoding utf8)
 $testOut | ForEach-Object { Write-Output $_ }
-if ($testExit -ne 0) {
-    $firstFail = @($testOut | Select-String -Pattern '^FAIL' | Select-Object -First 1)
-    $failedCases = @($testOut | Select-String -Pattern '^FAILED-CASE:')
-    Write-Output ''
-    Write-Output ('离线测试失败（exit=' + $testExit + '）')
-    if ($firstFail.Count -gt 0) { Write-Output ('  第一条失败： ' + $firstFail[0].Line) }
-    foreach ($line in $failedCases) { Write-Output ('  ' + $line.Line) }
-    Write-Output ('  完整日志： ' + $logPath)
-    throw "离线测试失败：$testExit"
-}
 Write-Output ('离线测试日志： ' + $logPath)
 
 & (Join-Path $root 'tests\Test-PackageCredentials.ps1')
 & (Join-Path $root 'tests\Test-ReleaseAssets.ps1')
 
-$selfTest = Start-Process -WindowStyle Hidden -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru
-if ($selfTest.ExitCode -ne 0) { throw "启动器自检失败：$($selfTest.ExitCode)" }
+Invoke-BoundedProcess -FilePath $exe -Arguments @('--self-test') -Log (Join-Path $logDir 'selftest-process.log') -TimeoutSeconds 30
 Write-Output '开发版编译、离线测试、自检均通过。'
