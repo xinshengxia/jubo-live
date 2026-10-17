@@ -101,7 +101,7 @@ internal static partial class LiveHub
                     sources.Add(new { index = "current:" + (++index), url = source.url, title = source.title, retrieved_at = source.retrieved_at, excerpt = source.excerpt });
                     if (sources.Count >= 5) break;
                 }
-                rows.Add(new { platform = candidate.platform, display_name = candidate.display_name, category = candidate.category, description = candidate.description, live_title = candidate.live_title, account_id = candidate.account_id,
+                rows.Add(new { platform = candidate.platform, display_name = candidate.display_name, follower_count = candidate.follower_count, category = candidate.category, description = candidate.description, live_title = candidate.live_title, account_id = candidate.account_id,
                     sec_uid = candidate.sec_uid, account_handle = candidate.account_handle, profile_url = candidate.profile_url,
                     room_id = candidate.room_id, session_room_id = candidate.session_room_id, room_url = candidate.room_url,
                     sources = sources, match_reasons = candidate.match_reasons, platform_update = candidate.platform_update });

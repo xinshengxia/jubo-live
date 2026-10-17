@@ -19,7 +19,7 @@ internal static partial class LiveHub
                     : new LookupService().Search("douyin", keyword, false, false, cancel.Token, delegate { });
             var rows = new List<Dictionary<string, object>>();
             if (result != null) foreach (var candidate in result.candidates)
-                rows.Add(new Dictionary<string, object> { { "display_name", candidate.display_name }, { "sec_uid", candidate.sec_uid },
+                rows.Add(new Dictionary<string, object> { { "display_name", candidate.display_name }, { "follower_count", candidate.follower_count }, { "sec_uid", candidate.sec_uid },
                     { "account_handle", candidate.account_handle }, { "account_id", candidate.account_id }, { "profile_url", candidate.profile_url },
                     { "room_id", candidate.room_id }, { "verification", candidate.verification }, { "source", candidate.source } });
             report["candidates"] = rows; report["candidate_count"] = rows.Count;

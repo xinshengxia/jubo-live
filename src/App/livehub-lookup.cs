@@ -52,6 +52,8 @@ internal static partial class LiveHub
         public bool account_verified { get; set; }
         public string resolution_path { get; set; }
         public string live_status { get; set; }
+        // 平台返回的粉丝/关注数（纯数字文本）。null = 平台没有返回，绝不由别名或房间推测。
+        public string follower_count { get; set; }
         public bool user_confirmed { get; set; }
         public bool direct_input { get; set; }
         public LookupCandidate()
@@ -61,7 +63,9 @@ internal static partial class LiveHub
         public override string ToString()
         {
             return (display_name ?? account_handle ?? account_id ?? sec_uid ?? "待确认账号") + "  ·  "
-                + Platforms.Name(platform) + "  ·  " + (room_id ?? "直播间待解析") + "  ·  " + LookupData.State(verification);
+                + Platforms.Name(platform) + "  ·  " + (room_id ?? "直播间待解析")
+                + (string.IsNullOrEmpty(follower_count) ? "" : "  ·  粉丝 " + LookupDiscovery.FollowerText(follower_count))
+                + "  ·  " + LookupData.State(verification);
         }
     }
 
@@ -120,6 +124,14 @@ internal static partial class LiveHub
             catch (Exception) { throw new LookupFailure("format", "服务返回的内容格式无法解析。"); }
         }
         internal static bool Digits(string value) { return value != null && Regex.IsMatch(value, @"^[0-9]{1,24}$"); }
+        // 粉丝量只接受平台直接返回的纯数字；0、缺失和非数字都不写入，展示层不得据此推断。
+        internal static void Followers(LookupCandidate candidate, string value)
+        {
+            if (candidate == null || string.IsNullOrWhiteSpace(value)) return;
+            long parsed;
+            if (!long.TryParse(value.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out parsed) || parsed <= 0) return;
+            candidate.follower_count = parsed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
         internal static string State(string value)
         {
             return value == "verified" ? "账号与房间已核验" : value == "account-only" ? "找到账号，房间待解析" : value == "blocked" ? "核验受阻" : value == "mismatch" ? "身份不符" : "待核验";

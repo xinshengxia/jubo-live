@@ -436,6 +436,7 @@ internal static partial class LiveHub
                 + (candidate.platform == "douyin" ? "\r\n抖音号：" + (candidate.account_handle ?? "尚未取得") : "")
                 + "\r\n直播链接：" + (candidate.verification == "verified" ? candidate.room_url : "尚未解析并核验")
                 + "\r\n直播状态：" + (candidate.live_status == "live" ? "核验时正在直播" : candidate.live_status == "offline" ? "核验时未开播（房间链接仍可收藏）" : "尚未确定") + "；当前状态以启动器为准。"
+                + "\r\n粉丝量：" + (candidate.follower_count == null ? "平台未提供" : LookupDiscovery.FollowerDetail(candidate.follower_count))
                 + (candidate.platform == "douyin" ? "\r\n账号资料：" + (candidate.account_verified ? "已核实平台身份" : "待核实")
                     + "\r\n解析路径：" + DouyinResolution(candidate.resolution_path) : "")
                 + "\r\n内容分类：" + (candidate.category ?? "平台未提供")

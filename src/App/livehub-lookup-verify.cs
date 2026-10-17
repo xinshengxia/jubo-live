@@ -246,6 +246,7 @@ internal static partial class LiveHub
             {
                 if (item.account_id != candidate.account_id || !LookupData.Digits(item.room_id)) continue;
                 candidate.room_id = item.room_id; candidate.room_url = item.room_url;
+                if (candidate.follower_count == null) LookupData.Followers(candidate, item.follower_count);
                 foreach (LookupSource source in item.sources) if (!candidate.sources.Exists(delegate(LookupSource s) { return s.url == source.url; })) candidate.sources.Add(source);
                 return;
             }
@@ -285,10 +286,12 @@ internal static partial class LiveHub
                 if (LookupData.Digits(candidate.account_id))
                 {
                     var profileRoot = LookupData.Json(Get("https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + candidate.account_id, token).Body);
-                    var info = LookupData.Obj(LookupData.Obj(profileRoot, "data"), "info"); string uid = LookupData.Text(info, "uid");
+                    var profileData = LookupData.Obj(profileRoot, "data");
+                    var info = LookupData.Obj(profileData, "info"); string uid = LookupData.Text(info, "uid");
                     if (uid != null && uid != candidate.account_id) throw new LookupFailure("mismatch", "B站账号资料返回了不同账号。");
                     candidate.account_verified = LookupData.Text(profileRoot, "code") == "0" && uid == candidate.account_id;
                     if (candidate.account_verified) { candidate.display_name = LookupData.Text(info, "uname") ?? candidate.display_name; Metadata(candidate, info); }
+                    LookupData.Followers(candidate, LookupData.Text(profileData, "follower_num"));
                     candidate.profile_url = "https://space.bilibili.com/" + candidate.account_id;
                 }
                 throw new LookupFailure("no-room", "已保留B站账号，平台暂未返回数字直播间。");
@@ -554,6 +557,9 @@ internal static partial class LiveHub
             string description = First(row, "signature", "sign", "introduction", "description", "desc");
             string title = First(row, "title", "room_name", "live_intro", "introduction");
             string avatar = First(row, "face", "uface", "avatar180", "game_avatarUrl180", "game_avatarUrl52", "avatarUrl", "avatar", "avatar_thumb", "logo", "owner_avatar");
+            // 四个平台各自公开的粉丝字段：B站 attentions/attention/follower_num、虎牙 game_activityCount/fans、
+            // 斗鱼 fansNum/followerCount、抖音 follower_count。只写入平台真实返回的纯数字。
+            string followers = First(row, "attentions", "attention", "follower_count", "follower_num", "fansNum", "followerCount", "fans", "game_activityCount");
             if (!string.IsNullOrWhiteSpace(category)) candidate.category = LookupDiscovery.Clean(category);
             if (!string.IsNullOrWhiteSpace(description)) candidate.description = LookupDiscovery.Clean(description);
             if (!string.IsNullOrWhiteSpace(title)) candidate.live_title = LookupDiscovery.Clean(title);
@@ -564,6 +570,7 @@ internal static partial class LiveHub
                 else if (avatar.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) avatar = "https://" + avatar.Substring(7);
                 candidate.avatar_url = avatar;
             }
+            if (!string.IsNullOrWhiteSpace(followers)) LookupData.Followers(candidate, followers);
         }
         private static string First(Dictionary<string, object> row, params string[] keys)
         {

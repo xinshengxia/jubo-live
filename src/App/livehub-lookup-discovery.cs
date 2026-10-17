@@ -104,12 +104,36 @@ internal static partial class LiveHub
         {
             return value == "supported" ? "线索更相符" : value == "conflict" ? "线索有冲突" : "身份待辨认";
         }
+        // 粉丝量格式化只用于展示。展示层不估算、不合并、不把在线人气当粉丝。
+        internal static string FollowerText(string value)
+        {
+            long count;
+            if (!TryFollowers(value, out count)) return null;
+            if (count >= 100000000L) return (count / 100000000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "亿";
+            if (count >= 10000L) return (count / 10000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "万";
+            return count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        internal static string FollowerDetail(string value)
+        {
+            long count;
+            if (!TryFollowers(value, out count)) return null;
+            return FollowerText(value) + "（" + count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "）";
+        }
+        private static bool TryFollowers(string value, out long count)
+        {
+            count = 0;
+            return !string.IsNullOrWhiteSpace(value)
+                && long.TryParse(value.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out count)
+                && count > 0;
+        }
         internal static string Summary(LookupCandidate candidate)
         {
             string facts = !string.IsNullOrWhiteSpace(candidate.relevance_note) ? candidate.relevance_note
                 : candidate.match_reasons != null && candidate.match_reasons.Length > 0 ? candidate.match_reasons[0] : "请选择查看账号与来源";
             return (string.IsNullOrWhiteSpace(candidate.category) ? "" : candidate.category + " · ")
-                + (candidate.room_id == null ? "房间待解析" : "房间 " + candidate.room_id) + " · " + Clean(facts);
+                + (candidate.room_id == null ? "房间待解析" : "房间 " + candidate.room_id)
+                + (string.IsNullOrEmpty(candidate.follower_count) ? "" : " · 粉丝 " + FollowerText(candidate.follower_count))
+                + " · " + Clean(facts);
         }
         internal static string Recovery(string code, bool ai)
         {

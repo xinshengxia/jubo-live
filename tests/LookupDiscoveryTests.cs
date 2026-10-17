@@ -15,6 +15,46 @@ internal static partial class HardeningTests
         TestRunner.Add("主播查询改进", "账号保留、房间续查与收藏权限分阶段", TestLookupAccountStages);
         TestRunner.Add("主播查询改进", "刷新真实控件与独立来源摘录", TestLookupDiscoveryUi);
         TestRunner.Add("主播查询改进", "全平台结果筛选、迟到核验隔离及AI跨平台置顶", TestLookupResultFilters);
+        TestRunner.Add("主播查询改进", "四平台粉丝量解析、核验更新与展示", TestLookupFollowers);
+    }
+    private static void TestLookupFollowers()
+    {
+        object verifier = LookupNew("LookupVerifier");
+        LookupDelegate(verifier, "Transport", delegate(object[] args) {
+            string url = (string)args[0];
+            if (url.EndsWith("/nav")) return LookupReply(200, "{\"data\":{\"wbi_img\":{\"img_url\":\"https://i0.hdslb.com/01234567890123456789012345678901.png\",\"sub_url\":\"https://i0.hdslb.com/abcdefghijklmnopqrstuvwxyzabcdef.png\"}}}", null);
+            if (url.Contains("/wbi/search/type?")) return LookupReply(200, "{\"code\":0,\"data\":{\"result\":[{\"uname\":\"B站主播\",\"roomid\":456,\"uid\":123,\"attentions\":590776,\"area_name\":\"游戏\"}]}}", null);
+            if (url.StartsWith("https://search.cdn.huya.com/")) return LookupReply(200, "{\"responseHeader\":{\"status\":\"0\"},\"response\":{\"1\":{\"docs\":[{\"game_nick\":\"虎牙主播\",\"room_id\":789,\"uid\":456,\"game_activityCount\":14512}]}}}", null);
+            if (url.Contains("/japi/search/api/searchUser")) return LookupReply(200, "{\"error\":0,\"data\":{\"relateUser\":[{\"anchorInfo\":{\"nickName\":\"斗鱼主播\",\"rid\":321,\"uid\":654,\"fansNum\":5102}}]}}", null);
+            if (url.Contains("/room/v1/Room/get_info")) return LookupReply(200, "{\"code\":0,\"data\":{\"room_id\":456,\"uid\":123,\"area_name\":\"游戏\",\"live_status\":0,\"attention\":600000}}", null);
+            if (url.Contains("/live_user/v1/Master/info")) return LookupReply(200, "{\"code\":0,\"data\":{\"follower_num\":600000,\"info\":{\"uid\":123,\"uname\":\"B站主播\"}}}", null);
+            if (url == "https://www.huya.com/789") return LookupReply(200, "var TT_PROFILE_INFO={\"profileRoom\":789,\"lp\":456,\"nick\":\"虎牙主播\",\"fans\":4321};", null);
+            throw new Exception("粉丝量用例出现未约定的请求：" + url);
+        });
+        object bili = ((IList)LookupGet(LookupCall(verifier, "SearchNative", "bili", "主播", CancellationToken.None), "candidates"))[0];
+        Check((string)LookupGet(bili, "follower_count") == "590776", "B站官方搜索的 attentions 作为粉丝量");
+        object huya = ((IList)LookupGet(LookupCall(verifier, "SearchNative", "huya", "主播", CancellationToken.None), "candidates"))[0];
+        Check((string)LookupGet(huya, "follower_count") == "14512", "虎牙官方搜索的 game_activityCount 作为粉丝量");
+        object douyu = ((IList)LookupGet(LookupCall(verifier, "SearchNative", "douyu", "主播", CancellationToken.None), "candidates"))[0];
+        Check((string)LookupGet(douyu, "follower_count") == "5102", "斗鱼官方搜索的 fansNum 作为粉丝量");
+        Type discovery = LookupType("LookupDiscovery");
+        object copy = LookupCall(LookupType("LookupData"), "Copy", douyu);
+        Check((string)LookupGet(copy, "follower_count") == "5102", "搜索缓存序列化保留粉丝量");
+        string summary = (string)LookupCall(discovery, "Summary", douyu);
+        Check(summary.Contains("粉丝 5102") && ((string)LookupCall(douyu, "ToString")).Contains("粉丝 5102"), "候选摘要与详情首行显示粉丝量");
+        Check((string)LookupCall(discovery, "FollowerText", "590776") == "59.1万", "大数按万格式化且只保留一位小数");
+        Check((string)LookupCall(discovery, "FollowerText", "7831300") == "783.1万", "百万级粉丝仍以万为单位");
+        Check((string)LookupCall(discovery, "FollowerText", "123456789") == "1.2亿", "亿级粉丝换算为亿");
+        Check((string)LookupCall(discovery, "FollowerText", "5102") == "5102", "小数粉丝原样显示");
+        Check(LookupCall(discovery, "FollowerText", "0") == null && LookupCall(discovery, "FollowerText", "abc") == null
+            && LookupCall(discovery, "FollowerText", new object[] { null }) == null, "0、缺失和非数字都不当作粉丝量");
+        Check((string)LookupCall(discovery, "FollowerDetail", "590776") == "59.1万（590,776）", "详情同时显示格式化值与精确值");
+        object biliVerified = LookupCall(verifier, "Verify", bili, CancellationToken.None);
+        Check((string)LookupGet(biliVerified, "follower_count") == "600000", "B站房间接口 attention 作为核验后粉丝量");
+        object huyaVerified = LookupCall(verifier, "Verify", huya, CancellationToken.None);
+        Check((string)LookupGet(huyaVerified, "follower_count") == "4321", "虎牙核验页返回更新的 fans 时覆盖搜索值");
+        LookupSet(huya, "follower_count", null);
+        Check(!((string)LookupCall(discovery, "Summary", huya)).Contains("粉丝"), "平台没有返回粉丝量时摘要不编造");
     }
     private static void TestLookupAllPlatforms()
     {

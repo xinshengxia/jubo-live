@@ -9,8 +9,8 @@ internal static partial class HardeningTests
     private static string DouyinSearchFixture()
     {
         return "{\"status_code\":0,\"myself_user_id\":\"private-current-user\",\"extra\":{\"token\":\"private-response-token\"},\"user_list\":["
-            + "{\"user_info\":{\"uid\":9007199254740993,\"sec_uid\":\"MS4wLjAAA_first\",\"nickname\":\"同名主播\",\"unique_id\":\"first.id\",\"signature\":\"游戏简介\",\"room_id\":\"999\",\"avatar_thumb\":{\"url_list\":[\"https://p3.douyinpic.com/avatar.jpg\"]}}},"
-            + "{\"user_info\":{\"uid\":\"22\",\"sec_uid\":\"MS4wLjAAA_second\",\"nickname\":\"同名主播\",\"unique_id\":\"second\"}},"
+            + "{\"user_info\":{\"uid\":9007199254740993,\"sec_uid\":\"MS4wLjAAA_first\",\"nickname\":\"同名主播\",\"unique_id\":\"first.id\",\"signature\":\"游戏简介\",\"follower_count\":590776,\"room_id\":\"999\",\"avatar_thumb\":{\"url_list\":[\"https://p3.douyinpic.com/avatar.jpg\"]}}},"
+            + "{\"user_info\":{\"uid\":\"22\",\"sec_uid\":\"MS4wLjAAA_second\",\"nickname\":\"同名主播\",\"unique_id\":\"second\",\"follower_count\":14512}},"
             + "{\"user_info\":{\"uid\":\"22\",\"sec_uid\":\"MS4wLjAAA_second\",\"nickname\":\"重复账号\"}},"
             + "{\"user_info\":{\"uid\":1.25,\"sec_uid\":\"MS4wLjAAA_third\",\"nickname\":\"第三个\"}},"
             + "{\"user_info\":{\"sec_uid\":\"bad/identity\",\"nickname\":\"无效\"}}]}";
@@ -41,6 +41,8 @@ internal static partial class HardeningTests
         Check((string)LookupGet(first, "account_id") == "9007199254740993", "JSON 整数 ID 超过 2^53 仍无浮点精度损失");
         Check((string)LookupGet(first, "account_handle") == "first.id", "保留含点的有效抖音号");
         Check((string)LookupGet(first, "description") == "游戏简介" && ((string)LookupGet(first, "avatar_url")).EndsWith("avatar.jpg"), "映射公开简介和头像");
+        Check((string)LookupGet(first, "follower_count") == "590776", "抖音用户搜索的 follower_count 作为粉丝量");
+        Check((string)LookupGet(rows[0], "follower_count") == "14512", "同名候选分别保留各自的粉丝量");
         Check(LookupGet(rows[2], "account_id") == null, "拒绝浮点账号 ID，不静默截断");
         foreach (object c in rows) {
             Check(LookupGet(c, "room_id") == null && LookupGet(c, "session_room_id") == null, "搜索里的账号与内部场次不能冒充数字直播房间");
