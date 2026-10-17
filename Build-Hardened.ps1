@@ -127,7 +127,8 @@ if ($LASTEXITCODE -ne 0) { throw "启动器编译失败：$LASTEXITCODE" }
 Write-Output ('编译完成：' + $exe)
 
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($testExe)) | Out-Null
-& $compiler /nologo /target:exe /optimize+ "/out:$testExe" @testSource
+Copy-Item -LiteralPath (Join-Path $root 'app.config') -Destination ($testExe + '.config') -Force
+& $compiler /nologo /target:exe /optimize+ "/win32manifest:$root\app.manifest" "/out:$testExe" @testSource
 if ($LASTEXITCODE -ne 0) { throw "测试程序编译失败：$LASTEXITCODE" }
 
 # 离线回归（2026-09-27 改造，评估报告 §2）：

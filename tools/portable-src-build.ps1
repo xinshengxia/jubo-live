@@ -35,7 +35,8 @@ $arguments = @('/nologo','/target:winexe','/optimize+',('/out:' + $exe),('/win32
 Invoke-BoundedProcess -FilePath $compiler -Arguments $arguments -Log (Join-Path $Workspace 'compile.log') -TimeoutSeconds 120
 $testExe = Join-Path $output 'tests/HardeningTests.exe'
 $testSources = @(Get-ChildItem -LiteralPath (Join-Path $root 'tests') -Filter '*.cs' -File | ForEach-Object FullName)
-Invoke-BoundedProcess -FilePath $compiler -Arguments (@('/nologo','/target:exe','/optimize+',('/out:' + $testExe)) + $testSources) -Log (Join-Path $Workspace 'test-compile.log') -TimeoutSeconds 120
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app.config') -Destination ($testExe + '.config')
+Invoke-BoundedProcess -FilePath $compiler -Arguments (@('/nologo','/target:exe','/optimize+',('/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')),('/out:' + $testExe)) + $testSources) -Log (Join-Path $Workspace 'test-compile.log') -TimeoutSeconds 120
 Invoke-BoundedProcess -FilePath $testExe -Arguments @('--exe',$exe,'--src',$sourceView,'--report',(Join-Path $Workspace 'tests.json')) -Log (Join-Path $Workspace 'tests.log') -TimeoutSeconds 300
 Invoke-BoundedProcess -FilePath $exe -Arguments @('--self-test') -Log (Join-Path $Workspace 'selftest.log') -TimeoutSeconds 30
 $target = Join-Path $root '看直播.exe'

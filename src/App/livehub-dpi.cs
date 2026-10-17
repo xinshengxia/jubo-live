@@ -9,11 +9,14 @@ using System.Windows.Forms;
 internal class DpiForm : Form
 {
     private const int WmDpiChanged = 0x02E0;
+    private const int WmGetDpiScaledSize = 0x02E4;
     private readonly List<Metric> metrics = new List<Metric>();
     private readonly List<Font> ownedFonts = new List<Font>();
     private readonly Dictionary<string, Font> fontCache = new Dictionary<string, Font>();
     private Size designMinimum;
     private bool initialized, applying, preparing;
+    private bool updatingDpi, processingDpiMessage;
+    private SizeF logicalClientSize;
     internal float RenderScale = 1f;
     internal event EventHandler DpiUpdated;
     internal bool ApplyingDpi { get { return applying || preparing; } }
@@ -25,6 +28,9 @@ internal class DpiForm : Form
     [StructLayout(LayoutKind.Sequential)] private struct MinMaxInfo
     { public NativePoint Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool AdjustWindowRectExForDpi(ref NativeRect rect, int style, bool menu, int exStyle, uint dpi);
+    [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    [DllImport("user32.dll")] private static extern IntPtr GetMenu(IntPtr hwnd);
 
     private sealed class Metric
     {
@@ -77,6 +83,25 @@ internal class DpiForm : Form
         base.OnLoad(e);
     }
 
+    protected override void OnClientSizeChanged(EventArgs e)
+    {
+        base.OnClientSizeChanged(e);
+        // Retain the user's logical size, not intermediate DPI/scrollbar sizes.
+        // A work-area clamp must not become the basis for the return transition.
+        if (initialized && !updatingDpi && !processingDpiMessage && !applying && !preparing
+            && WindowState == FormWindowState.Normal && RenderScale > 0
+            && (syntheticDpi || WindowDpi(this) == (int)Math.Round(RenderScale * 96)))
+            logicalClientSize = new SizeF(ClientSize.Width / RenderScale, ClientSize.Height / RenderScale);
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        // Form.WndProc has already synchronized its DeviceDpi. Keep its event,
+        // but cancel the framework's geometry/font scaling: ApplyDpi owns it.
+        e.Cancel = true;
+        base.OnDpiChanged(e);
+    }
+
     internal void InitializeDpi()
     {
         if (initialized) return;
@@ -119,8 +144,17 @@ internal class DpiForm : Form
     internal void ApplyDpi(int dpi, bool fit, Rectangle? suggested)
     {
         if (applying || IsDisposed) return;
+        bool wasUpdating = updatingDpi;
+        updatingDpi = true;
+        try { ApplyDpiCore(dpi, fit, suggested); }
+        finally { updatingDpi = wasUpdating; }
+    }
+
+    private void ApplyDpiCore(int dpi, bool fit, Rectangle? suggested)
+    {
         if (!initialized)
         {
+            logicalClientSize = new SizeF(ClientSize.Width / RenderScale, ClientSize.Height / RenderScale);
             preparing = true; SuspendLayout();
             try
             {
@@ -139,8 +173,6 @@ internal class DpiForm : Form
                 scrollPositions[scroll] = new Point(-scroll.AutoScrollPosition.X, -scroll.AutoScrollPosition.Y);
         }
         float next = Math.Max(0.5f, Math.Min(10f, dpi / 96f));
-        Size logicalClient = new Size((int)Math.Round(ClientSize.Width / RenderScale),
-            (int)Math.Round(ClientSize.Height / RenderScale));
         applying = true; SuspendLayout();
         try
         {
@@ -209,7 +241,7 @@ internal class DpiForm : Form
             if (fit) minimum = new Size(Math.Min(minimum.Width, work.Width), Math.Min(minimum.Height, work.Height));
             MinimumSize = minimum;
             if (suggested.HasValue) Bounds = suggested.Value;
-            else ClientSize = ScaleSize(logicalClient, next);
+            else ClientSize = ClientSizeAtDpi(dpi);
             if (fit)
             {
                 Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
@@ -237,6 +269,33 @@ internal class DpiForm : Form
         ApplyDpi(dpi, false, null);
     }
 
+    private Size ClientSizeAtDpi(int dpi)
+    {
+        return new Size(Math.Max(1, (int)Math.Round(logicalClientSize.Width * dpi / 96d)),
+            Math.Max(1, (int)Math.Round(logicalClientSize.Height * dpi / 96d)));
+    }
+
+    private Size WindowSizeAtDpi(int dpi)
+    {
+        Size client = ClientSizeAtDpi(dpi);
+        CreateParams cp = CreateParams;
+        var rect = new NativeRect { Right = client.Width, Bottom = client.Height };
+        try
+        {
+            if (AdjustWindowRectExForDpi(ref rect, cp.Style, GetMenu(Handle) != IntPtr.Zero, cp.ExStyle, (uint)dpi))
+            {
+                int width = rect.Right - rect.Left, height = rect.Bottom - rect.Top;
+                // AdjustWindowRectExForDpi excludes standard scrollbars.
+                if ((cp.Style & 0x00200000) != 0) width += GetSystemMetricsForDpi(2, (uint)dpi);
+                if ((cp.Style & 0x00100000) != 0) height += GetSystemMetricsForDpi(3, (uint)dpi);
+                return new Size(width, height);
+            }
+        }
+        catch (EntryPointNotFoundException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+        catch (DllNotFoundException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+        return SizeFromClientSize(client);
+    }
+
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == 0x24 && syntheticDpi)
@@ -246,13 +305,28 @@ internal class DpiForm : Form
             limits.MaxTrackSize.X = limits.MaxTrackSize.Y = 32767;
             Marshal.StructureToPtr(limits, m.LParam, false); return;
         }
+        if (m.Msg == WmGetDpiScaledSize && initialized && !syntheticDpi && WindowState == FormWindowState.Normal)
+        {
+            int dpi = Math.Max(48, Math.Min(960, (int)m.WParam.ToInt64()));
+            Size size = WindowSizeAtDpi(dpi);
+            Marshal.StructureToPtr(new NativePoint { X = size.Width, Y = size.Height }, m.LParam, false);
+            m.Result = new IntPtr(1); return;
+        }
         if (m.Msg == WmDpiChanged && syntheticDpi) { m.Result = IntPtr.Zero; return; }
         if (m.Msg == WmDpiChanged && initialized && !applying)
         {
             int dpi = (int)(m.WParam.ToInt64() & 0xffff);
             NativeRect r = (NativeRect)Marshal.PtrToStructure(m.LParam, typeof(NativeRect));
-            ApplyDpi(dpi, FitWorkingArea, Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom));
-            QueueDpiReconcile();
+            processingDpiMessage = true;
+            try
+            {
+                // Synchronize framework DPI state even though our override cancels
+                // its resizing. Older framework/OS paths still use the explicit work.
+                base.WndProc(ref m);
+                ApplyDpi(dpi, FitWorkingArea, Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom));
+                QueueDpiReconcile();
+            }
+            finally { processingDpiMessage = false; }
             m.Result = IntPtr.Zero;
             return;
         }
@@ -270,7 +344,11 @@ internal class DpiForm : Form
             {
                 reconcileQueued = false;
                 if (!IsDisposed && IsHandleCreated)
-                    ApplyDpi(WindowDpi(this), FitWorkingArea, null);
+                {
+                    int dpi = WindowDpi(this);
+                    if (dpi != (int)Math.Round(RenderScale * 96)) ApplyDpi(dpi, FitWorkingArea, null);
+                    else { PerformLayout(); Invalidate(true); }
+                }
             });
         }
         catch (InvalidOperationException ex) { reconcileQueued = false; System.Diagnostics.Debug.WriteLine(ex.Message); }

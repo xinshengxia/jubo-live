@@ -16,6 +16,8 @@ internal static partial class HardeningTests
         TestRunner.Add("高分屏", "重复DPI更新与滚动条不会失效或递归重建", TestDpiFontAndScrollbarLifetime);
         TestRunner.Add("高分屏", "文字像素原样贴图与实心字芯", TestDpiTextPixels);
         TestRunner.Add("高分屏", "在飞弹幕换屏后重建位图并释放旧租约", TestDpiFlyingCache);
+        TestRunner.Add("高分屏", "原生DPI消息同步框架状态且不重复缩放字体", TestFrameworkDpiTransition);
+        TestRunner.Add("高分屏", "客户区尺寸协商和用户调整后的倍率往返稳定", TestDpiClientSizeRoundTrip);
     }
     private static void SetDpi(Form form, int dpi)
     {
