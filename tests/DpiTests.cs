@@ -18,6 +18,7 @@ internal static partial class HardeningTests
         TestRunner.Add("高分屏", "在飞弹幕换屏后重建位图并释放旧租约", TestDpiFlyingCache);
         TestRunner.Add("高分屏", "原生DPI消息同步框架状态且不重复缩放字体", TestFrameworkDpiTransition);
         TestRunner.Add("高分屏", "客户区尺寸协商和用户调整后的倍率往返稳定", TestDpiClientSizeRoundTrip);
+        TestRunner.Add("高分屏", "DPI后原生滚动条与实际布局同步且保留必要滚动", TestDpiNativeScrollbarReconcile);
     }
     private static void SetDpi(Form form, int dpi)
     {

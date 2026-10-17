@@ -31,6 +31,8 @@ internal class DpiForm : Form
     [DllImport("user32.dll")] private static extern bool AdjustWindowRectExForDpi(ref NativeRect rect, int style, bool menu, int exStyle, uint dpi);
     [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
     [DllImport("user32.dll")] private static extern IntPtr GetMenu(IntPtr hwnd);
+    [DllImport("user32.dll", EntryPoint="GetWindowLongW")] private static extern int GetWindowStyle(IntPtr hwnd, int index);
+    [DllImport("user32.dll")] private static extern bool ShowScrollBar(IntPtr hwnd, int bar, bool show);
 
     private sealed class Metric
     {
@@ -260,6 +262,24 @@ internal class DpiForm : Form
             if (!entry.Key.IsDisposed && entry.Value != Point.Empty)
                 entry.Key.AutoScrollPosition = new Point(Scale(entry.Value.X, next / previousScale), Scale(entry.Value.Y, next / previousScale));
         Invalidate(true);
+        SynchronizeNativeScrollbars(this);
+    }
+
+    private static void SynchronizeNativeScrollbars(Control root)
+    {
+        ScrollableControl scroll = root as ScrollableControl;
+        if (scroll != null && scroll.AutoScroll && scroll.IsHandleCreated && !scroll.IsDisposed)
+        {
+            // Child DPI messages can leave native styles out of sync with the
+            // completed AutoScroll layout. Preserve whichever bars layout needs.
+            int style = GetWindowStyle(scroll.Handle, -16);
+            if (((style & 0x00100000) != 0) != scroll.HorizontalScroll.Visible)
+                ShowScrollBar(scroll.Handle, 0, scroll.HorizontalScroll.Visible);
+            style = GetWindowStyle(scroll.Handle, -16);
+            if (((style & 0x00200000) != 0) != scroll.VerticalScroll.Visible)
+                ShowScrollBar(scroll.Handle, 1, scroll.VerticalScroll.Visible);
+        }
+        foreach (Control child in root.Controls) SynchronizeNativeScrollbars(child);
     }
 
     private bool syntheticDpi;
@@ -347,7 +367,7 @@ internal class DpiForm : Form
                 {
                     int dpi = WindowDpi(this);
                     if (dpi != (int)Math.Round(RenderScale * 96)) ApplyDpi(dpi, FitWorkingArea, null);
-                    else { PerformLayout(); Invalidate(true); }
+                    else { PerformLayout(); SynchronizeNativeScrollbars(this); Invalidate(true); }
                 }
             });
         }

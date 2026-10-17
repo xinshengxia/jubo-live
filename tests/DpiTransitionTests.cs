@@ -10,6 +10,7 @@ internal static partial class HardeningTests
     [StructLayout(LayoutKind.Sequential)] private struct TransitionSize { public int Width, Height; }
     [DllImport("user32.dll")] private static extern bool AdjustWindowRectExForDpi(ref AuditRect rect, int style, bool menu, int exStyle, uint dpi);
     [DllImport("user32.dll", EntryPoint="GetWindowLongW")] private static extern int TransitionWindowStyle(IntPtr hwnd, int index);
+    [DllImport("user32.dll")] private static extern bool ShowScrollBar(IntPtr hwnd, int bar, bool show);
 
     private static Form TransitionForm()
     {
@@ -101,6 +102,29 @@ internal static partial class HardeningTests
                         Check(form.Bounds==bounds,"同倍率延迟复核不改窗口外框");
                     }
                 }
+            }
+        });
+    }
+
+    private static void TestDpiNativeScrollbarReconcile()
+    {
+        WithTransitionThread(delegate
+        {
+            using(Form form=TransitionForm())
+            using(var panel=new Panel {AutoScroll=true,Bounds=new Rectangle(0,0,600,300),AutoScrollMinSize=new Size(0,900)})
+            {
+                form.Controls.Add(panel); IntPtr handle=panel.Handle; panel.PerformLayout();
+                Check(!panel.HorizontalScroll.Visible && panel.VerticalScroll.Visible,"合成面板只需纵向滚动");
+                ShowScrollBar(handle,0,true);
+                Check((TransitionWindowStyle(handle,-16)&0x00100000)!=0,"复现原生横向条残留");
+                form.GetType().GetMethod("QueueDpiReconcile",ReviewInstance).Invoke(form,null); Application.DoEvents();
+                Check((TransitionWindowStyle(handle,-16)&0x00100000)==0,"延迟复核移除布局不需要的原生横向条");
+                Check((TransitionWindowStyle(handle,-16)&0x00200000)!=0,"保留必要纵向滚动");
+                panel.AutoScrollMinSize=new Size(1200,900); panel.PerformLayout();
+                Check(panel.HorizontalScroll.Visible,"宽内容确实需要横向滚动");
+                ShowScrollBar(handle,0,false);
+                form.GetType().GetMethod("QueueDpiReconcile",ReviewInstance).Invoke(form,null); Application.DoEvents();
+                Check((TransitionWindowStyle(handle,-16)&0x00100000)!=0,"必要横向滚动仍可恢复，未一律隐藏");
             }
         });
     }
