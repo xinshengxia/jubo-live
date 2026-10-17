@@ -2,6 +2,18 @@
   "schema": "livehub-third-party-sources/1",
   "reviewedOn": "2026-10-13",
   "scope": "License verification snapshots, not assertions of the original adoption revisions",
+  "protocolReferences": [
+    {
+      "repository": "xfgryujk/blivedm",
+      "revision": "3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6",
+      "usage": "Gift, guard and interaction message fields, including protobuf field numbers; no Python code port",
+      "files": [
+        {"path": "blivedm/models/web.py", "sha256": "77C2FA23448555EB2036160B4B52CB179E78F5C5B40EE359D33244D65446006D"},
+        {"path": "blivedm/models/pb.py", "sha256": "C8D9E31BA7B4E62E8302BB900FF3FB3EA46E62E9F98BD80577C3D68AB089C811"}
+      ],
+      "licensePath": "licenses/blivedm-LICENSE.txt"
+    }
+  ],
   "components": [
     {
       "name": "douyinLive",

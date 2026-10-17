@@ -81,6 +81,8 @@ internal static partial class HardeningTests
 
         // ---- ④ 渲染器端到端：真起一条弹幕，清空缓存再画一帧 ----
         object config = Activator.CreateInstance(configType);
+        configType.GetField("SmoothDanmaku").SetValue(config, false);
+        configType.GetField("QueueWaitMs").SetValue(config, 0);
         object renderer = Activator.CreateInstance(rendererType, new object[] { config });
         rendererType.GetMethod("Resize").Invoke(renderer, new object[] { 1280, 700 });
         object item = Activator.CreateInstance(itemType);

@@ -119,12 +119,15 @@ internal sealed class DanmakuTextCache
     private readonly Dictionary<string, SharedBitmap> _items = new Dictionary<string, SharedBitmap>();
     private readonly List<string> _order = new List<string>();
     private const int Capacity = 600;
+    private const long MaxCacheBytes = 32L * 1024 * 1024;
+    private long _cacheBytes;
 
     /// 当前缓存里几张（测试用）。
     internal int Count { get { return _items.Count; } }
 
     /// 彩色 emoji 开关（来自配置）。关掉就走「Segoe UI Emoji 单色字形」那条老路。
     public bool ColorEmoji = true;
+    public string BorderStyle = "outline";
 
     /// 当前房间的平台表情字典（B站 `[大笑]` 这类）。换房间要连同 Clear() 一起换。
     public EmoticonDictionary Emoticons;
@@ -138,6 +141,7 @@ internal sealed class DanmakuTextCache
     public SharedBitmap Get(string text, Color color, float fontSize, string fontFamily, bool stroke, int strokeWidth)
     {
         if (text == null) text = "";
+        text = LimitText(text, Math.Max(32, Math.Min(2048, (int)(8000f / Math.Max(8f, fontSize)) + 8)));
         // 先分段、再解析图片 —— 因为缓存 key 必须包含「图片有没有下载好」：
         // 否则第一帧（图还没到）渲染出的「纯文本兜底」会被缓存住，图片下载完也永远不会出现。
         List<Segment> segments = Split(text, fontFamily, ColorEmoji, Emoticons);
@@ -146,15 +150,18 @@ internal sealed class DanmakuTextCache
         {
             string key = text + "\u0001" + color.ToArgb() + "\u0001" + ((int)(fontSize * 10))
                 + "\u0001" + fontFamily + "\u0001" + stroke + "\u0001" + strokeWidth + "\u0001" + ColorEmoji
-                + "\u0001" + ImageSignature(segments, images);
+                + "\u0001" + ImageSignature(segments, images) + "\u0001" + BorderStyle;
             SharedBitmap cached;
             if (_items.TryGetValue(key, out cached)) return cached.Acquire();
 
-            Bitmap bitmap = RenderSegments(segments, images, color, fontSize, fontFamily, stroke, strokeWidth);
+            Bitmap bitmap = RenderSegments(segments, images, color, fontSize, fontFamily, stroke,
+                EffectiveStroke(strokeWidth, BorderStyle), BorderStyle);
             SharedBitmap shared = new SharedBitmap(bitmap);
+            shared.Acquire(); // 先借出，超大单条即使立刻被缓存淘汰也仍有效。
             _items[key] = shared;
             _order.Add(key);
-            while (_order.Count > Capacity)
+            _cacheBytes += (long)bitmap.Width * bitmap.Height * 4;
+            while (_order.Count > Capacity || _cacheBytes > MaxCacheBytes)
             {
                 // 淘汰 = 「缓存不再持有」，**不是** Dispose：还在被借着的（正在飞的弹幕、正在显示的 SC）
                 // 继续有效，等它们 Release 之后才真正释放（见 SharedBitmap）。
@@ -164,16 +171,26 @@ internal sealed class DanmakuTextCache
                 if (_items.TryGetValue(oldest, out victim))
                 {
                     _items.Remove(oldest);
+                    _cacheBytes -= (long)victim.Bitmap.Width * victim.Bitmap.Height * 4;
                     victim.DropFromCache();
                 }
             }
-            return shared.Acquire();
+            return shared;
         }
         finally
         {
             // 表情图只在这次渲染里用了一下，就地还掉（缓存自己那一份仍在缓存手里）
             ReleaseAll(images);
         }
+    }
+
+    internal static string LimitText(string text, int length)
+    {
+        if (text == null) return "";
+        if (text.Length <= length) return text;
+        int end = Math.Max(1, length - 1);
+        if (char.IsHighSurrogate(text[end - 1])) end--;
+        return text.Substring(0, end) + "…";
     }
 
     private static void ReleaseAll(SharedBitmap[] images)
@@ -410,14 +427,27 @@ internal sealed class DanmakuTextCache
         }
     }
 
+    internal static int TextPadding(float fontSize, bool stroke, int strokeWidth)
+    {
+        float penWidth = strokeWidth * Math.Max(1f, fontSize * 0.05f);
+        return stroke ? Math.Max(strokeWidth + 2, (int)Math.Ceiling(penWidth / 2f) + 2) : 2;
+    }
+
+    internal static int EffectiveStroke(int width, string style)
+    { return style == "heavy" ? Math.Max(2, width * 2) : style == "shadow" ? Math.Max(2, width) : width; }
+
     private static Bitmap RenderSegments(List<Segment> segments, SharedBitmap[] images,
         Color color, float fontSize, string fontFamily, bool stroke, int strokeWidth)
+    { return RenderSegments(segments, images, color, fontSize, fontFamily, stroke, strokeWidth, "outline"); }
+
+    private static Bitmap RenderSegments(List<Segment> segments, SharedBitmap[] images,
+        Color color, float fontSize, string fontFamily, bool stroke, int strokeWidth, string style)
     {
         float emojiSize = fontSize * 1.18f;
         // 平台表情图片的高度。比 emojiSize 略大一点：那些图自带留白，跟文字并排时
         // 按 1.18 会显得比汉字矮一截（emojiSize 是对着精灵图的紧密裁切调的）。
-        float imageSize = fontSize * 1.30f;
-        int padding = stroke ? strokeWidth + 2 : 2;
+        float imageSize = fontSize * 1.25f;
+        int padding = TextPadding(fontSize, stroke, strokeWidth);
 
         // ---- 量一遍：总宽 + 行高 ----
         float totalWidth = 0f, lineHeight = 0f;
@@ -434,7 +464,7 @@ internal sealed class DanmakuTextCache
                     float h = imageSize;
                     float w = images[i].Bitmap.Width * (h / Math.Max(1, images[i].Bitmap.Height));
                     if (w < 1f) w = 1f;
-                    if (w > imageSize * 4f) w = imageSize * 4f;   // 极端长条图截断宽度
+                    if (w > imageSize * 4f) { h *= imageSize * 4f / w; w = imageSize * 4f; }
                     sizes[i] = new SizeF(w, h);
                 }
                 else if (segment.IsEmoji)
@@ -503,7 +533,17 @@ internal sealed class DanmakuTextCache
                                     new PointF(x, y), format);
                                 // 描边宽度**必须随字号缩放**：固定 2px 在 24px 字号下会把汉字笔画之间的缝填满，
                                 // 整个字糊成一块色块（实测踩过）。
-                                using (Pen pen = new Pen(Color.FromArgb(255, 0, 0, 0), penWidth))
+                                if (style == "shadow")
+                                {
+                                    using (GraphicsPath shadow = (GraphicsPath)path.Clone())
+                                    using (Matrix offset = new Matrix())
+                                    using (SolidBrush black = new SolidBrush(Color.FromArgb(225, 0, 0, 0)))
+                                    {
+                                        float shift = Math.Max(1f, fontSize * 0.05f);
+                                        offset.Translate(shift, shift); shadow.Transform(offset); g.FillPath(black, shadow);
+                                    }
+                                }
+                                else using (Pen pen = new Pen(Color.FromArgb(255, 0, 0, 0), penWidth))
                                 {
                                     pen.LineJoin = LineJoin.Round;
                                     g.DrawPath(pen, path);
@@ -531,6 +571,7 @@ internal sealed class DanmakuTextCache
         foreach (SharedBitmap shared in _items.Values) shared.DropFromCache();
         _items.Clear();
         _order.Clear();
+        _cacheBytes = 0;
     }
 }
 
@@ -836,8 +877,10 @@ internal sealed class FlyingDanmaku
     public float X;
     public float Y;
     public float Width;
+    public float VisualWidth;
     public float Height;
-    public float EmoteBox;     // 表情弹幕的图片边长（0 = 不是表情）
+    public float EmoteBox;     // 表情图片高度（0 = 不是表情）；宽度独立按原图比例计算
+    public float EmoteWidth;
     public float Speed;        // px/s，向左
     public int Track;
     public bool Fixed;         // 顶部 / 底部
@@ -849,30 +892,39 @@ internal sealed class FlyingDanmaku
     public Color TextColor;
     public float FontSize;
     public bool EmoteSettled;  // 图片已全部就位（或本来就没表情）→ 不必再检查
+    public DateTime CreatedAt;
+    public int RepeatCount = 1;
+    public bool VisualDirty;
+    public float AppliedMergeScale = 1f;
+    public float DensityScale = 1f;
 }
 
 // --------------------------------------------------------------------------------------------
 // 弹幕调度 + 绘制
 // --------------------------------------------------------------------------------------------
-internal sealed class DanmakuRenderer : IDisposable
+internal sealed partial class DanmakuRenderer : IDisposable
 {
     private readonly DanmakuConfig _config;
     private readonly DanmakuTextCache _textCache = new DanmakuTextCache();
     private readonly DanmakuImageCache _imageCache = new DanmakuImageCache();
     private readonly List<FlyingDanmaku> _flying = new List<FlyingDanmaku>();
     private readonly List<SuperChatItem> _superChats = new List<SuperChatItem>();
-    private readonly Dictionary<string, DateTime> _recent = new Dictionary<string, DateTime>();
+    private readonly Dictionary<string, FlyingDanmaku> _recent = new Dictionary<string, FlyingDanmaku>();
+    private readonly Dictionary<string, float> _counterWidths = new Dictionary<string, float>();
 
-    private FlyingDanmaku[] _trackLast = new FlyingDanmaku[0];
+    private int _trackCount;
     private float _trackHeight = 33f;
     private float _duration = 8f;      // 一条弹幕从右边缘到完全离开左边缘的秒数（B站 是固定时长，不是固定速度）
     private float _uiScale = 1f;       // 画面越大字越大：clientHeight / ScaleReferenceHeight
     private float _lineFactor = 1.33f;  // 位图高度 / 字号（resize 时实测，用来卡字号上限）
     private float _maxSize = 60f;       // 单条弹幕的最大字号，保证位图不超过一条轨道
-    internal int DroppedCount;          // 因为没有空闲轨道而丢掉的条数（重叠换来的可读性不值）
-    private int _width = 1280;
-    private int _height = 720;
+    internal int DroppedCount;          // 空间不足或不支持的模式而舍弃的条数
+    private int _width;
+    private int _height;
     private int _areaHeight = 720;
+    private bool _layoutDirty = true;
+    private bool _configChanged = true;
+    private RectangleF _scReserved = RectangleF.Empty;
 
     public string TransientText;
     public DateTime TransientUntil = DateTime.MinValue;
@@ -880,6 +932,8 @@ internal sealed class DanmakuRenderer : IDisposable
     public DanmakuRenderer(DanmakuConfig config)
     {
         _config = config;
+        _textCache.ColorEmoji = config.ShowColorEmoji;
+        _textCache.BorderStyle = config.BorderStyle;
         // 平台表情图片复用现有的图片缓存（下载 + LRU）—— 这样一条表情在多条弹幕之间只下载一次。
         // TryGet 在没下载好时返回 null 并**顺手踢一次下载**，正是我们想要的语义。
         _textCache.EmoticonImage = delegate (string url) { return _imageCache.TryGet(url); };   // 借出的一份由调用方 Release
@@ -893,13 +947,17 @@ internal sealed class DanmakuRenderer : IDisposable
     {
         _textCache.Emoticons = emoticons;
         _textCache.Clear();
+        foreach (FlyingDanmaku flying in _flying) flying.VisualDirty = true;
     }
 
     public int ActiveCount { get { return _flying.Count; } }
     public void Dispose()
     {
         foreach (FlyingDanmaku flying in _flying) if (flying.Handle != null) flying.Handle.Release();
-        _flying.Clear(); _textCache.Clear(); _imageCache.Dispose(); _superChats.Clear();
+        _flying.Clear(); _recent.Clear(); _textCache.Clear(); _imageCache.Dispose(); _superChats.Clear();
+        DisposeFeatures();
+        if (_measureGraphics != null) { _measureGraphics.Dispose(); _measureGraphics = null; }
+        if (_measureBitmap != null) { _measureBitmap.Dispose(); _measureBitmap = null; }
     }
     public int SuperChatActiveCount { get { return _superChats.Count; } }
     public float UiScale { get { return _uiScale; } }
@@ -915,10 +973,17 @@ internal sealed class DanmakuRenderer : IDisposable
     /// 配置被热重载时调用：字号 / 行距 / 速度 / 区域都要重算，缓存的文字位图作废。
     public void ApplyConfig()
     {
-        _width = 0;
-        _height = 0;
+        _configChanged = true;
+        _layoutDirty = true;
+        _recent.Clear();
+        _counterWidths.Clear();
+        foreach (SuperChatItem item in _superChats) item.CachedHeight = 0f;
         _textCache.ColorEmoji = _config.ShowColorEmoji;
+        _textCache.BorderStyle = _config.BorderStyle;
         _textCache.Clear();
+        ResetFeatures();
+        for (int i = _flying.Count - 1; i >= 0; i--)
+            if (IsBlocked(_flying[i].Source)) { ForgetFlying(i); _stats.ReflowRemoved++; }
     }
 
     private int _displayDpi = 96;
@@ -938,41 +1003,26 @@ internal sealed class DanmakuRenderer : IDisposable
     {
         if (width < 16) width = 16;
         if (height < 16) height = 16;
-        if (width == _width && height == _height && !_displayChanged) return;
-        int previousWidth = _width, previousHeight = _height;
-        bool displayChanged = _displayChanged; _displayChanged = false;
+        if (width == _width && height == _height && !_displayChanged && !_configChanged) return;
+        int previousWidth = _width;
+        float previousDuration = _duration;
+        _displayChanged = false;
+        _configChanged = false;
         _width = width;
         _height = height;
-        _areaHeight = Math.Max(24, (int)(height * _config.DisplayAreaPercent / 100.0));
+        _areaHeight = Math.Min(height, Math.Max(24, (int)(height * _config.DisplayAreaPercent / 100.0)));
         // 防挡字幕（B站 同名选项）：底部留 20% 不放弹幕，给字幕和播放器 UI 让位。
         // mpv 的字幕默认贴在画面底部，弹幕压上去会看不清 —— 所以这一项默认开。
         if (_config.AntiBlockSubtitle && _config.DisplayAreaPercent > 40)
-            _areaHeight = Math.Max(24, (int)(_areaHeight * 0.8));
+            _areaHeight = Math.Min(height, Math.Max(24, (int)(_areaHeight * 0.8)));
         // 字号随播放画面等比缩放：画面越高字越大，弹幕相对画面的观感才恒定。
         // 基准默认 720 —— 也就是「25px 标准字号是 720p 下的观感」。
-        float previousScale = _uiScale;
         _uiScale = _config.ScaleWithWindow
             ? (float)height / Math.Max(180, _config.ScaleReferenceHeight)
             : _displayDpi / 96f;
         if (_uiScale < 0.45f) _uiScale = 0.45f;
         if (_uiScale > 4.5f) _uiScale = 4.5f;
-        if (displayChanged || Math.Abs(_uiScale - previousScale) > 0.001f)
-        {
-            _textCache.Clear();
-            float ratio = _uiScale / Math.Max(0.01f, previousScale);
-            foreach (FlyingDanmaku f in _flying)
-            {
-                f.FontSize *= ratio; f.EmoteBox *= ratio;
-                SharedBitmap fresh = _textCache.Get(f.Label, f.TextColor, f.FontSize,
-                    _config.FontFamily, _config.StrokeEnabled, _config.StrokeWidth);
-                SharedBitmap old = f.Handle; f.Handle = fresh;
-                if (old != null) old.Release();
-                f.Width = fresh.Bitmap.Width + f.EmoteBox;
-                f.Height = Math.Max(fresh.Bitmap.Height, f.EmoteBox);
-                if (previousWidth > 0) f.X *= (float)width / previousWidth;
-                if (previousHeight > 0) f.Y *= (float)height / previousHeight;
-            }
-        }
+        _textCache.Clear();
         // B站 的弹幕是**固定时长**穿过整屏（所以越长的弹幕跑得越快），速度设置改的是这个时长。
         // 实测这样出来的观感才像 B站；用固定像素速度会让长弹幕显得拖沓。
         _duration = 8f / (_config.SpeedPercent / 100f);
@@ -981,7 +1031,8 @@ internal sealed class DanmakuRenderer : IDisposable
         // 踩过：先用 baseSize*1.32 估，但 GDI+ 实测行高约是字号的 1.33 倍、再加描边内边距，
         // 结果**正常字号的弹幕位图就已经比轨道高** → 上下两轨天然重叠 2~3px。
         // emoji 框比字更高，所以取两者较大值。
-        int pad = _config.StrokeEnabled ? _config.StrokeWidth + 2 : 2;
+        int pad = DanmakuTextCache.TextPadding(BaseFontSize(), _config.StrokeEnabled,
+            DanmakuTextCache.EffectiveStroke(_config.StrokeWidth, _config.BorderStyle));
         float textBox;
         using (Bitmap probe = new Bitmap(1, 1))
         using (Graphics measure = Graphics.FromImage(probe))
@@ -989,182 +1040,297 @@ internal sealed class DanmakuRenderer : IDisposable
             textBox = measure.MeasureString("汉Hg", font).Height + pad * 2f;
         _lineFactor = textBox / Math.Max(1f, BaseFontSize());     // 位图高度 ≈ 字号 × 这个系数
         float emojiBox = BaseFontSize() * 1.18f + 6f;
-        _trackHeight = Math.Max(textBox, emojiBox) * (_config.LineGapPercent / 100f);
+        _trackHeight = (float)Math.Ceiling(Math.Max(textBox, emojiBox)) * Math.Max(1f, _config.LineGapPercent / 100f);
         // 单条弹幕的字号上限：服务端可能给更大字号（B站 的舰长弹幕等），照单全收就会比轨道高、
         // 压到上下两轨上。这里压到「位图正好装得进一条轨道」为止。
         _maxSize = _trackHeight / Math.Max(1.05f, _lineFactor);
         if (_maxSize < 10f) _maxSize = 10f;
         int tracks = (int)Math.Floor(_areaHeight / _trackHeight);
-        if (tracks < 1) tracks = 1;
+        if (tracks < 0) tracks = 0;
         if (tracks > 60) tracks = 60;
-        _trackLast = new FlyingDanmaku[tracks];
+        _trackCount = tracks;
+        foreach (FlyingDanmaku f in _flying)
+        {
+            float oldRemaining = f.Speed < 0f ? (previousWidth - f.X) / Math.Max(1f, -f.Speed)
+                : (f.X + f.Width) / Math.Max(1f, f.Speed);
+            float progress = previousWidth > 0 && !f.Fixed
+                ? 1f - oldRemaining / Math.Max(0.01f, previousDuration) : 0f;
+            RefreshFlying(f, _config.EnlargeMergedDanmaku ? Math.Min(f.AppliedMergeScale, MergeScale(MergeLevel(f.RepeatCount))) : 1f);
+            f.X = f.Fixed ? Math.Max(0f, (_width - f.Width) / 2f)
+                : f.Source.Mode == 6 ? -f.Width + progress * (_width + f.Width)
+                : _width - progress * (_width + f.Width);
+        }
+        _layoutDirty = true;
+        EnsureLayout();
     }
 
     public void ShowTransient(string text)
     {
         TransientText = text;
-        TransientUntil = DateTime.UtcNow.AddSeconds(2.2);
+        TransientUntil = Now.AddSeconds(2.2);
     }
 
     // ---------------------------------------------------------------- 过滤
     public bool IsBlocked(DanmakuItem item)
     {
-        if (!_config.Enabled) return true;
-        if (item.UserLevel < _config.MinUserLevel) return true;
-        if (_config.MinMedalLevel > 0 && item.MedalLevel < _config.MinMedalLevel) return true;
-        string text = item.Text == null ? "" : item.Text;
-        for (int i = 0; i < _config.BlockUsers.Length; i++)
-        {
-            string rule = _config.BlockUsers[i];
-            if (rule == null || rule.Length == 0) continue;
-            if (item.UserName != null && item.UserName.IndexOf(rule, StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-        }
-        for (int i = 0; i < _config.BlockKeywords.Length; i++)
-        {
-            string rule = _config.BlockKeywords[i];
-            if (rule == null || rule.Length == 0) continue;
-            if (rule.StartsWith("re:", StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    if (System.Text.RegularExpressions.Regex.IsMatch(text, rule.Substring(3),
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)) return true;
-                }
-                catch (Exception) { }
-            }
-            else if (text.IndexOf(rule, StringComparison.OrdinalIgnoreCase) >= 0) return true;
-        }
-        return false;
-    }
-
-    /// 断线重连后服务端可能补发；同一内容 5 秒内只显示一条。
-    private bool IsDuplicate(DanmakuItem item)
-    {
-        DateTime now = DateTime.UtcNow;
-        if (_recent.Count > 400) _recent.Clear();
-        string key = item.Text;
-        DateTime last;
-        if (_recent.TryGetValue(key, out last) && (now - last).TotalSeconds < 5) return true;
-        _recent[key] = now;
-        return false;
+        return IsBlockedByRules(item);
     }
 
     // ---------------------------------------------------------------- 入队
-    public void AddDanmaku(DanmakuItem item)
+    public void AddDanmaku(DanmakuItem item) { ReceiveDanmaku(item); }
+
+    private bool TryAdmit(DanmakuItem item, string key, int count)
     {
-        if (_flying.Count >= _config.MaxOnScreen) return;
-        if (_config.BlockDuplicate && IsDuplicate(item)) return;
-
-        float baseSize = BaseFontSize();
-        float size = item.FontSize > 0
-            ? item.FontSize * (_config.FontScalePercent / 100f) * _uiScale
-            : baseSize;
-        if (size < 8f) size = baseSize;
-        if (size > _maxSize) size = _maxSize;     // 别超过一条轨道的高度，否则会压到上下轨
-
-        float emoteBox = 0f;
-        Color color = ColorFromInt(item.Color);
-        if (item.IsEmoticon && _config.ShowEmoticon)
-        {
-            emoteBox = size * 1.7f;
-            SharedBitmap kick = _imageCache.TryGet(item.EmoticonUrl);   // 只是踢一次下载
-            if (kick != null) kick.Release();                          // 借出来的那份当场还
-        }
-        string label = BuildLabel(item, true);
-        if (label.Length == 0) label = " ";
-        SharedBitmap bitmap = _textCache.Get(label, color, size, _config.FontFamily,
-            _config.StrokeEnabled, _config.StrokeWidth);
-
+        if (_width == 0) Resize(1280, 720);
+        EnsureLayout();
+        if (_flying.Count >= _config.MaxOnScreen) return false;
         FlyingDanmaku flying = new FlyingDanmaku();
         flying.Source = item;
-        flying.Handle = bitmap;        // 借出的一份：这条弹幕摘掉时还（ForgetFlying）
-        flying.EmoteBox = emoteBox;
-        flying.Width = bitmap.Bitmap.Width + emoteBox;
-        flying.Height = Math.Max(bitmap.Bitmap.Height, emoteBox);
-        // 记下重取位图所需的一切 + 先判断一次「有没有表情图还没下载好」。
-        // 有的话这一帧画出来的是文字兜底，等图到了要补画（见 Draw 里的逻辑）。
-        flying.Label = label;
-        flying.TextColor = color;
-        flying.FontSize = size;
-        flying.EmoteSettled = !_textCache.HasPendingImage(label, _config.FontFamily);
-
-        if (item.Mode == 4 || item.Mode == 5)
+        flying.CreatedAt = Now;
+        flying.RepeatCount = count;
+        flying.Fixed = item.Mode == 4 || item.Mode == 5;
+        int densityBudget = Math.Max(1, Math.Min(_config.MaxOnScreen, _trackCount * 2));
+        if (_config.ShrinkWhenCrowded && _flying.Count >= densityBudget * 0.8f && MessagePriority(item) < 2)
+            flying.DensityScale = _config.CrowdedScalePercent / 100f;
+        flying.FixedUntil = flying.CreatedAt.AddSeconds(4);
+        RefreshFlying(flying, 1f);
+        if (flying.Fixed && flying.Width > _width && _config.FixedOverflowToScroll && _config.ShowScrolling)
         {
-            flying.Fixed = true;
-            flying.FixedUntil = DateTime.UtcNow.AddSeconds(4);
-            flying.X = Math.Max(0f, (_width - flying.Width) / 2f);
-            int slot = FindFixedSlot(item.Mode);
-            flying.Track = slot;
-            float slotHeight = Math.Max(flying.Height, size * 1.5f);
-            flying.Y = item.Mode == 5
-                ? slot * slotHeight
-                : _areaHeight - (slot + 1) * slotHeight;
-            if (flying.Y < 0) flying.Y = 0;
+            flying.Source = item.Copy(); flying.Source.Mode = 1; flying.Fixed = false;
+            RefreshFlying(flying, 1f);
         }
-        else
+        flying.X = flying.Fixed ? Math.Max(0f, (_width - flying.Width) / 2f)
+            : item.Mode == 6 ? -flying.Width - 4f : _width + 4;
+        if (!PlaceFlying(flying, false))
         {
-            // 固定时长 → 越长的弹幕越快（和 B站 一致）
-            flying.Speed = (_width + flying.Width) / _duration;
-            int track = FindTrack(flying);
-            if (track < 0)
-            {
-                // 没有空闲轨道：丢弃，宁可少一条也不重叠。
-                // ⚠️ 必须把已经借出的位图还了 —— 2026-09-27 改成所有权模型时这里漏了，
-                //    而「轨道全忙」在热门房间是**常态**（DroppedCount 就是数它的），
-                //    漏还等于每丢一条就漏一张位图（不再崩，但会稳定积 GDI 对象）。
-                DroppedCount++;
-                ReleaseHandle(flying);
-                return;
-            }
-            flying.Track = track;
-            flying.X = _width + 4;
-            flying.Y = track * _trackHeight;
-            if (flying.Y + flying.Height > _areaHeight)
-                flying.Y = Math.Max(0f, _areaHeight - flying.Height);
-            if (track >= 0 && track < _trackLast.Length) _trackLast[track] = flying;
+            ReleaseHandle(flying);
+            return false;
         }
+        flying.VisualDirty = count > 1;
         _flying.Add(flying);
-    }
-
-    /// 找一条放得下的滚动轨道；**没有就返回 -1（调用方丢弃这条）**。
-    ///
-    /// 判据（和 B站 / danmaku2ass 一致）：① 该轨道上最后那条已经完全进入屏幕并留出间距；
-    /// ② 新的在旧的离开屏幕之前**不会追上**它。
-    ///
-    /// 追尾判据用**闭式解**而不是分情况讨论：
-    ///   新弹幕左边缘 x_new(t) = _width - cs·t，旧的右边缘 x_old(t) = lastRight - ls·t。
-    ///   要求在整个 [0, 旧的完全离开] 区间内 x_new(t) ≥ x_old(t) + gap。
-    ///   两者间距随时间单调收窄（当 cs > ls），最紧的时刻就是旧弹幕刚离开的瞬间 t* = lastRight / ls，
-    ///   此时 x_old = 0，于是条件化简成一行：  **cs · t* ≤ _width - gap**
-    /// （cs ≤ ls 时该式自然成立，不必特判。）
-    private int FindTrack(FlyingDanmaku candidate)
-    {
-        if (_trackLast.Length == 0) return 0;
-        const float gap = 14f;
-        for (int i = 0; i < _trackLast.Length; i++)
+        if (flying.DensityScale < 1f) _stats.Shrunk++;
+        _recent[key] = flying;
+        // 仅保留当前在屏弹幕的引用，避免长期运行积攒不同文本。
+        if (_recent.Count > 800)
         {
-            FlyingDanmaku last = _trackLast[i];
-            if (last == null) return i;
-            float lastRight = last.X + last.Width;
-            if (lastRight > _width - gap) continue;                 // 还没完全进来
-            float lastExitIn = lastRight / last.Speed;              // 旧的完全离开左边还要多久
-            if (candidate.Speed * lastExitIn > _width - gap) continue;   // 会追尾
-            return i;
+            List<string> expired = new List<string>();
+            foreach (KeyValuePair<string, FlyingDanmaku> entry in _recent)
+                if (entry.Value.Handle == null || (Now - entry.Value.CreatedAt).TotalMilliseconds >= _config.DuplicateWindowMs)
+                    expired.Add(entry.Key);
+            foreach (string oldKey in expired) _recent.Remove(oldKey);
         }
-        // 全忙 —— **丢掉这条，不硬塞**。
-        // 以前是「挑最闲的一条塞进去」，结果屏幕上叠成一团、整屏都读不了；
-        // 丢一条只少一条，B站 在弹幕密集时也是这么做的。
-        return -1;
+        return true;
     }
 
-    private int FindFixedSlot(int mode)
+    internal static string NormalizeMergeText(string text)
     {
-        int used = 0;
-        for (int i = 0; i < _flying.Count; i++)
-            if (_flying[i].Fixed && _flying[i].Source.Mode == mode && _flying[i].Track >= used)
-                used = _flying[i].Track + 1;
-        return used;
+        StringBuilder normalized = new StringBuilder();
+        bool space = false;
+        foreach (char original in text ?? "")
+        {
+            char value = original >= '\uFF01' && original <= '\uFF5E' ? (char)(original - 0xFEE0) : original;
+            if (char.IsWhiteSpace(value)) { space = normalized.Length > 0; continue; }
+            if (space) { normalized.Append(' '); space = false; }
+            normalized.Append(value);
+        }
+        return normalized.ToString();
+    }
+
+    // 本项目的分档热度设计：每翻倍增加一档，共五档；上限由配置和实际空间共同决定。
+    private int MergeLevel(int count)
+    {
+        if (!_config.EnlargeMergedDanmaku) return 0;
+        int level = 0;
+        while (count >= 2 && level < 5) { count /= 2; level++; }
+        return level;
+    }
+
+    private float MergeScale(int level)
+    { return 1f + (Math.Max(100, Math.Min(180, _config.MergedMaxScalePercent)) / 100f - 1f) * level / 5f; }
+
+    private float CounterWidth(float fontSize)
+    {
+        string key = ((int)(fontSize * 10)) + "\u0001" + _config.FontFamily + "\u0001"
+            + _config.StrokeEnabled + "\u0001" + _config.StrokeWidth + "\u0001" + _config.BorderStyle;
+        float width;
+        if (_counterWidths.TryGetValue(key, out width)) return width;
+        width = 0f;
+        for (char digit = '0'; digit <= '9'; digit++)
+        {
+            SharedBitmap sample = _textCache.Get(" ×" + new string(digit, 4), Color.White, fontSize,
+                _config.FontFamily, _config.StrokeEnabled, _config.StrokeWidth);
+            try { width = Math.Max(width, sample.Bitmap.Width); }
+            finally { sample.Release(); }
+        }
+        if (_counterWidths.Count > 64) _counterWidths.Clear();
+        _counterWidths[key] = width;
+        return width;
+    }
+
+    private void RefreshFlying(FlyingDanmaku flying, float mergeScale)
+    {
+        DanmakuItem item = flying.Source;
+        float size = (item.FontSize > 0 ? item.FontSize : 25f) * (_config.FontScalePercent / 100f) * _uiScale;
+        float densityScale = _config.ShrinkWhenCrowded ? flying.DensityScale : 1f;
+        flying.FontSize = Math.Max(8f, Math.Min(_maxSize, Math.Max(8f, size)) * densityScale) * mergeScale;
+        flying.AppliedMergeScale = mergeScale;
+        flying.TextColor = _rules.Any(item.Text, _config.HighlightKeywords) || item.Pinned
+            ? ColorFromInt(_config.HighlightColor) : ColorFromInt(item.Color);
+        flying.EmoteBox = flying.EmoteWidth = 0f;
+        bool imagePending = false;
+        bool imageReady = false;
+        if (item.IsEmoticon && _config.ShowEmoticon && !string.IsNullOrEmpty(item.EmoticonUrl))
+        {
+            float ratio = item.EmoticonWidth > 0 && item.EmoticonHeight > 0
+                ? (float)item.EmoticonWidth / item.EmoticonHeight : 1f;
+            SharedBitmap image = _imageCache.TryGet(item.EmoticonUrl);
+            if (image != null)
+            {
+                try { ratio = (float)image.Bitmap.Width / image.Bitmap.Height; imageReady = true; }
+                finally { image.Release(); }
+            }
+            else imagePending = true;
+            if (imageReady)
+            {
+                bool large = _config.EmoteSizeMode == "large" || (_config.EmoteSizeMode == "platform" && item.LargeEmoticon);
+                flying.EmoteBox = Math.Min(flying.FontSize * (large ? 1.8f : 1.25f),
+                    Math.Min(_areaHeight, _trackHeight * mergeScale * (large ? 2f : 1f)));
+                flying.EmoteWidth = Math.Min(_width * 0.5f, flying.EmoteBox * ratio);
+                flying.EmoteBox = flying.EmoteWidth / ratio;
+            }
+        }
+        // 大表情图片就绪后替代原文，避免图片和 [表情代码] 重复出现；下载中保留文字兜底。
+        string baseLabel = BuildLabel(item, !imageReady);
+        baseLabel = DanmakuTextCache.LimitText(baseLabel, Math.Max(16, Math.Min(1024, (int)(6000f / Math.Max(8f, flying.FontSize)))));
+        if (baseLabel.Length == 0) baseLabel = " ";
+        flying.Label = baseLabel;
+        if (flying.RepeatCount > 1) flying.Label += " ×" + flying.RepeatCount;
+        // 提前为数量标记留出宽度。拥挤时即使退回基础字号，计数增长也不会挤掉原来的弹幕。
+        float reservedWidth = 0f;
+        if (_config.BlockDuplicate || flying.RepeatCount > 1)
+        {
+            SharedBitmap body = _textCache.Get(baseLabel, flying.TextColor, flying.FontSize,
+                _config.FontFamily, _config.StrokeEnabled, _config.StrokeWidth);
+            try { reservedWidth = body.Bitmap.Width; }
+            finally { body.Release(); }
+            reservedWidth += CounterWidth(flying.FontSize);
+        }
+        SharedBitmap fresh = _textCache.Get(flying.Label, flying.TextColor, flying.FontSize,
+            _config.FontFamily, _config.StrokeEnabled, _config.StrokeWidth);
+        SharedBitmap old = flying.Handle; flying.Handle = fresh;
+        if (old != null) old.Release();
+        flying.VisualWidth = fresh.Bitmap.Width + flying.EmoteWidth;
+        flying.Width = Math.Max(fresh.Bitmap.Width, reservedWidth) + flying.EmoteWidth;
+        flying.Height = Math.Max(fresh.Bitmap.Height, flying.EmoteBox);
+        flying.Speed = flying.Fixed ? 0f : (item.Mode == 6 ? -1f : 1f) * (_width + flying.Width) / _duration;
+        flying.EmoteSettled = !imagePending && !_textCache.HasPendingImage(flying.Label, _config.FontFamily);
+        flying.VisualDirty = false;
+    }
+
+    private bool RefreshChangedFlying(FlyingDanmaku flying, float maxScale)
+    {
+        float x = flying.X;
+        float remaining = Remaining(flying, Now);
+        for (int level = MergeLevel(flying.RepeatCount); level >= 0; level--)
+        {
+            RefreshFlying(flying, Math.Min(maxScale, MergeScale(level)));
+            flying.X = flying.Fixed ? Math.Max(0f, (_width - flying.Width) / 2f) : x;
+            // 保持视觉左边缘和实际剩余时间，避免更新计数/图片时跳动或延长寿命。
+            if (!flying.Fixed && remaining > 0f) flying.Speed = flying.Source.Mode == 6
+                ? Math.Min(-1f, (flying.X - _width) / remaining)
+                : Math.Max(1f, (flying.X + flying.Width) / remaining);
+            if (PlaceFlying(flying, true)) return true;
+        }
+        return false;
+    }
+
+    // 在插入、图片变宽、缩放和 SC 布局变化时检查整个剩余飞行时间。
+    // 正常帧只移动/贴图；昂贵的重新排版只在几何变化时执行。
+    private float Remaining(FlyingDanmaku flying, DateTime now)
+    {
+        return flying.Fixed ? Math.Max(0f, (float)(flying.FixedUntil - now).TotalSeconds)
+            : flying.Speed < 0f ? Math.Max(0f, (_width - flying.X) / -flying.Speed)
+            : Math.Max(0f, (flying.X + flying.Width) / Math.Max(1f, flying.Speed));
+    }
+
+    private static bool PathsOverlap(float x, float width, float speed, float otherX,
+        float otherWidth, float otherSpeed, float seconds, float gap)
+    {
+        float start = x - otherX;
+        float end = start + (otherSpeed - speed) * seconds;
+        return !(Math.Min(start, end) >= otherWidth + gap
+            || Math.Max(start, end) + width + gap <= 0f);
+    }
+
+    private bool CanPlace(FlyingDanmaku candidate, float y)
+    {
+        if (y < 0f || y + candidate.Height > _areaHeight + 0.01f) return false;
+        if (candidate.Fixed && candidate.Width > _width) return false;
+        if (candidate.Fixed)
+        {
+            if (candidate.Source.Mode == 5 && y + candidate.Height > _areaHeight * _config.TopFixedZonePercent / 100f) return false;
+            if (candidate.Source.Mode == 4 && y < _areaHeight * (1f - _config.BottomFixedZonePercent / 100f)) return false;
+            if (_config.MaxFixedPerMode > 0)
+            {
+                int count = 0;
+                foreach (FlyingDanmaku other in _flying)
+                    if (!object.ReferenceEquals(other, candidate) && other.Fixed && other.Source.Mode == candidate.Source.Mode) count++;
+                if (count >= _config.MaxFixedPerMode) return false;
+            }
+        }
+        DateTime now = Now;
+        float life = Remaining(candidate, now);
+        if (HitsReservedArea(candidate, y, life)) return false;
+        if (!_scReserved.IsEmpty && y < _scReserved.Bottom && y + candidate.Height > _scReserved.Top
+            && PathsOverlap(candidate.X, candidate.Width, candidate.Speed,
+                _scReserved.X, _scReserved.Width, 0f, life, 8f * _uiScale)) return false;
+        foreach (FlyingDanmaku other in _flying)
+        {
+            if (object.ReferenceEquals(other, candidate) || y >= other.Y + other.Height
+                || y + candidate.Height <= other.Y) continue;
+            if (PathsOverlap(candidate.X, candidate.Width, candidate.Speed,
+                other.X, other.Width, other.Speed, Math.Min(life, Remaining(other, now)), 14f * _uiScale)) return false;
+        }
+        return true;
+    }
+
+    private bool PlaceFlying(FlyingDanmaku flying, bool keepTrack)
+    {
+        if (keepTrack && flying.Track >= 0 && flying.Track < _trackCount
+            && CanPlace(flying, flying.Track * _trackHeight))
+        {
+            flying.Y = flying.Track * _trackHeight;
+            return true;
+        }
+        bool bottom = flying.Fixed && flying.Source.Mode == 4;
+        for (int slot = 0; slot < _trackCount; slot++)
+        {
+            int track = bottom ? _trackCount - 1 - slot : slot;
+            float y = track * _trackHeight;
+            if (!CanPlace(flying, y)) continue;
+            flying.Track = track; flying.Y = y;
+            return true;
+        }
+        return false;
+    }
+
+    private void EnsureLayout()
+    {
+        RectangleF reserved = MeasureScReservation();
+        if (reserved != _scReserved) { _scReserved = reserved; _layoutDirty = true; }
+        PruneEvents(Now);
+        RectangleF events = MeasureEventReservation();
+        if (events != _eventReserved) { _eventReserved = events; _layoutDirty = true; }
+        if (!_layoutDirty) return;
+        _layoutDirty = false;
+        FlyingDanmaku[] active = _flying.ToArray();
+        _flying.Clear();
+        foreach (FlyingDanmaku flying in active)
+        {
+            if (PlaceFlying(flying, true) || (flying.RepeatCount > 1 && flying.AppliedMergeScale > 1f
+                && RefreshChangedFlying(flying, flying.AppliedMergeScale))) _flying.Add(flying);
+            else { DroppedCount++; _stats.ReflowRemoved++; ReleaseHandle(flying); }
+        }
     }
 
     private string BuildLabel(DanmakuItem item, bool includeText)
@@ -1229,42 +1395,31 @@ internal sealed class DanmakuRenderer : IDisposable
                 continue;
             }
             f.X -= f.Speed * dt;
-            if (f.X + f.Width < 0) ForgetFlying(i);
+            if (f.Speed < 0f ? f.X > _width : f.X + f.Width < 0f) ForgetFlying(i);
         }
         for (int i = _superChats.Count - 1; i >= 0; i--)
             if (now >= _superChats[i].ExpiresAt) _superChats.RemoveAt(i);
+        PruneEvents(now);
+        DrainAdmission(now);
     }
 
     // ---------------------------------------------------------------- 绘制
     public void Draw(Graphics g)
     {
+        EnsureLayout();
+        // 每条变更先尝试放大，空间不足则逐档回退；其余弹幕保留自己的位置。
         for (int i = 0; i < _flying.Count; i++)
         {
             FlyingDanmaku f = _flying[i];
-            // ⚠️ 「图到了补画一次」—— 用户反馈 `[虎年]` 一直显示成文字，根因就在这里：
-            //    位图是弹幕**创建时**渲染的，那一刻表情图片通常还没下载完 → 画成字面量，
-            //    而位图存在这条弹幕上、之后只 DrawImage 不重算 → **永远不会变成图片**。
-            //    所以只要还没就位，每帧问一次；一到位就重取位图换上。
-            if (!f.EmoteSettled && !_textCache.HasPendingImage(f.Label, _config.FontFamily))
-            {
-                SharedBitmap refreshed = _textCache.Get(f.Label, f.TextColor, f.FontSize,
-                    _config.FontFamily, _config.StrokeEnabled, _config.StrokeWidth);
-                if (refreshed != null && !object.ReferenceEquals(refreshed, f.Handle))
-                {
-                    SharedBitmap previous = f.Handle;
-                    f.Handle = refreshed;         // 借新的
-                    if (previous != null) previous.Release();   // 还旧的（这一条再也不用它了）
-                    f.Width = refreshed.Bitmap.Width + f.EmoteBox;
-                    f.Height = Math.Max(refreshed.Bitmap.Height, f.EmoteBox);
-                }
-                else if (refreshed != null)
-                {
-                    refreshed.Release();          // 同一张：多借的那份当场还掉
-                }
-                f.EmoteSettled = true;
-            }
+            if (!f.VisualDirty && f.EmoteSettled) continue;
+            if (!RefreshChangedFlying(f, 1.8f)) { DroppedCount++; ForgetFlying(i--); }
+        }
+        for (int i = 0; i < _flying.Count; i++)
+        {
+            FlyingDanmaku f = _flying[i];
             if (f.X > _width || f.X + f.Width < 0) continue;
-            float textX = f.X;
+            float contentX = f.X + (f.Fixed ? (f.Width - f.VisualWidth) / 2f : 0f);
+            float textX = contentX;
             // 兜底（不再是主要手段）：所有权已经保证「手里的位图一定有效」，
             // 这里只防 GDI+ 别的意外（显存不足之类）——**任何**一条弹幕画不出来都只丢它自己，
             // 不许把整帧 / 整个覆盖层带走。
@@ -1278,22 +1433,28 @@ internal sealed class DanmakuRenderer : IDisposable
                     {
                         float box = f.EmoteBox;
                         float top = f.Y + (f.Height - box) / 2f;
-                        g.DrawImage(emote.Bitmap, f.X, top, box, box);
+                        DrawTextBitmap(g, emote.Bitmap, contentX, top, f.EmoteWidth, box);
                     }
-                    textX += f.EmoteBox;
+                    textX += f.EmoteWidth;
                 }
-                TextBlit.Draw(g, f.Handle.Bitmap, textX, f.Y);
+                DrawTextBitmap(g, f.Handle.Bitmap, textX, f.Y + (f.Height - f.Handle.Bitmap.Height) / 2f,
+                    f.Handle.Bitmap.Width, f.Handle.Bitmap.Height);
             }
             catch (Exception ex)
             {
                 DropUndrawable(f, ex);
+                i--;
             }
             finally
             {
                 if (emote != null) emote.Release();     // 表情图这一帧用完就还
             }
         }
+        _scHits.Clear(); _scScrollable = false;
+        _scBarTrack = _scBarThumb = RectangleF.Empty;
+        if (_config.ScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
         if (_config.ScMode != "off") DrawSuperChats(g);
+        DrawLiveEvents(g);
         DrawTransient(g);
     }
 
@@ -1339,7 +1500,7 @@ internal sealed class DanmakuRenderer : IDisposable
 
     private void DrawTransient(Graphics g)
     {
-        if (TransientText == null || DateTime.UtcNow >= TransientUntil) return;
+        if (TransientText == null || Now >= TransientUntil) return;
         using (Font font = new Font(_config.FontFamily, 20f * _uiScale, FontStyle.Regular, GraphicsUnit.Pixel))
         using (SolidBrush brush = new SolidBrush(Color.FromArgb(235, 255, 255, 255)))
         using (SolidBrush back = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
@@ -1394,6 +1555,48 @@ internal sealed class DanmakuRenderer : IDisposable
     internal static float ScBadgeY(bool bottom, float height, float margin, float badgeHeight)
     {
         return bottom ? Math.Max(6f, height - margin - badgeHeight) : 12f;
+    }
+
+    // 与 DrawSuperChats 共用测量缓存和四角/滚动阈值规则。只保留实际可见卡片区域，
+    // 关闭点击不影响避让；折叠、移角、删除和到期会在下一次调度/绘制前更新。
+    private RectangleF MeasureScReservation()
+    {
+        if (_config.ScMode == "off" || _superChats.Count == 0 || _width == 0) return RectangleF.Empty;
+        float scale = _config.ScScalePercent / 100f * _uiScale;
+        float width = 270f * scale, margin = 10f * scale;
+        bool left = _config.ScCorner == "tl" || _config.ScCorner == "bl";
+        bool bottom = _config.ScCorner == "br" || _config.ScCorner == "bl";
+        float x = left ? margin : _width - width - margin;
+        if (_config.ScMode == "badge")
+            return new RectangleF(x - 4f, ScBadgeY(bottom, _height, margin, 40f * scale) - 12f,
+                width + 8f, 12f + 40f * scale);
+        float gap = 4f * scale, total = 0f, cap = 0f;
+        Graphics measure = MeasureGraphics();
+        for (int k = 0; k < _superChats.Count; k++)
+        {
+            SuperChatItem item = _superChats[_superChats.Count - 1 - k];
+            if (item.CachedHeight <= 0f || Math.Abs(item.CachedScale - scale) > 0.001f)
+            {
+                item.CachedHeight = _config.ScMode == "compact" ? MeasureScCompact(item, width, scale)
+                    : MeasureScFull(item, x, width, scale, measure);
+                item.CachedScale = scale;
+            }
+            total += item.CachedHeight + gap;
+            if (k < _config.ScMaxStack) cap = total;
+        }
+        float viewHeight = ScViewHeightFor(_superChats.Count, _config.ScMaxStack,
+            Math.Max(40f, _height - 12f - margin), cap);
+        float viewTop = ScViewTop(bottom, _height, margin, viewHeight);
+        float scroll = Math.Max(0f, Math.Min(_scScroll, Math.Max(0f, total - viewHeight)));
+        float cursor = ScContentTop(bottom, viewTop, viewHeight, total) - scroll;
+        float top = Math.Max(viewTop, cursor), end = Math.Min(viewTop + viewHeight, cursor + total);
+        RectangleF result = new RectangleF(x - 4f, top, width + 8f, Math.Max(0f, end - top));
+        if (total - viewHeight > 0.5f)
+        {
+            float barX = left ? x - 10f * scale : x + width + 2f * scale;
+            result = RectangleF.Union(result, new RectangleF(barX, viewTop, 8f * scale, viewHeight));
+        }
+        return result;
     }
 
     private void DrawSuperChats(Graphics g)
@@ -1504,6 +1707,7 @@ internal sealed class DanmakuRenderer : IDisposable
             cursor += h + gap;
         }
         g.Clip = saved;
+        saved.Dispose();
 
         if (_config.ScClickable && stackBottom > stackTop)
             AddScHit(new RectangleF(x, stackTop, width, stackBottom - stackTop), 0);
@@ -1624,11 +1828,15 @@ internal sealed class DanmakuRenderer : IDisposable
     }
 
     private Graphics _measureGraphics;
+    private Bitmap _measureBitmap;
 
     private Graphics MeasureGraphics()
     {
         if (_measureGraphics == null)
-            _measureGraphics = Graphics.FromImage(new Bitmap(1, 1, System.Drawing.Imaging.PixelFormat.Format32bppPArgb));
+        {
+            _measureBitmap = new Bitmap(1, 1, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            _measureGraphics = Graphics.FromImage(_measureBitmap);
+        }
         return _measureGraphics;
     }
 
@@ -1784,7 +1992,7 @@ internal sealed class DanmakuRenderer : IDisposable
             using (GraphicsPath path = Rounded(
                 new RectangleF(x, progressY, width, layout.ProgressHeight), layout.ProgressHeight / 2f))
             using (SolidBrush track = new SolidBrush(Color.White)) g.FillPath(track, path);
-            float remain = (float)Math.Max(0, (item.ExpiresAt - DateTime.UtcNow).TotalSeconds);
+            float remain = (float)Math.Max(0, (item.ExpiresAt - Now).TotalSeconds);
             float total = Math.Max(1f, item.DurationSec);
             float ratio = Math.Min(1f, remain / total);
             if (ratio > 0.001f)

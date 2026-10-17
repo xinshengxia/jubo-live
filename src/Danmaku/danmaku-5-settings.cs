@@ -52,7 +52,7 @@ internal sealed class DanmakuSettingsDialog
     private const int DialogWidth = 700;
     private const int Margin = 16;
     private const int ColumnWidth = 330;
-    private const int RowHeight = 30;          // 下拉行
+    private const int RowHeight = 28;          // 下拉行
     private const int CheckHeight = 26;        // 复选框行
     private const int ButtonStripHeight = 48;  // 底部按钮条
 
@@ -199,6 +199,22 @@ internal sealed class DanmakuSettingsDialog
         for (int i = 0; i < densityValues.Length; i++) density.Items.Add(densityLabels[i]);
         density.SelectedIndex = Math.Max(0, Array.IndexOf(densityValues, config.MaxOnScreen));
 
+        ComboBox duplicates = combo("重复弹幕");
+        duplicates.Name = "DuplicateMode";
+        duplicates.Items.AddRange(new object[] { "逐条显示", "仅合并计数", "合并并适度放大" });
+        duplicates.SelectedIndex = !config.BlockDuplicate ? 0 : config.EnlargeMergedDanmaku ? 2 : 1;
+        ComboBox duplicateWindow = combo("合并时间");
+        duplicateWindow.Name = "DuplicateWindow";
+        int[] duplicateWindows = new int[] { 3000, 5000, 8000, 10000 };
+        foreach (int milliseconds in duplicateWindows) duplicateWindow.Items.Add((milliseconds / 1000) + " 秒");
+        int duplicateWindowIndex = Array.IndexOf(duplicateWindows, config.DuplicateWindowMs);
+        if (duplicateWindowIndex < 0)
+        {
+            duplicateWindow.Items.Add((config.DuplicateWindowMs / 1000.0).ToString("0.###") + " 秒（自定义）");
+            duplicateWindowIndex = duplicateWindow.Items.Count - 1;
+        }
+        duplicateWindow.SelectedIndex = duplicateWindowIndex;
+
         ComboBox fontName = combo("字体");
         // 「鸿蒙」只在字体真的随包带上时才出现 —— 没带却给选项的话，
         // GDI+ 会**静默**换成默认字体，用户会以为「选了没反应」。
@@ -333,10 +349,10 @@ internal sealed class DanmakuSettingsDialog
 
         // 圆角描边靠「无边框 TextBox 塞进自绘 Panel」实现 —— 见 ModernInput。
         ModernInput block = new ModernInput(true);
-        block.SetBounds(leftColumn, y, DialogWidth - Margin * 2 - 20, 80);
+        block.SetBounds(leftColumn, y, DialogWidth - Margin * 2 - 20, 56);
         block.Text = string.Join(Environment.NewLine, config.BlockKeywords);
         body.Controls.Add(block);
-        y += 92;
+        y += 68;
 
         Label hint = new ModernLabel();
         DpiLayout.SetDesignFont(hint, ModernTheme.UiFontSmall);
@@ -372,6 +388,10 @@ internal sealed class DanmakuSettingsDialog
 
         // ---------------- 按钮：钉在窗体底部，**不再写死坐标** ----------------
         int buttonTop = clientHeight - ButtonStripHeight + 9;
+        Button features = new ModernButton(); features.Text = "更多弹幕设置…";
+        features.SetBounds(Margin, buttonTop, 160, 30);
+        features.Click += delegate { DanmakuFeatureSettings.Show(dialog, config); };
+        dialog.Controls.Add(features);
         ModernButton ok = new ModernButton();
         ok.Text = "保存";
         ok.Style = ModernButton.Kind.Primary;
@@ -402,6 +422,10 @@ internal sealed class DanmakuSettingsDialog
             config.DisplayAreaPercent = areaValues[area.SelectedIndex];
             config.MaxOnScreen = densityValues[density.SelectedIndex];
             config.DanmakuDelayMs = delayValues[delay.SelectedIndex];
+            config.BlockDuplicate = duplicates.SelectedIndex != 0;
+            config.EnlargeMergedDanmaku = duplicates.SelectedIndex == 2;
+            if (duplicateWindow.SelectedIndex < duplicateWindows.Length)
+                config.DuplicateWindowMs = duplicateWindows[duplicateWindow.SelectedIndex];
             config.ScMode = scValues[scMode.SelectedIndex];
             config.ScMaxStack = stackValues[scStack.SelectedIndex];
             config.ScCorner = cornerValues[scCorner.SelectedIndex];
@@ -488,6 +512,7 @@ internal sealed class DanmakuSettingsDialog
                 int top = dialog.ClientSize.Height - strip + DpiLayout.S(dialog, 9);
                 cancel.SetBounds(dialog.ClientSize.Width - pad - DpiLayout.S(dialog, 88), top, DpiLayout.S(dialog, 88), DpiLayout.S(dialog, 30));
                 ok.SetBounds(cancel.Left - DpiLayout.S(dialog, 96), top, DpiLayout.S(dialog, 88), DpiLayout.S(dialog, 30));
+                features.SetBounds(pad, top, Math.Max(1, Math.Min(DpiLayout.S(dialog, 160), ok.Left - pad * 2)), DpiLayout.S(dialog, 30));
                 }
             finally { body.ResumeLayout(true); reflowing = false; }
             body.AutoScrollPosition = new Point(0, scrollY);

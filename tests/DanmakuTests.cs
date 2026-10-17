@@ -134,7 +134,8 @@ internal static partial class HardeningTests
         // ---- 6i) 虎牙 Tars 未定义类型不能拖垮连接 ----
         TestRunner.Add("弹幕-协议", "虎牙未知 Tars 类型容错", delegate { TestHuyaUnknownTarsType(launcher); });
         RegisterDanmakuRecoveryCases();
-        TestRunner.Add("弹幕-UI", "设置对话框保存往返", delegate { TestSettingsRoundTrip(launcher); });
+        RegisterDanmakuLayoutCases();
+        TestRunner.AddDesktop("弹幕-UI", "设置对话框保存往返", delegate { TestSettingsRoundTrip(launcher); });
         TestRunner.Add("弹幕-渲染", "防重叠轨道选择", delegate { TestDanmakuNoOverlap(launcher); });
         TestRunner.Add("弹幕-抖音", "验证通过判据", delegate { TestDouyinGuardPassed(launcher); });
         TestRunner.Add("凭据", "Cookie 文件 ACL 只能当前用户读", delegate { TestCredentialAcl(launcher); });
@@ -684,11 +685,7 @@ internal static partial class HardeningTests
     }
     /// 弹幕**互不重叠**回归。
     ///
-    /// 判据直接打在 `FindTrack` 上（轨道分配是防重叠的唯一闸门）：
-    ///   ① 追尾的新弹幕不能进那条轨道；
-    ///   ② 全忙时**返回 -1（丢弃）而不是硬塞** —— 以前是「挑最闲的一条塞进去」，
-    ///      屏幕上会叠成一团、整屏都读不了；
-    ///   ③ 空闲轨道照样能拿到。
+    /// 用实际入队和连续帧检查滚动/固定弹幕的矩形，避免只验证私有轨道表。
     private static void TestDanmakuNoOverlap(string launcher)
     {
         Assembly assembly = Assembly.LoadFrom(launcher);
@@ -779,54 +776,7 @@ internal static partial class HardeningTests
             Check(Math.Abs(none) < 0.01f, "SC 滚动条：没有可滚内容时恒为 0");
         }
 
-        Type flyingType = assembly.GetType("FlyingDanmaku", true);
-        object config = Activator.CreateInstance(configType);
-        object renderer = Activator.CreateInstance(rendererType, new object[] { config });
-
-        // ⚠️ 高度**不能传 720** —— Renderer 默认就是 1280x720，Resize 开头有
-        //    `if (width == _width && height == _height) return;`，会直接早退、轨道一条都不分配。
-        //    宽度仍用 1280，好让下面的追尾算式和 _width 对得上。
-        rendererType.GetMethod("Resize").Invoke(renderer, new object[] { 1280, 700 });
-        FieldInfo trackField = rendererType.GetField("_trackLast",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        Array tracks = (Array)trackField.GetValue(renderer);
-        Check(tracks.Length >= 3, "防重叠：轨道数 ≥ 3（实际 " + tracks.Length + "）");
-        if (tracks.Length < 3) return;
-
-        MethodInfo findTrack = rendererType.GetMethod("FindTrack",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        Func<float, float, float, object> makeFlying = delegate (float x, float width, float speed)
-        {
-            object f = Activator.CreateInstance(flyingType);
-            flyingType.GetField("X").SetValue(f, x);
-            flyingType.GetField("Width").SetValue(f, width);
-            flyingType.GetField("Speed").SetValue(f, speed);
-            return f;
-        };
-
-        // ① 轨道 0 上放一条刚好完全进屏的慢弹幕（宽 200，右边缘在 300）
-        float slow = 100f;
-        object last = makeFlying(100f, 200f, slow);
-        tracks.SetValue(last, 0);
-        trackField.SetValue(renderer, tracks);
-
-        // ② 一条**更快**的弹幕：它会在旧的离开前追上 → 必须避开轨道 0
-        //    t* = 300/100 = 3s；cs 必须 ≤ (1280-14)/3 = 422 才安全 → 取 800 必定追尾
-        object fast = makeFlying(0f, 200f, 800f);
-        int picked = (int)findTrack.Invoke(renderer, new object[] { fast });
-        Check(picked != 0, "防重叠：会追尾的弹幕不进那条轨道（拿到轨道 " + picked + "）");
-
-        // ③ 一条**不快于**旧弹幕的：可以进轨道 0
-        object same = makeFlying(0f, 200f, 50f);
-        int picked2 = (int)findTrack.Invoke(renderer, new object[] { same });
-        Check(picked2 == 0, "防重叠：不会追尾的弹幕可以进同一条轨道（拿到轨道 " + picked2 + "）");
-
-        // ④ 把所有轨道塞满同一条慢弹幕 → 新的更快弹幕必须被丢弃（-1），**不能重叠**
-        for (int i = 0; i < tracks.Length; i++) tracks.SetValue(makeFlying(100f, 200f, slow), i);
-        trackField.SetValue(renderer, tracks);
-        object extra = makeFlying(0f, 200f, 800f);
-        int picked3 = (int)findTrack.Invoke(renderer, new object[] { extra });
-        Check(picked3 == -1, "防重叠：全忙时丢弃而不是硬塞（返回 " + picked3 + "）");
+        TestDanmakuPlacement();
     }
     /// 抖音「验证过了没」的判据回归。
     ///

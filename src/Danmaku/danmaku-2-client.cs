@@ -35,7 +35,7 @@ internal delegate void SuperChatHandler(SuperChatItem item);
 internal delegate void SuperChatDeleteHandler(long id);
 internal delegate void StatusHandler(string text);
 
-internal sealed class BiliDanmakuClient : IDanmakuClient
+internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSource
 {
     public event DanmakuHandler DanmakuReceived;
     public event SuperChatHandler SuperChatReceived;
@@ -514,6 +514,7 @@ internal sealed class BiliDanmakuClient : IDanmakuClient
             if (cmd == "DANMU_MSG") HandleDanmaku(root);
             else if (cmd == "SUPER_CHAT_MESSAGE") HandleSuperChat(root);
             else if (cmd == "SUPER_CHAT_MESSAGE_DELETE") HandleSuperChatDelete(root);
+            else HandleLiveEvent(cmd, root);
         }
         catch (Exception) { }
     }
@@ -542,6 +543,8 @@ internal sealed class BiliDanmakuClient : IDanmakuClient
                 item.EmoticonUrl = Str(emo, "url");
                 item.EmoticonWidth = Int(emo, "width", 0);
                 item.EmoticonHeight = Int(emo, "height", 0);
+                object bulge = Val(emo, "bulge_display");
+                item.LargeEmoticon = ToStr(bulge) == "1" || string.Equals(ToStr(bulge), "true", StringComparison.OrdinalIgnoreCase);
             }
         }
         System.Collections.IList user = List(info.Count > 2 ? info[2] : null);

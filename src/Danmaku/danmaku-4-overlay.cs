@@ -240,6 +240,7 @@ internal sealed class DanmakuOverlayForm : Form
     {
         lock (_gate) { _inbox.Enqueue(item); }
     }
+    public void PostLiveEvent(LiveEvent item) { lock (_gate) { _inbox.Enqueue(item); } }
 
     public void PostSuperChat(SuperChatItem item)
     {
@@ -714,6 +715,7 @@ internal sealed class DanmakuOverlayForm : Form
         DanmakuHost.Log("位图统计：存活=" + SharedBitmap.LiveCount
             + " 累计释放=" + SharedBitmap.FreedTotal
             + " 弹幕数=" + _renderer.ActiveCount);
+        DanmakuHost.Log("弹幕统计：" + _renderer.StatisticsText.Replace("\r\n", "；"));
     }
 
     private DateTime _lastStatsAt = DateTime.UtcNow;
@@ -937,19 +939,18 @@ internal sealed class DanmakuOverlayForm : Form
             DanmakuItem danmaku = message as DanmakuItem;
             if (danmaku != null)
             {
-                if (!_renderer.IsBlocked(danmaku))
+                if (_config.DanmakuDelayMs > 0)
                 {
-                    if (_config.DanmakuDelayMs > 0)
-                    {
-                        PendingDanmaku pending;
-                        pending.Item = danmaku;
-                        pending.ReleaseAt = DateTime.UtcNow.AddMilliseconds(_config.DanmakuDelayMs);
-                        _pendingDanmaku.Add(pending);
-                    }
-                    else _renderer.AddDanmaku(danmaku);   // 0 = 不补偿，走原路径
+                    PendingDanmaku pending;
+                    pending.Item = danmaku;
+                    pending.ReleaseAt = DateTime.UtcNow.AddMilliseconds(_config.DanmakuDelayMs);
+                    _pendingDanmaku.Add(pending);
                 }
+                else _renderer.AddDanmaku(danmaku);
                 continue;
             }
+            LiveEvent liveEvent = message as LiveEvent;
+            if (liveEvent != null) { _renderer.AddLiveEvent(liveEvent); continue; }
             SuperChatItem sc = message as SuperChatItem;
             if (sc != null) { _renderer.AddSuperChat(sc); continue; }
             ScDelete delete = message as ScDelete;
@@ -1274,6 +1275,9 @@ internal sealed class DanmakuOverlayForm : Form
             density.DropDownItems.Add(entry);
         }
         menu.Items.Add(density);
+        menu.Items.Add(new ToolStripMenuItem("弹幕统计…", null, delegate {
+            MessageBox.Show(this, _renderer.StatisticsText, "弹幕统计", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }));
 
         ToolStripMenuItem fontName = new ToolStripMenuItem("字体：" + _config.FontName);
         string[] fonts = new string[] { "微软雅黑", "黑体", "宋体" };
@@ -1477,6 +1481,8 @@ internal static class DanmakuHost
         client.DanmakuReceived += delegate (DanmakuItem item) { PlatformHealth.Record(platform, "danmaku", "ready"); form.PostDanmaku(item); };
         client.SuperChatReceived += delegate (SuperChatItem item) { form.PostSuperChat(item); };
         client.SuperChatDeleted += delegate (long id) { form.PostSuperChatDelete(id); };
+        ILiveEventSource eventSource = client as ILiveEventSource;
+        if (eventSource != null) eventSource.LiveEventReceived += delegate (LiveEvent item) { form.PostLiveEvent(item); };
         client.StatusChanged += delegate (string text) { form.PostStatus(text); };
         client.RoomInfo += delegate (string text) { form.PostStatus(text); };
         // 平台表情字典（B站 `[大笑]` 这类）。拉好之后要让渲染器换字典并丢掉旧的文本位图缓存，
@@ -1535,6 +1541,7 @@ internal static class DanmakuHost
                     item.Mode = 1;
                     if (tick % 23 == 0) item.Mode = 5;                 // 顶部弹幕
                     if (tick % 31 == 0) item.Mode = 4;                 // 底部弹幕
+                    if (tick % 17 == 0) item.Mode = 6;                 // 逆向弹幕
                     item.UserName = "观众" + random.Next(1000, 9999);
                     item.UserLevel = random.Next(0, 40);
                     item.MedalLevel = random.Next(0, 35);
@@ -1562,6 +1569,7 @@ internal static class DanmakuHost
                     emote.FontSize = 25;
                     emote.Mode = 1;
                     emote.Color = 16777215;
+                    emote.LargeEmoticon = true;
                     form.PostDanmaku(emote);
                 }
                 // 第 12 秒：带勋章 / 舰队 / 用户名的弹幕（验证前缀拼接）
@@ -1631,6 +1639,7 @@ internal static class DanmakuHost
 
         IDanmakuClient client = DanmakuClientFactory.Create(platform, room);
         int danmakuCount = 0, scCount = 0, total = 0;
+        int eventCount = 0;
         var kinds = new Dictionary<string, int>();
         string sampleDanmaku = null, sampleSuperChat = null;
         // 含「方括号代码」的弹幕（B站 `[大笑]` 这类）。用来判断**这个平台到底有没有**
@@ -1668,6 +1677,10 @@ internal static class DanmakuHost
             }
         };
 
+        ILiveEventSource eventSource = client as ILiveEventSource;
+        if (eventSource != null) eventSource.LiveEventReceived += delegate (LiveEvent item) {
+            lock (gate) { eventCount++; total++; string name = item.Kind.ToString(); int count; kinds.TryGetValue(name, out count); kinds[name] = count + 1; }
+        };
         Thread worker = new Thread(delegate () { client.Run(); });
         worker.IsBackground = true;
         worker.Start();
@@ -1679,6 +1692,8 @@ internal static class DanmakuHost
         {
             report.Add("DANMU=" + danmakuCount);
             report.Add("SUPERCHAT=" + scCount);
+            report.Add("EVENTS=" + eventCount);
+            foreach (KeyValuePair<string, int> kind in kinds) report.Add("EVENT-" + kind.Key.ToUpperInvariant() + "=" + kind.Value);
             report.Add("TOTAL=" + total);
             report.Add("SAMPLE-DANMU=" + (sampleDanmaku == null ? "(无)" : sampleDanmaku));
             report.Add("BRACKET=" + bracketCount + "/" + danmakuCount

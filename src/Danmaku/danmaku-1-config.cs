@@ -44,7 +44,7 @@ using System.Windows.Forms;
 // --------------------------------------------------------------------------------------------
 // 配置：一份 JSON，托盘菜单与 GUI 设置对话框都能改；运行中的弹幕进程每秒看一次 mtime 热重载。
 // --------------------------------------------------------------------------------------------
-internal sealed class DanmakuConfig
+internal sealed partial class DanmakuConfig
 {
     private static readonly FieldInfo[] Fields = typeof(DanmakuConfig).GetFields(BindingFlags.Instance | BindingFlags.Public);
     private DanmakuConfig _savedSnapshot;
@@ -73,7 +73,7 @@ internal sealed class DanmakuConfig
 
     // —— 运动 ——
     public int SpeedPercent = 100;          // 滚动速度；100 = 约 8 秒横穿一屏（贴近 B站）
-    public int MaxOnScreen = 150;           // 同屏上限，超出丢弃最旧的（B站 叫「弹幕密度」）
+    public int MaxOnScreen = 150;           // 同屏上限，空间不足时不插入新弹幕
     // 弹幕延迟补偿（毫秒）。弹幕是**实时到达**的，而视频是**缓冲之后**才显示的 ——
     // 实测各平台缓冲深度：B站 3.5s / 抖音 3.9s / 虎牙 2.6s / 斗鱼 2.6s。
     // 不补偿的话弹幕会**领先画面 2.5~4 秒**：先看到「哈哈哈他没了」，几秒后画面里才没。
@@ -148,7 +148,11 @@ internal sealed class DanmakuConfig
     public string[] BlockUsers = new string[0];
     public int MinUserLevel = 0;
     public int MinMedalLevel = 0;
-    public bool BlockDuplicate = true;      // 同一内容短时间内重复出现只显示一条
+    public bool BlockDuplicate = true;      // 同类型、颜色及相同文案在窗口内合并为一条 ×N；不延长寿命
+    public bool EnlargeMergedDanmaku = true;
+    public bool NormalizeDuplicateText = true; // 只归一空白和全半角 ASCII，保留首条原文
+    public int DuplicateWindowMs = 5000;
+    public int MergedMaxScalePercent = 140;   // 热度放大上限；仍受布局空间限制
 
     // —— 行为 ——
     public bool AutoStart = true;           // 启动器每次打开 B站 直播时自动带起弹幕
@@ -234,6 +238,8 @@ internal sealed class DanmakuConfig
         OpacityPercent = Clamp(OpacityPercent, 10, 100);
         SpeedPercent = Clamp(SpeedPercent, 25, 400);
         MaxOnScreen = Clamp(MaxOnScreen, 10, 600);
+        DuplicateWindowMs = Clamp(DuplicateWindowMs, 1000, 15000);
+        MergedMaxScalePercent = Clamp(MergedMaxScalePercent, 100, 180);
         DisplayAreaPercent = Clamp(DisplayAreaPercent, 10, 100);
         LineGapPercent = Clamp(LineGapPercent, 60, 250);
         StrokeWidth = Clamp(StrokeWidth, 1, 4);
@@ -261,6 +267,7 @@ internal sealed class DanmakuConfig
         if (ScCorner != "tr" && ScCorner != "br" && ScCorner != "tl" && ScCorner != "bl") ScCorner = "tr";
         if (BlockKeywords == null) BlockKeywords = new string[0];
         if (BlockUsers == null) BlockUsers = new string[0];
+        NormalizeFeatures();
     }
 
     private static int Clamp(int value, int min, int max)
@@ -375,6 +382,10 @@ internal sealed class DanmakuItem
     public int EmoticonWidth;
     public int EmoticonHeight;
     public DateTime ArrivedAt = DateTime.UtcNow;
+    public bool LargeEmoticon;
+    public bool AdvancedText;
+    public bool Pinned;
+    internal DanmakuItem Copy() { return (DanmakuItem)MemberwiseClone(); }
 }
 
 // --------------------------------------------------------------------------------------------

@@ -25,6 +25,7 @@ param(
     [switch]$IncludeCredentials,     # 保留登录 Cookie / 浏览器 profile（默认剥离，安全侧）
     [switch]$KeepStaging,            # 保留 staging 目录（默认成功后删除）
     [switch]$SkipGuiSmoke,           # 逃逸阀：跳过 GUI 冒烟（默认必跑；用了会在 manifest 里留痕）
+    [switch]$Headless,               # 跳过需原生桌面交互的回归，仍执行隐藏控件冒烟；清单保留跳过项。
     [switch]$AllowDirtyForTest,      # 仅自测：跳过「脏工作区拒绝」。正式发布永远不要加这个开关
     # 打包裁剪（2026-09-27 定稿）：默认只打**可运行绿色包** —— 拿到就能跑。
     #   · 不含源码/工具/文档/测试（那是开发树的东西，发布包要它们只会让包变大、还泄露实现细节）；
@@ -268,7 +269,9 @@ try {
     & (Join-Path $staging 'tools\New-OfflineLayout.ps1') -Source $staging -Destination $validationLayout
     $validationExe = Join-Path $validationLayout '看直播.exe'
     Say '  布局     : 隔离的离线工具占位布局；不依赖作者机器安装，不运行真实播放器'
-    $buildOut = @(Invoke-Native 'pwsh' @('-NoProfile', '-File', $buildScript, '-Out', $validationExe, '-Report', $offlineReportPath))
+    $buildArguments = @('-NoProfile', '-File', $buildScript, '-Out', $validationExe, '-Report', $offlineReportPath)
+    if ($Headless) { $buildArguments += '-Headless' }
+    $buildOut = @(Invoke-Native 'pwsh' $buildArguments)
     $buildExit = $script:lastExit
     $buildLog = Join-Path $outDir 'build-output.log'
     $buildOut | Out-File -LiteralPath $buildLog -Encoding utf8
@@ -610,6 +613,7 @@ try {
         guiSmoke = $guiInfo
         onlinePlatforms = 'unverified'
         physicalMixedDpi = 'unverified'
+        desktopRegressionMode = $(if ($Headless) { 'headless; native desktop cases explicitly skipped' } else { 'native desktop regression requested' })
         credentials = [ordered]@{ mode = $(if ($IncludeCredentials) { 'keep' } else { 'strip' }); stripped = $strippedList; kept = $keptList }
         # 打包裁剪（2026-09-27 定稿）：包内到底放了什么、裁掉了什么，manifest 里说清楚，
         # 免得拿到包的人以为「源码本来就没有」或者「作者忘了打进来」。
