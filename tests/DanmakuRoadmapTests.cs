@@ -21,6 +21,8 @@ internal static partial class HardeningTests
         TestRunner.Add("弹幕-完善", "平台统计原位更新、到期和关闭释放", TestRoadmapStatus);
         TestRunner.Add("弹幕-完善", "文本缓存字节上限与借用寿命", TestRoadmapCacheBudget);
         TestRunner.Add("弹幕-完善", "更多设置离屏缩放与安全区预览", TestRoadmapSettings);
+        TestRunner.AddDesktop("弹幕-设置", "更多设置主题、滚动和200%缩放适配", TestSettingsAdaptation);
+        TestRunner.AddDesktop("弹幕-设置", "更多设置数字编辑、应用取消和页签键盘", TestSettingsEditing);
     }
     private static long RoadmapCounter(DanmakuScene scene, string field)
     { return Convert.ToInt64(DanmakuScene.Get(scene.Call("GetCounters"), field)); }

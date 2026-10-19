@@ -10,7 +10,7 @@ internal static partial class HardeningTests
     private static void RegisterDanmakuMergeCases()
     {
         TestRunner.Add("弹幕-合并", "热度分档、封顶与实际剩余寿命", TestMergeGrowth);
-        TestRunner.Add("弹幕-合并", "拥挤与 SC 到来时缩小保留计数", TestMergeFallback);
+        TestRunner.Add("弹幕-合并", "拥挤时缩小保留计数、SC 不压缩滚动弹幕", TestMergeFallback);
         TestRunner.Add("弹幕-合并", "有限归一化、原文保留与合并窗口", TestMergeNormalization);
         TestRunner.Add("弹幕-合并", "设置默认值、归一化与无窗口控件构造", TestMergeSettings);
         TestRunner.Add("弹幕-合并", "热度表情异步到位与实际寿命", TestMergeEmote);
@@ -88,10 +88,12 @@ internal static partial class HardeningTests
             object first = scene.Flying[0]; float baseSize = DanmakuScene.Number(first, "FontSize");
             for (int i = 1; i < 32; i++) scene.Add("热点", 1);
             scene.Draw(); Check(DanmakuScene.Number(first, "FontSize") > baseSize, "SC 到来前有空间放大");
+            float beforeScSize = DanmakuScene.Number(first, "FontSize");
             DanmakuScene.Set(scene.Config, "ScMode", "badge"); scene.Configure(); scene.Sc(1); scene.Draw();
             AssertDanmakuScene(scene);
-            Check(scene.Flying.Count == 1 && DanmakuScene.Number(first, "FontSize") < baseSize * 1.4f,
-                "SC 新占位后，已放大的弹幕也能缩小保留");
+            Check(scene.Flying.Count == 1 && DanmakuScene.Number(first, "FontSize") == beforeScSize
+                && (int)DanmakuScene.Get(first, "RepeatCount") == 32,
+                "SC 局部遮挡不缩小滚动弹幕，保留合并字号与计数");
         }
     }
 

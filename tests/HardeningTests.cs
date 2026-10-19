@@ -985,6 +985,7 @@ internal static partial class HardeningTests
     {
         TestRunner.Add("启动器", "标题参数转义", delegate { TestArguments(); });
         TestRunner.Add("启动器", "mpv 空格、中文和逗号路径参数往返", TestMpvPathArguments);
+        TestRunner.Add("播放", "mpv 直播音频时钟与缓冲画质策略", TestMpvLiveClockPolicy);
         TestRunner.Add("播放", "控制条使用独立直播标题且保持纯计划", TestMpvMediaTitleHints);
         TestRunner.Add("解析", "虎牙短号标题网页兜底", TestHuyaTitleFallback);
         TestRunner.Add("启动器", "子进程输出捕获与超时", delegate { TestCapture(self); });

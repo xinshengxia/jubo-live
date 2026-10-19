@@ -144,14 +144,13 @@ internal static partial class LiveHub
         // ② cache 参数按稳定性档位提供缓冲余量。
         //    （注意 --cache-secs 是**上限**不是目标 —— 上游按 1.0x 实时投递时，
         //      缓存就停在这个平衡点，调大这个值并不会让它更满。）
-        // ③ --video-sync=display-resample（2026-10-17 补）：默认 audio 模式下，
-        //    mpv 的播放循环按音频时钟投递视频帧、并不知道 vsync 何时发生；
-        //    60fps 内容落在 120Hz 屏上时相位会持续漂移，某一帧偶尔晚一个
-        //    vsync 上屏（观感「卡一下」），而 frame-drop-count 仍是 0 ——
-        //    之前用计数器完全看不出这种卡顿（见 2026-10-16 排查记录）。
-        //    display-resample 把视频时钟锁到显示器并重采样音频（±0.125%），
-        //    整数倍刷新率下不丢/不重复帧；vo 取不到 vsync 时 mpv 会自动回退。
-        string common = " --hwdec=auto-safe --video-sync=display-resample";
+        // ③ 直播以音频时钟为基准。display-* 会为匹配显示刷新率微调播放速度，
+        //    依赖稳定的帧率与驱动时钟，不适合作为所有直播的强制策略。
+        //    audio + vo 允许显示端丢弃迟到的视频帧，避免为保留每一帧累积音画偏差。
+        //    放在画质 profile 后，保证各画质档与全局 mpv.conf 都使用相同同步策略。
+        //    依据：https://mpv.io/manual/stable/#options-video-sync
+        //          https://mpv.io/manual/stable/#options-framedrop
+        string common = " --hwdec=auto-safe";
         // 画质增强：面板开关存在 danmaku.json 里（启动器已有的持久配置，不再另造一个设置文件）。
         // 读失败就按关处理 —— 画质设置读不到不该让播放起不来。
         try
@@ -163,7 +162,7 @@ internal static partial class LiveHub
                 common += " --vo=gpu-next,gpu --profile=high-quality";   // GPU 翻倍
         }
         catch (Exception ex) { Diagnostics.Report("读取画质增强开关", ex); }
-        return common + (target.BufferMode == "low"
+        return common + " --video-sync=audio --framedrop=vo" + (target.BufferMode == "low"
             ? " --cache=yes --cache-secs=3 --demuxer-readahead-secs=2"
             : " --cache=yes --cache-secs=15 --demuxer-readahead-secs=10");
     }

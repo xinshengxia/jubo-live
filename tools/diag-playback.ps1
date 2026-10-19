@@ -6,10 +6,11 @@
 # 为什么需要它：离线测试再多也覆盖不到「播放顺不顺」。而卡顿的主观感受很容易
 # 被误判（是不是我心理因素？），所以这里把可量化的指标打出来：
 #
-#   · frame-drop-count         mpv 主动丢的帧（跟不上显示节奏）
-#   · decoder-frame-drop-count 解码器丢的帧（解不过来）
+#   · frame-drop-count         VO 跳过的迟到帧（可用于保持音画同步）
+#   · decoder-frame-drop-count 解码器丢的帧（可能有解码压力或坏帧）
 #   · vo-delayed-frame-count   显示迟到但没丢的帧 ← **「偶尔顿一下」通常体现在这里**
 #   · demuxer-cache-duration   缓冲余量（掉到 0 = 卡顿立刻发生）
+#   · avsync / video-sync      音画时间差与当前同步策略
 #   · hwdec-current            是不是真在用硬件解码
 #   · CPU 占用                 排除「机器带不动」
 #
@@ -20,8 +21,8 @@
 # 默认**静音且不抢焦点**（诊断不需要出声，也不该打断你正在做的事）。
 #
 # 判据（脚本末自动给结论）：
-#   丢帧 0 且缓存始终 > 2 秒  → 管道是干净的，卡顿更可能来自片源本身或显示端
-#   有丢帧 或 缓存触底        → 是这边的问题，输出里会指出是哪一类
+#   音画偏差持续超限、解码器丢帧或缓存触底 → 分别调查时钟、解码与网络链路
+#   少量 VO 同步丢帧                     → 结合音画偏差判断，不单凭它判定解码跟不上
 param(
     [Parameter(Mandatory = $true)][string]$Room,   # 形如 bili:7777 / huya:333003 / douyu:9999 / douyin:123
     [int]$Seconds = 60,
@@ -105,6 +106,7 @@ try {
     if (-not $WithSound) { $extra += ' --mute=yes' }
     $extra += ' --term-status-msg="DIAG d=${frame-drop-count} dd=${decoder-frame-drop-count}' +
         ' delayed=${vo-delayed-frame-count} cache=${demuxer-cache-duration}' +
+        ' avsync=${=avsync} sync=${video-sync}' +
         ' est=${estimated-vf-fps} cont=${container-fps} hw=${hwdec-current}"'
     $mpvArgs += $extra
 
@@ -190,30 +192,68 @@ if ($rows.Count -lt 5) {
 }
 
 function Field($line, $key) {
-    $m = [regex]::Match($line, $key + '=([^\s]+)')
+    $m = [regex]::Match($line, '(?:^|\s)' + [regex]::Escape($key) + '=([^\s]+)')
     if ($m.Success) { return $m.Groups[1].Value }
     return ''
 }
-function MaxOf($key) {
-    $vals = @($rows | ForEach-Object { $v = Field $_ $key; if ($v -match '^[\d\.]+$') { [double]$v } })
+function NumberField($line, $key) {
+    $text = Field $line $key
+    if ($text -notmatch '^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$') { return $null }
+    $number = 0.0
+    if ([double]::TryParse($text, [Globalization.NumberStyles]::Float,
+            [Globalization.CultureInfo]::InvariantCulture, [ref]$number) -and
+        -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)) { return $number }
+    return $null
+}
+function MaxOf($key, [string[]]$lines) {
+    $vals = @($lines | ForEach-Object { $v = NumberField $_ $key; if ($null -ne $v) { $v } })
     if ($vals.Count -eq 0) { return -1 }
     return ($vals | Measure-Object -Maximum).Maximum
 }
-$dropMax = MaxOf 'd'
-$decDropMax = MaxOf 'dd'
-$delayedMax = MaxOf 'delayed'
-# 起播头几秒的丢帧是**瞬态**（解码器初始化、首帧到显示）—— 拿它报「有丢帧」会一惊一乍。
-# 前面约 5 秒的状态行单独统计，稳态只看之后的。
-$warmup = [Math]::Min(60, [Math]::Max(10, [int]($rows.Count * 0.12)))
-$steadyDrop = 0; $steadyDecDrop = 0
-for ($i = $warmup; $i -lt $rows.Count; $i++) {
-    $v = Field $rows[$i] 'd';  if ($v -match '^[\d\.]+$' -and [double]$v -gt $steadyDrop) { $steadyDrop = [double]$v }
-    $v = Field $rows[$i] 'dd'; if ($v -match '^[\d\.]+$' -and [double]$v -gt $steadyDecDrop) { $steadyDecDrop = [double]$v }
+function Measure-DiagRows([string[]]$lines, [int]$warmupRows) {
+    $warmupRows = [Math]::Min($lines.Count, [Math]::Max(0, $warmupRows))
+    $steadyRows = @($lines | Select-Object -Skip $warmupRows)
+    $initialRows = @($lines | Select-Object -First $warmupRows)
+    $dropBase = if ($warmupRows -gt 0) { MaxOf 'd' $initialRows } else { 0 }
+    $decDropBase = if ($warmupRows -gt 0) { MaxOf 'dd' $initialRows } else { 0 }
+    $steadyDropMax = MaxOf 'd' $steadyRows
+    $steadyDecDropMax = MaxOf 'dd' $steadyRows
+    $steadyDrop = if ($steadyDropMax -ge 0 -and $dropBase -ge 0) { [Math]::Max(0, $steadyDropMax - $dropBase) } else { -1 }
+    $steadyDecDrop = if ($steadyDecDropMax -ge 0 -and $decDropBase -ge 0) { [Math]::Max(0, $steadyDecDropMax - $decDropBase) } else { -1 }
+    $cacheVals = @($lines | ForEach-Object { $v = NumberField $_ 'cache'; if ($null -ne $v) { $v } })
+    $avSamples = 0; $avOverLimit = 0; $avRun = 0; $avLongestRun = 0; $avAbsMax = -1.0
+    foreach ($line in $steadyRows) {
+        $av = NumberField $line 'avsync'
+        if ($null -eq $av) { $avRun = 0; continue }
+        $avSamples++
+        $absolute = [Math]::Abs($av)
+        $avAbsMax = [Math]::Max($avAbsMax, $absolute)
+        if ($absolute -ge 0.15) {
+            $avOverLimit++; $avRun++
+            $avLongestRun = [Math]::Max($avLongestRun, $avRun)
+        } else { $avRun = 0 }
+    }
+    return [pscustomobject]@{
+        DropMax = MaxOf 'd' $lines
+        DecDropMax = MaxOf 'dd' $lines
+        DelayedMax = MaxOf 'delayed' $lines
+        SteadyDrop = $steadyDrop
+        SteadyDecDrop = $steadyDecDrop
+        CacheMin = $(if ($cacheVals.Count) { ($cacheVals | Measure-Object -Minimum).Minimum } else { -1 })
+        AvSamples = $avSamples
+        AvOverLimit = $avOverLimit
+        AvLongestRun = $avLongestRun
+        AvAbsMax = $avAbsMax
+    }
 }
-$steadyDrops = [Math]::Max($steadyDrop, $steadyDecDrop)
-$cacheVals = @($rows | ForEach-Object { $v = Field $_ 'cache'; if ($v -match '^[\d\.]+$') { [double]$v } })
-$cacheMin = if ($cacheVals.Count) { ($cacheVals | Measure-Object -Minimum).Minimum } else { -1 }
+# 起播阶段单独统计；丢帧计数是累计值，稳态需扣除暖机阶段的计数基线。
+# 暖机仍沿用状态行窗口，不把可变频率的状态行数量当成经过的秒数。
+$warmup = [Math]::Min(60, [Math]::Max(10, [int]($rows.Count * 0.12)))
+$metrics = Measure-DiagRows $rows $warmup
+$dropMax = $metrics.DropMax; $decDropMax = $metrics.DecDropMax; $delayedMax = $metrics.DelayedMax
+$cacheMin = $metrics.CacheMin
 $hw = Field $rows[-1] 'hw'
+$sync = Field $rows[-1] 'sync'
 $est = Field $rows[-1] 'est'
 $cont = Field $rows[-1] 'cont'
 $cpuUsed = if ($cpuSamples.Count -ge 2) { [Math]::Round($cpuSamples[-1] - $cpuSamples[0], 1) } else { -1 }
@@ -222,35 +262,43 @@ $cpuPct = if ($cpuUsed -ge 0) { [Math]::Round(100 * $cpuUsed / ($cpuSamples.Coun
 Write-Output ''
 Write-Output '=== 结果 ==='
 Write-Output ("  采样行数          " + $rows.Count)
-Write-Output ("  mpv 丢帧          " + $dropMax + "   （其中起播瞬态之外的稳态丢帧：" + $steadyDrops + "）")
-Write-Output ("  解码器丢帧        " + $decDropMax)
+Write-Output ("  VO 同步丢帧       " + $dropMax + "   （稳态新增：" + $(if ($metrics.SteadyDrop -ge 0) { $metrics.SteadyDrop } else { '样本不足' }) + "）")
+Write-Output ("  解码器丢帧        " + $decDropMax + "   （稳态新增：" + $(if ($metrics.SteadyDecDrop -ge 0) { $metrics.SteadyDecDrop } else { '样本不足' }) + "）")
 Write-Output ("  显示迟到帧        " + $delayedMax + "   （「偶尔顿一下」通常体现在这里）")
 Write-Output ("  缓冲最低值        " + $(if ($cacheMin -ge 0) { [Math]::Round($cacheMin, 2).ToString() + ' 秒' } else { '取不到' }))
+Write-Output ("  当前同步策略      " + $(if ($sync) { $sync } else { '取不到' }))
+Write-Output ("  稳态音画偏差峰值  " + $(if ($metrics.AvSamples -gt 0) { [Math]::Round($metrics.AvAbsMax, 4).ToString() + ' 秒（绝对值）' } else { '取不到' }))
+Write-Output ("  偏差 ≥ 0.15 秒    " + $metrics.AvOverLimit + ' / ' + $metrics.AvSamples + ' 有效稳态样本；最长连续 ' + $metrics.AvLongestRun + ' 个样本')
 Write-Output ("  硬件解码          " + $(if ($hw) { $hw } else { '?' }) + $(if ($hw -eq 'no') { '   ← 退回了软解' } else { '' }))
 Write-Output ("  内容帧率          est=$est  container=$cont")
 Write-Output ("  mpv CPU 占用      " + $(if ($cpuPct -ge 0) { $cpuPct.ToString() + '%（单核）' } else { '取不到' }))
 Write-Output ''
 Write-Output '=== 结论 ==='
 $verdict = @()
-if ($steadyDrops -gt 0) { $verdict += '稳态有丢帧 → 解码/显示端跟不上，优先看 CPU 占用与硬件解码状态' }
-elseif ($dropMax -gt 0) { $verdict += '只有起播瞬间丢了 ' + $dropMax + ' 帧（瞬态，通常不用管）' }
+if ($metrics.SteadyDecDrop -gt 0) { $verdict += '稳态解码器丢帧 ' + $metrics.SteadyDecDrop + ' 帧 → 可能存在解码压力或坏帧，结合 CPU 与硬件解码状态排查' }
+if ($metrics.SteadyDrop -gt 0) { $verdict += '稳态 VO 同步丢帧 ' + $metrics.SteadyDrop + ' 帧 → 为保持同步跳过迟到画面；少量不代表解码跟不上，需结合音画偏差和缓冲判断' }
+elseif ($metrics.SteadyDrop -eq 0 -and $dropMax -gt 0) { $verdict += '只有起播阶段出现 VO 丢帧 ' + $dropMax + ' 帧（瞬态，通常不用管）' }
+if ($metrics.AvSamples -eq 0) { $verdict += '没有有效稳态音画偏差样本，无法判断长期音画同步' }
+elseif ($metrics.AvLongestRun -ge 3) { $verdict += '音画偏差绝对值连续 ' + $metrics.AvLongestRun + ' 个样本 ≥ 0.15 秒 → 本次采样存在连续偏差，需调查同步、片源时间戳或输出链路' }
+elseif ($metrics.AvOverLimit -gt 0) { $verdict += '音画偏差仅有零散样本 ≥ 0.15 秒，可能是瞬态；本次未出现连续 3 个超限样本' }
 if ($delayedMax -gt 5) { $verdict += '有显示迟到帧 → 帧节奏被打乱，典型来源是缓冲抖动或显示刷新率不匹配' }
-if ($cacheMin -ge 0 -and $cacheMin -lt 1.5) { $verdict += '缓冲触底 → 网络/中转这条链不够稳，这是最主要的怀疑对象' }
+if ($cacheMin -ge 0 -and $cacheMin -lt 1.5) { $verdict += '缓存余量曾低于 1.5 秒，结合起播、重缓冲与音画偏差排查，不能仅凭最低值归因网络' }
 if ($hw -eq 'no') { $verdict += '硬件解码没启用（退回软解）—— 换成更重的房间容易变成临界状态' }
 if ($cpuPct -gt 60) { $verdict += ('mpv 单核占用 ' + $cpuPct + '% 偏高，机器余量不足') }
 if ($verdict.Count -eq 0) {
-    Write-Output '  管道是干净的：丢帧 0、缓冲没触底、硬件解码正常。'
+    Write-Output '  本次有效采样未发现音画偏差超限、稳态丢帧或缓冲触底。'
     Write-Output '  也就是**这一次测量没能复现卡顿** —— 但这是单次采样。'
     Write-Output '  若卡顿偶发：① 卡顿发生时立刻重跑本脚本；② 同时看任务管理器有没有别的东西在抢 CPU/磁盘。'
 }
 else { foreach ($v in $verdict) { Write-Output ('  · ' + $v) } }
 
 # 片源帧率单独提示：est 远低于 cont 时，画面顿是**片源本身**造成的，改不了
-if ($est -match '^[\d\.]+$' -and $cont -match '^[\d\.]+$' -and [double]$est -gt 0) {
-    $ratio = [double]$est / [double]$cont
+$estNumber = NumberField $rows[-1] 'est'; $contNumber = NumberField $rows[-1] 'cont'
+if ($null -ne $estNumber -and $null -ne $contNumber -and $estNumber -gt 0 -and $contNumber -gt 0) {
+    $ratio = $estNumber / $contNumber
     if ($ratio -lt 0.6) {
         Write-Output ''
-        Write-Output ('  ⚠ 片源帧率偏低：容器声明 ' + $cont + 'fps，实际只有 ' + [Math]::Round([double]$est, 1) + 'fps。')
+        Write-Output ('  ⚠ 片源帧率偏低：容器声明 ' + $cont + 'fps，实际只有 ' + [Math]::Round($estNumber, 1) + 'fps。')
         Write-Output '    这种顿是**片源本身**的节奏，客户端改不了（不是你的心理因素，也不是我们的 bug）。'
     }
 }

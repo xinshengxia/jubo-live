@@ -18,22 +18,26 @@ internal sealed class DanmakuFeatureSettings
         form.BackColor = ModernTheme.Surface; form.ForeColor = ModernTheme.Text;
         form.HandleCreated += delegate { ModernTheme.ApplyWindowChrome(form); };
         form.ClientSize = new Size(740, 620); form.MinimumSize = new Size(540, 440);
-        TabControl tabs = new TabControl(); tabs.Dock = DockStyle.Fill; form.Controls.Add(tabs);
+        DanmakuSettingsPages tabs = new DanmakuSettingsPages(); tabs.Dock = DockStyle.Fill; form.Controls.Add(tabs);
         List<Action> apply = new List<Action>();
         Func<string, TableLayoutPanel> page = delegate (string name)
         {
-            TabPage tab = new TabPage(name); tab.BackColor = ModernTheme.Surface; tabs.TabPages.Add(tab);
-            Panel scroll = new Panel(); scroll.Dock = DockStyle.Fill; scroll.AutoScroll = true; tab.Controls.Add(scroll);
+            Panel tab = tabs.AddPage(name);
+            Panel scroll = new Panel(); scroll.Dock = DockStyle.Fill; scroll.AutoScroll = true; scroll.BackColor = ModernTheme.Surface; tab.Controls.Add(scroll);
+            scroll.HandleCreated += delegate { ModernTheme.ApplyScrollbarTheme(scroll); };
             TableLayoutPanel table = new TableLayoutPanel(); table.Dock = DockStyle.Top; table.AutoSize = true;
             table.Padding = new Padding(14); table.ColumnCount = 2;
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36)); table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 64));
-            scroll.Controls.Add(table); return table;
+            scroll.Controls.Add(table);
+            table.SizeChanged += delegate { scroll.AutoScrollMinSize = new Size(0, table.Height); };
+            return table;
         };
         Action<TableLayoutPanel, string, Control, int> row = delegate (TableLayoutPanel table, string caption, Control control, int height)
         {
             int index = table.RowCount++; table.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             Label label = new ModernLabel(); label.Text = caption; label.Dock = DockStyle.Fill; label.TextAlign = ContentAlignment.MiddleLeft;
             control.Dock = DockStyle.Fill; control.Margin = new Padding(5, 4, 5, 4);
+            control.AccessibleName = caption;
             table.Controls.Add(label, 0, index); table.Controls.Add(control, 1, index);
         };
         Action<TableLayoutPanel, string, bool, Action<bool>> check = delegate (TableLayoutPanel table, string caption, bool value, Action<bool> save)
@@ -43,9 +47,9 @@ internal sealed class DanmakuFeatureSettings
         };
         Action<TableLayoutPanel, string, int, int, int, Action<int>> number = delegate (TableLayoutPanel table, string caption, int value, int min, int max, Action<int> save)
         {
-            NumericUpDown box = new NumericUpDown(); box.Minimum = min; box.Maximum = max; box.Value = Math.Max(min, Math.Min(max, value));
-            box.BackColor = ModernTheme.Surface; box.ForeColor = ModernTheme.Text;
-            row(table, caption, box, 34); apply.Add(delegate { save((int)box.Value); });
+            DanmakuSettingsNumber box = new DanmakuSettingsNumber(); box.Maximum = max; box.Minimum = min; box.Value = value;
+            row(table, caption, box, 38); box.Dock = DockStyle.None; box.Anchor = AnchorStyles.Left;
+            apply.Add(delegate { save(box.Value); });
         };
         Action<TableLayoutPanel, string, string[], string[], string, Action<string>> choice = delegate (TableLayoutPanel table, string caption, string[] ids, string[] labels, string value, Action<string> save)
         {
@@ -54,11 +58,10 @@ internal sealed class DanmakuFeatureSettings
         };
         Action<TableLayoutPanel, string, string[], Action<string[]>> rules = delegate (TableLayoutPanel table, string caption, string[] values, Action<string[]> save)
         {
-            TextBox box = new TextBox(); box.Multiline = true; box.ScrollBars = ScrollBars.Vertical;
-            box.BackColor = ModernTheme.Surface; box.ForeColor = ModernTheme.Text;
-            box.Text = string.Join(Environment.NewLine, values ?? new string[0]);
+            ModernInput box = new ModernInput(true);
+            box.Inner.Text = string.Join(Environment.NewLine, values ?? new string[0]);
             row(table, caption, box, 104);
-            apply.Add(delegate { save(box.Text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)); });
+            apply.Add(delegate { save(box.Inner.Text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)); });
         };
         TableLayoutPanel display = page("显示与外观");
         check(display, "滚动弹幕", config.ShowScrolling, delegate(bool v) { config.ShowScrolling = v; });
@@ -97,15 +100,24 @@ internal sealed class DanmakuFeatureSettings
         check(traffic, "看过 / 点赞 / 高能榜人数", config.ShowLiveStats, delegate(bool v) { config.ShowLiveStats = v; });
         Label eventsHelp = new ModernLabel(); eventsHelp.Text = "当前接入 B站礼物、上舰、进场/关注、公告和人数统计。独立提示条参与避让；默认关闭以保留画面。";
         row(traffic, "事件说明", eventsHelp, 68);
-        TabPage safeTab = new TabPage("画面安全区"); tabs.TabPages.Add(safeTab);
+        Panel safeTab = tabs.AddPage("画面安全区");
+        TableLayoutPanel safeLayout = new TableLayoutPanel(); safeLayout.Dock = DockStyle.Fill;
+        safeLayout.ColumnCount = 1; safeLayout.RowCount = 3; safeLayout.Padding = new Padding(14, 8, 14, 8);
+        safeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        safeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        safeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        safeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); safeTab.Controls.Add(safeLayout);
         DanmakuSafeAreaCanvas canvas = new DanmakuSafeAreaCanvas(config.ReservedAreas); canvas.Dock = DockStyle.Fill;
-        FlowLayoutPanel presets = new FlowLayoutPanel(); presets.Dock = DockStyle.Bottom; presets.Height = 76;
+        canvas.Margin = new Padding(0, 0, 0, 8);
+        FlowLayoutPanel presets = new FlowLayoutPanel(); presets.Dock = DockStyle.Fill;
+        presets.AutoSize = true; presets.AutoSizeMode = AutoSizeMode.GrowAndShrink; presets.Margin = Padding.Empty;
         Label hint = new ModernLabel(); hint.Text = "在示意画面拖动添加矩形；右键矩形删除。区域按画面百分比保存，缩放后自动跟随。";
-        hint.Dock = DockStyle.Top; hint.Height = 48;
-        safeTab.Controls.Add(canvas); safeTab.Controls.Add(presets); safeTab.Controls.Add(hint);
+        hint.Dock = DockStyle.Fill; hint.AutoSize = true; hint.Margin = new Padding(0, 0, 0, 10);
+        safeLayout.Controls.Add(hint, 0, 0); safeLayout.Controls.Add(canvas, 0, 1); safeLayout.Controls.Add(presets, 0, 2);
         foreach (string preset in new string[] { "顶部标题", "底部字幕", "中央主体", "清空" })
         {
             string name = preset; Button button = new ModernButton(); button.Text = name; button.AutoSize = true;
+            button.MinimumSize = new Size(96, 30); button.Padding = new Padding(10, 4, 10, 4); button.Margin = new Padding(0, 0, 6, 0);
             button.Click += delegate {
                 if (name == "清空") canvas.ClearAreas();
                 else canvas.AddArea(name == "顶部标题" ? new RectangleF(0, 0, 100, 8)
@@ -114,14 +126,14 @@ internal sealed class DanmakuFeatureSettings
         }
         apply.Add(delegate { config.ReservedAreas = canvas.GetAreas(); });
         Panel footer = new Panel(); footer.Dock = DockStyle.Bottom; footer.Height = 48; form.Controls.Add(footer);
-        Button ok = new ModernButton(); ok.Text = "应用"; ok.DialogResult = DialogResult.OK; ok.SetBounds(510, 8, 94, 32);
+        Button ok = new ModernButton(); ((ModernButton)ok).Style = ModernButton.Kind.Primary; ok.Text = "应用"; ok.DialogResult = DialogResult.OK; ok.SetBounds(510, 8, 94, 32);
         Button cancel = new ModernButton(); cancel.Text = "取消"; cancel.DialogResult = DialogResult.Cancel; cancel.SetBounds(620, 8, 94, 32);
         footer.Controls.Add(ok); footer.Controls.Add(cancel);
         bool layingOut = false;
         Action reflow = delegate {
             if (layingOut) return; layingOut = true;
             try {
-                footer.Height = DpiLayout.S(form, 48); presets.Height = DpiLayout.S(form, 76); hint.Height = DpiLayout.S(form, 48);
+                footer.Height = DpiLayout.S(form, 48);
                 cancel.SetBounds(Math.Max(4, footer.Width - DpiLayout.S(form, 108)), DpiLayout.S(form, 8), DpiLayout.S(form, 94), DpiLayout.S(form, 32));
                 ok.SetBounds(Math.Max(4, cancel.Left - DpiLayout.S(form, 106)), DpiLayout.S(form, 8), DpiLayout.S(form, 94), DpiLayout.S(form, 32));
             } finally { layingOut = false; }
@@ -129,9 +141,20 @@ internal sealed class DanmakuFeatureSettings
         footer.Resize += delegate { reflow(); }; form.DpiUpdated += delegate { reflow(); };
         ok.Click += delegate { foreach (Action save in apply) save(); config.Normalize(); };
         form.AcceptButton = ok; form.CancelButton = cancel;
+        Action theme = delegate { ApplyTheme(form); ModernTheme.ApplyWindowChrome(form); };
+        ModernTheme.Changed += theme; form.Disposed += delegate { ModernTheme.Changed -= theme; };
+        ApplyTheme(form);
         DpiLayout.ScaleTree(form);
         reflow();
         return form;
+    }
+    private static void ApplyTheme(Control root)
+    {
+        if (root is Form || root.GetType() == typeof(Panel) || root is TableLayoutPanel || root is FlowLayoutPanel)
+        { root.BackColor = ModernTheme.Surface; root.ForeColor = ModernTheme.Text; }
+        Panel scroll = root as Panel;
+        if (scroll != null && scroll.AutoScroll) ModernTheme.ApplyScrollbarTheme(scroll);
+        foreach (Control child in root.Controls) ApplyTheme(child);
     }
     internal static void Show(IWin32Window owner, DanmakuConfig config)
     {
@@ -163,7 +186,7 @@ internal sealed class DanmakuSafeAreaCanvas : Control
     private Point _end;
     internal DanmakuSafeAreaCanvas(string[] areas)
     {
-        DoubleBuffered = true; BackColor = Color.FromArgb(24, 35, 51);
+        DoubleBuffered = true; BackColor = ModernTheme.Surface; ModernTheme.Changed += ApplyTheme;
         foreach (string area in areas ?? new string[0]) { RectangleF rect; if (DanmakuRegions.TryParse(area, out rect)) _areas.Add(rect); }
     }
     internal void ClearAreas() { _areas.Clear(); Invalidate(); }
@@ -171,8 +194,11 @@ internal sealed class DanmakuSafeAreaCanvas : Control
     internal string[] GetAreas() { List<string> values = new List<string>(); foreach (RectangleF area in _areas) values.Add(DanmakuRegions.Encode(area)); return values.ToArray(); }
     private RectangleF Frame
     {
-        get { float width = Math.Max(16, Width - 24), height = width * 9f / 16f; if (height > Height - 24) { height = Math.Max(9, Height - 24); width = height * 16f / 9f; } return new RectangleF((Width - width) / 2f, (Height - height) / 2f, width, height); }
+        get { float pad = DpiLayout.S(this, 8), width = Math.Max(1, Width - pad * 2), height = width * 9f / 16f; if (height > Height - pad * 2) { height = Math.Max(1, Height - pad * 2); width = height * 16f / 9f; } return new RectangleF((Width - width) / 2f, (Height - height) / 2f, width, height); }
     }
+    private void ApplyTheme() { BackColor = ModernTheme.Surface; Invalidate(); }
+    protected override void Dispose(bool disposing)
+    { if (disposing) ModernTheme.Changed -= ApplyTheme; base.Dispose(disposing); }
     private Point Percent(Point point)
     {
         RectangleF frame = Frame;
@@ -198,16 +224,17 @@ internal sealed class DanmakuSafeAreaCanvas : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e); RectangleF frame = Frame;
+        using (SolidBrush background = new SolidBrush(Color.FromArgb(24, 35, 51))) e.Graphics.FillRectangle(background, frame);
         using (Pen border = new Pen(Color.SlateGray)) e.Graphics.DrawRectangle(border, frame.X, frame.Y, frame.Width, frame.Height);
         List<RectangleF> visible = new List<RectangleF>(_areas);
         if (_start.HasValue) visible.Add(new RectangleF(Math.Min(_start.Value.X, _end.X), Math.Min(_start.Value.Y, _end.Y), Math.Abs(_start.Value.X - _end.X), Math.Abs(_start.Value.Y - _end.Y)));
         using (SolidBrush fill = new SolidBrush(Color.FromArgb(100, 240, 130, 70)))
-        using (Pen line = new Pen(Color.Coral, 2f))
+        using (Pen line = new Pen(Color.Coral, DpiLayout.S(this, 2)))
         foreach (RectangleF percent in visible)
         {
             RectangleF rect = new RectangleF(frame.X + percent.X * frame.Width / 100f, frame.Y + percent.Y * frame.Height / 100f, percent.Width * frame.Width / 100f, percent.Height * frame.Height / 100f);
             e.Graphics.FillRectangle(fill, rect); e.Graphics.DrawRectangle(line, rect.X, rect.Y, rect.Width, rect.Height);
         }
-        using (SolidBrush brush = new SolidBrush(Color.White)) e.Graphics.DrawString("播放画面示意（16:9）", Font, brush, frame.X + 8, frame.Y + 8);
+        using (SolidBrush brush = new SolidBrush(Color.White)) e.Graphics.DrawString("播放画面示意（16:9）", Font, brush, frame.X + DpiLayout.S(this, 8), frame.Y + DpiLayout.S(this, 8));
     }
 }

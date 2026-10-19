@@ -78,8 +78,9 @@ internal static partial class HardeningTests
             object a = scene.Flying[i];
             RectangleF ra = new RectangleF(DanmakuScene.Number(a, "X"), DanmakuScene.Number(a, "Y"),
                 DanmakuScene.Number(a, "Width"), DanmakuScene.Number(a, "Height"));
-            if (ra.Top < -0.01f || ra.Bottom > area + 0.01f || (!sc.IsEmpty && ra.IntersectsWith(sc)))
-                throw new Exception("弹幕越出显示区或进入 SC：" + ra + " / SC " + sc + " / area " + area);
+            if (ra.Top < -0.01f || ra.Bottom > area + 0.01f
+                || ((bool)DanmakuScene.Get(a, "Fixed") && !sc.IsEmpty && ra.IntersectsWith(sc)))
+                throw new Exception("弹幕越出显示区或固定弹幕进入 SC：" + ra + " / SC " + sc + " / area " + area);
             for (int j = i + 1; j < scene.Flying.Count; j++)
             {
                 object b = scene.Flying[j];
@@ -94,7 +95,9 @@ internal static partial class HardeningTests
     {
         RegisterDanmakuMergeCases();
         RegisterDanmakuRoadmapCases();
-        TestRunner.Add("弹幕-渲染", "混合弹幕与 SC 四角共享占位", TestDanmakuScPlacement);
+        TestRunner.Add("弹幕-渲染", "SC 四角局部遮挡与固定弹幕避让", TestDanmakuScPlacement);
+        TestRunner.Add("弹幕-渲染", "顶部四分之一区域与 SC 持续共存", TestDanmakuScNarrowArea);
+        TestRunner.Add("弹幕-渲染", "SC 部分遮挡保留全部滚动轨道和密集准入", TestDanmakuScPartialDensity);
         TestRunner.Add("弹幕-渲染", "窗口缩放与热设置保持穿屏进度", TestDanmakuResizePlacement);
         TestRunner.Add("弹幕-渲染", "表情异步变宽、比例与低行距", TestDanmakuImagePlacement);
         TestRunner.Add("弹幕-渲染", "重复计数合并、寿命与满屏准入", TestDanmakuRepeatPlacement);
@@ -161,6 +164,142 @@ internal static partial class HardeningTests
                 DanmakuScene.Set(sc, "ExpiresAt", DateTime.UtcNow.AddSeconds(-1));
             scene.Step(0f); scene.Draw();
             Check(((RectangleF)DanmakuScene.Get(scene.Renderer, "_scReserved")).IsEmpty, "SC 到期后释放占位");
+        }
+    }
+
+    private static void TestDanmakuScNarrowArea()
+    {
+        foreach (string corner in new string[] { "tl", "tr" })
+        foreach (int mode in new int[] { 1, 6 })
+        using (DanmakuScene scene = new DanmakuScene(1280, 720))
+        {
+            DateTime now = DateTime.UtcNow;
+            DanmakuScene.Set(scene.Renderer, "Clock", new Func<DateTime>(delegate { return now; }));
+            DanmakuScene.Set(scene.Config, "DisplayAreaPercent", 25);
+            DanmakuScene.Set(scene.Config, "FontScalePercent", 80);
+            DanmakuScene.Set(scene.Config, "ScCorner", corner);
+            DanmakuScene.Set(scene.Config, "ScShowAvatar", true);
+            scene.Configure(); scene.Add("SC 到达前已经在飞的弹幕", mode); scene.Step(1.5f);
+            int before = scene.Flying.Count;
+            scene.Sc(1);
+            object sc = ((IList)DanmakuScene.Get(scene.Renderer, "_superChats"))[0];
+            DanmakuScene.Set(sc, "Message", new string('测', 140));
+            scene.Draw();
+            RectangleF reserved = (RectangleF)DanmakuScene.Get(scene.Renderer, "_scReserved");
+            Check(reserved.Bottom >= DanmakuScene.Number(scene.Renderer, "_areaHeight"), "合成 SC 覆盖整个弹幕高度 " + corner);
+            Check(before > 0 && scene.Flying.Count == before, "SC 到达不清空在飞弹幕 " + corner + "/" + mode);
+            scene.Add("SC 出现后新到的弹幕", mode);
+            Check(scene.Flying.Count > before, "SC 存续时继续接收普通弹幕 " + corner + "/" + mode);
+
+            bool visible = false;
+            for (int frame = 0; frame < 120; frame++)
+            {
+                scene.Step(1f / 30f); scene.Draw();
+                if (frame % 10 != 0) continue;
+                int pixels = 0;
+                for (int y = 0; y < 180; y += 2)
+                for (int x = 0; x < scene.Width; x += 2)
+                    if (!reserved.Contains(x, y) && scene.Canvas.GetPixel(x, y).A > 0) pixels++;
+                visible |= pixels > 30;
+            }
+            Check(visible, "SC 持续显示时卡片以外有真实弹幕像素 " + corner + "/" + mode);
+            if (corner == "tl" && mode == 1)
+            using (Bitmap preview = new Bitmap(scene.Width, scene.Height))
+            using (Graphics graphics = Graphics.FromImage(preview))
+            {
+                graphics.Clear(Color.FromArgb(31, 44, 60));
+                graphics.DrawImageUnscaled(scene.Canvas, 0, 0);
+                preview.Save(Path.Combine(Path.GetDirectoryName(hub.Assembly.Location), "sc-narrow-area.png"), ImageFormat.Png);
+            }
+
+            // 强制让一条弹幕横跨卡片边缘，比较有无弹幕时的 SC 像素。
+            object flying = scene.Flying[0];
+            float width = DanmakuScene.Number(flying, "Width");
+            DanmakuScene.Set(flying, "X", corner == "tl" ? reserved.Right - width / 2f : reserved.Left - width / 2f);
+            scene.Draw();
+            using (Bitmap withDanmaku = (Bitmap)scene.Canvas.Clone())
+            {
+                foreach (object item in scene.Flying) DanmakuScene.Set(item, "X", -10000f);
+                scene.Draw();
+                bool clean = true;
+                for (int y = Math.Max(0, (int)Math.Ceiling(reserved.Top)); y < Math.Min(scene.Height, reserved.Bottom); y += 2)
+                for (int x = Math.Max(0, (int)Math.Ceiling(reserved.Left)); x < Math.Min(scene.Width, reserved.Right); x += 2)
+                    clean &= withDanmaku.GetPixel(x, y) == scene.Canvas.GetPixel(x, y);
+                Check(clean, "SC 正文、透明圆角和进度条不被弹幕覆盖 " + corner + "/" + mode);
+            }
+            scene.Call("ClearSuperChats"); scene.Draw(); scene.Add("SC 结束后继续显示", mode);
+            Check(((RectangleF)DanmakuScene.Get(scene.Renderer, "_scReserved")).IsEmpty && scene.Flying.Count > 0,
+                "SC 清除后释放遮挡区域并继续准入 " + corner + "/" + mode);
+        }
+    }
+
+    private static void TestDanmakuScPartialDensity()
+    {
+        foreach (string corner in new string[] { "tl", "tr" })
+        using (DanmakuScene scene = new DanmakuScene(1280, 720))
+        {
+            DateTime now = DateTime.UtcNow;
+            DanmakuScene.Set(scene.Renderer, "Clock", new Func<DateTime>(delegate { return now; }));
+            DanmakuScene.Set(scene.Config, "DisplayAreaPercent", 25);
+            DanmakuScene.Set(scene.Config, "FontScalePercent", 80);
+            DanmakuScene.Set(scene.Config, "ScCorner", corner); scene.Configure();
+            int tracks = (int)DanmakuScene.Get(scene.Renderer, "_trackCount");
+            for (int i = 0; i < tracks; i++) scene.Add("密集弹幕轨道 " + i, 1);
+            scene.Step(2f);
+            object[] active = new object[scene.Flying.Count]; scene.Flying.CopyTo(active, 0);
+            float[] positions = new float[active.Length];
+            for (int i = 0; i < active.Length; i++) positions[i] = DanmakuScene.Number(active[i], "Y");
+            Check(active.Length >= 4, "SC 到达前覆盖多条滚动轨道 " + corner);
+            scene.Sc(1); scene.Draw();
+            RectangleF reserved = (RectangleF)DanmakuScene.Get(scene.Renderer, "_scReserved");
+            Check(reserved.Bottom < DanmakuScene.Number(scene.Renderer, "_areaHeight"), "SC 只遮挡部分轨道 " + corner);
+            Check(scene.Flying.Count == active.Length, "部分遮挡不删弹幕、不挤到剩余一两行 " + corner);
+            for (int i = 0; i < active.Length; i++)
+                Check(scene.Flying.Contains(active[i]) && DanmakuScene.Number(active[i], "Y") == positions[i],
+                    "SC 到达保持原轨道 " + corner + "/" + i);
+            if (corner == "tl")
+            using (Bitmap preview = new Bitmap(scene.Width, scene.Height))
+            using (Graphics graphics = Graphics.FromImage(preview))
+            {
+                graphics.Clear(Color.FromArgb(31, 44, 60)); graphics.DrawImageUnscaled(scene.Canvas, 0, 0);
+                preview.Save(Path.Combine(Path.GetDirectoryName(hub.Assembly.Location), "sc-dense-area.png"), ImageFormat.Png);
+            }
+        }
+        foreach (string corner in new string[] { "tl", "tr" })
+        using (DanmakuScene baseline = new DanmakuScene(1280, 720))
+        using (DanmakuScene scene = new DanmakuScene(1280, 720))
+        {
+            DateTime now = DateTime.UtcNow;
+            foreach (DanmakuScene target in new DanmakuScene[] { baseline, scene })
+            {
+                DanmakuScene.Set(target.Renderer, "Clock", new Func<DateTime>(delegate { return now; }));
+                DanmakuScene.Set(target.Config, "DisplayAreaPercent", 25);
+                DanmakuScene.Set(target.Config, "FontScalePercent", 80);
+                DanmakuScene.Set(target.Config, "ScCorner", corner);
+                DanmakuScene.Set(target.Config, "SmoothDanmaku", true);
+                DanmakuScene.Set(target.Config, "QueueWaitMs", 800); target.Configure();
+            }
+            bool sameDensity = true;
+            for (int frame = 0; frame < 360; frame++)
+            {
+                now = now.AddSeconds(1f / 30f);
+                if (frame == 45 || frame == 240) scene.Sc(frame);
+                if (frame == 180) scene.Call("ClearSuperChats");
+                if (frame % 3 == 0)
+                {
+                    baseline.Add("连续密集弹幕 " + frame, 1); scene.Add("连续密集弹幕 " + frame, 1);
+                }
+                baseline.Call("Advance", now, 1f / 30f); scene.Call("Advance", now, 1f / 30f);
+                baseline.Draw(); scene.Draw();
+                sameDensity &= baseline.Flying.Count == scene.Flying.Count;
+                AssertDanmakuScene(scene);
+            }
+            Check(sameDensity, "SC 到达、清除、再次到达的 360 帧准入量与无 SC 一致 " + corner);
+            object expected = baseline.Call("GetCounters"), actual = scene.Call("GetCounters");
+            Check((long)DanmakuScene.Get(expected, "Displayed") == (long)DanmakuScene.Get(actual, "Displayed")
+                && (long)DanmakuScene.Get(expected, "NoSpace") == (long)DanmakuScene.Get(actual, "NoSpace")
+                && (long)DanmakuScene.Get(actual, "ReflowRemoved") == 0,
+                "SC 不额外增加空间丢弃或重排删除 " + corner);
         }
     }
 

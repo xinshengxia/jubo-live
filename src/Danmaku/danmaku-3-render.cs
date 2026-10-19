@@ -1281,9 +1281,9 @@ internal sealed partial class DanmakuRenderer : IDisposable
         DateTime now = Now;
         float life = Remaining(candidate, now);
         if (HitsReservedArea(candidate, y, life)) return false;
-        if (!_scReserved.IsEmpty && y < _scReserved.Bottom && y + candidate.Height > _scReserved.Top
-            && PathsOverlap(candidate.X, candidate.Width, candidate.Speed,
-                _scReserved.X, _scReserved.Width, 0f, life, 8f * _uiScale)) return false;
+        // 滚动弹幕只在绘制时遮掉卡片实际区域，不能因 SC 而丢失整条轨道。
+        // 固定弹幕不会穿过卡片，仍需在排版时完整避让。
+        if (candidate.Fixed && HitsSc(candidate, y, life)) return false;
         foreach (FlyingDanmaku other in _flying)
         {
             if (object.ReferenceEquals(other, candidate) || y >= other.Y + other.Height
@@ -1292,6 +1292,13 @@ internal sealed partial class DanmakuRenderer : IDisposable
                 other.X, other.Width, other.Speed, Math.Min(life, Remaining(other, now)), 14f * _uiScale)) return false;
         }
         return true;
+    }
+
+    private bool HitsSc(FlyingDanmaku flying, float y, float life)
+    {
+        return !_scReserved.IsEmpty && y < _scReserved.Bottom && y + flying.Height > _scReserved.Top
+            && PathsOverlap(flying.X, flying.Width, flying.Speed,
+                _scReserved.X, _scReserved.Width, 0f, life, 8f * _uiScale);
     }
 
     private bool PlaceFlying(FlyingDanmaku flying, bool keepTrack)
@@ -1414,6 +1421,24 @@ internal sealed partial class DanmakuRenderer : IDisposable
             if (!f.VisualDirty && f.EmoteSettled) continue;
             if (!RefreshChangedFlying(f, 1.8f)) { DroppedCount++; ForgetFlying(i--); }
         }
+        GraphicsState saved = g.Save();
+        try
+        {
+            if (!_scReserved.IsEmpty)
+                using (Region reserved = new Region(_scReserved)) g.ExcludeClip(reserved);
+            DrawFlying(g);
+        }
+        finally { g.Restore(saved); }
+        _scHits.Clear(); _scScrollable = false;
+        _scBarTrack = _scBarThumb = RectangleF.Empty;
+        if (_config.ScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
+        if (_config.ScMode != "off") DrawSuperChats(g);
+        DrawLiveEvents(g);
+        DrawTransient(g);
+    }
+
+    private void DrawFlying(Graphics g)
+    {
         for (int i = 0; i < _flying.Count; i++)
         {
             FlyingDanmaku f = _flying[i];
@@ -1450,12 +1475,6 @@ internal sealed partial class DanmakuRenderer : IDisposable
                 if (emote != null) emote.Release();     // 表情图这一帧用完就还
             }
         }
-        _scHits.Clear(); _scScrollable = false;
-        _scBarTrack = _scBarThumb = RectangleF.Empty;
-        if (_config.ScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
-        if (_config.ScMode != "off") DrawSuperChats(g);
-        DrawLiveEvents(g);
-        DrawTransient(g);
     }
 
     /// 这条弹幕画不出来（位图失效 / GDI+ 异常）：从列表里摘掉，并**留一次痕**。

@@ -83,4 +83,63 @@ internal static partial class HardeningTests
             Directory.Delete(Path.GetDirectoryName(dir), true);
         }
     }
+
+    private static void TestMpvLiveClockPolicy()
+    {
+        string directory = ReviewDirectory();
+        var previous = new Dictionary<string, object>();
+        string[] fields = { "Mpv", "RuntimeDir", "Favorites", "Cookie", "LiveTitleScript", "LiveResyncScript" };
+        try
+        {
+            foreach (string field in fields) previous[field] = hub.GetField(field, ReviewStatic).GetValue(null);
+            hub.GetField("Mpv", ReviewStatic).SetValue(null, typeof(HardeningTests).Assembly.Location);
+            hub.GetField("RuntimeDir", ReviewStatic).SetValue(null, directory);
+            hub.GetField("Favorites", ReviewStatic).SetValue(null, Path.Combine(directory, "favorites.json"));
+            hub.GetField("Cookie", ReviewStatic).SetValue(null, Path.Combine(directory, "synthetic-cookies.txt"));
+            hub.GetField("LiveTitleScript", ReviewStatic).SetValue(null, Path.Combine(directory, "live-title.lua"));
+            hub.GetField("LiveResyncScript", ReviewStatic).SetValue(null, Path.Combine(directory, "live-resync.lua"));
+            foreach (string quality in new[] { "off", "light", "high" })
+            {
+                // DefaultPath follows Favorites, so all quality reads use this synthetic configuration.
+                File.WriteAllText(Path.Combine(directory, "danmaku.json"), "{\"MpvQuality\":\"" + quality + "\"}");
+                foreach (string platform in new[] { "bili", "huya", "douyu", "douyin" })
+                foreach (string buffer in new[] { "low", "stable" })
+                {
+                    string label = platform + "/" + buffer + "/" + quality;
+                    object target = Call("Parse", platform + ":7777", "bili");
+                    target.GetType().GetField("BufferMode").SetValue(target, buffer);
+                    object plan = Call("ResolvePlan", target, "mpv", false, false);
+                    string[] args = ParseCommandLine("mpv.exe " + (string)LookupGet(plan, "Arguments"));
+                    int syncCount = 0, dropCount = 0, syncAt = -1, dropAt = -1, lastProfileAt = -1;
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        if (args[i].StartsWith("--video-sync=", StringComparison.Ordinal)) { syncCount++; syncAt = i; }
+                        if (args[i].StartsWith("--framedrop=", StringComparison.Ordinal)) { dropCount++; dropAt = i; }
+                        if (args[i].StartsWith("--profile=", StringComparison.Ordinal)) lastProfileAt = i;
+                    }
+                    Check(syncCount == 1 && args[syncAt] == "--video-sync=audio",
+                        label + " 直播唯一同步策略为音频时钟");
+                    Check(dropCount == 1 && args[dropAt] == "--framedrop=vo",
+                        label + " 明确允许视频输出丢弃迟到帧保持同步");
+                    Check(syncAt > lastProfileAt && dropAt > lastProfileAt,
+                        label + " 同步策略在画质 profile 之后生效");
+                    Check(MpvArgument(args, "--hwdec") == "auto-safe", label + " 保留安全硬件解码");
+                    Check(MpvArgument(args, "--cache") == "yes"
+                        && MpvArgument(args, "--cache-secs") == (buffer == "low" ? "3" : "15")
+                        && MpvArgument(args, "--demuxer-readahead-secs") == (buffer == "low" ? "2" : "10"),
+                        label + " 保留原有缓冲档位");
+                    Check((quality == "high" && MpvArgument(args, "--profile") == "high-quality")
+                        || (quality != "high" && lastProfileAt == -1), label + " 按配置选择画质 profile");
+                    Check((quality == "light" && MpvArgument(args, "--scale-antiring") == "0.7")
+                        || (quality != "light" && MpvArgument(args, "--scale-antiring") == null),
+                        label + " 按配置选择轻量画质参数");
+                }
+            }
+        }
+        finally
+        {
+            foreach (var pair in previous) hub.GetField(pair.Key, ReviewStatic).SetValue(null, pair.Value);
+            Directory.Delete(directory, true);
+        }
+    }
 }
