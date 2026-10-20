@@ -370,8 +370,7 @@ internal static partial class LiveHub
                 if (candidate.room_id != null)
                 {
                     string html = Get("https://live.douyin.com/" + candidate.room_id, token).Body;
-                    DouyinRoom page = ParseDouyinRoom(html);
-                    if (page == null || page.OwnerSecUid == null) page = LookupDouyinPage(html);
+                    DouyinRoom page = LookupDouyinPage(html);
                     if (page == null || page.OwnerSecUid == null || page.RoomId == null) throw new LookupFailure("blocked", "抖音房间页缺少账号关联，可能被验证、登录或页面变化阻挡。");
                     if (candidate.sec_uid != null && candidate.sec_uid != page.OwnerSecUid) throw new LookupFailure("mismatch", "抖音房间页主播与所选账号不同。");
                     candidate.sec_uid = page.OwnerSecUid; candidate.session_room_id = page.RoomId;
@@ -447,6 +446,13 @@ internal static partial class LiveHub
         // Read Flight strings as JSON data; never execute page scripts or join by nickname.
         internal static DouyinRoom LookupDouyinPage(string html)
         {
+            if (string.IsNullOrEmpty(html) || html.Length > DouyinMaxPageBytes) return null;
+            // Account aliases and numeric room pages use the same roomStore payload.
+            // Both Flight markers occur on official pages; parse data, never scripts.
+            DouyinRoom room = ParseDouyinRoom(html.Replace("self.__next_f.push([", "self.__pace_f.push([")
+                .Replace("window.__next_f.push([", "self.__pace_f.push(["));
+            if (room != null && LookupData.Digits(room.RoomId) && room.RoomId != "0"
+                && !string.IsNullOrWhiteSpace(room.OwnerSecUid)) return room;
             foreach (string view in PageViews(html))
                 foreach (Match match in Regex.Matches(view, "\"roomId\"\\s*:", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250)))
                 {
@@ -456,7 +462,7 @@ internal static partial class LiveHub
                         start = view.LastIndexOf('{', start - 1); if (start < 0) break;
                         var data = ObjectAt(view, start); var anchor = LookupData.Obj(data, "anchor");
                         string id = LookupData.Text(data, "roomId"), sec = LookupData.Text(anchor, "sec_uid");
-                        if (LookupData.Digits(id) && sec != null)
+                        if (LookupData.Digits(id) && id != "0" && !string.IsNullOrWhiteSpace(sec))
                             return new DouyinRoom { RoomId = id, OwnerSecUid = sec, OwnerId = LookupData.Text(anchor, "id_str") ?? LookupData.Text(anchor, "uid"), Owner = LookupData.Text(anchor, "nickname") };
                     }
                 }
