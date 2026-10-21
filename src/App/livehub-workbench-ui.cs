@@ -388,6 +388,8 @@ internal static partial class LiveHub
             }, SharedLookupService, SharedLookupVerifier, form);
             workbenchLookup.View.Dock = DockStyle.Fill;
             workbenchPages["lookup"].Controls.Add(workbenchLookup.View);
+            workbenchPages["lookup"].AutoScroll = false;
+            workbenchPages["lookup"].AutoScrollMinSize = Size.Empty;
         }
 
         internal void SelectWorkbenchPage(string key)
@@ -543,6 +545,20 @@ internal static partial class LiveHub
             SyncWorkbenchActions();
         }
 
+        private void FitWorkbenchPageScroll(Panel page)
+        {
+            if (page == null || page.IsDisposed || !page.AutoScroll) return;
+            page.AutoScrollPosition = new Point(0, 0);
+            int bottom = 0;
+            foreach (Control child in page.Controls)
+            {
+                if (!child.Visible || child.Dock == DockStyle.Fill) continue;
+                bottom = Math.Max(bottom, child.Bottom);
+            }
+            bool needs = bottom > page.ClientSize.Height + Px(2);
+            page.AutoScrollMinSize = needs ? new Size(0, bottom + Px(8)) : Size.Empty;
+        }
+
         private void LayoutWorkbench()
         {
             if (!workbenchReady || workbenchLayoutBusy || ((DpiForm)form).ApplyingDpi) return;
@@ -557,7 +573,7 @@ internal static partial class LiveHub
                 int shellHeight = Math.Max(Px(160), height - chromeHeight);
                 workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight);
                 workbenchContent.SetBounds(sidebar, chromeHeight, Math.Max(Px(300), width - sidebar), shellHeight);
-                int dot = Px(12), dotGap = Px(8);
+                int dot = Px(18), dotGap = Px(10);
                 int dotY = Math.Max(0, (chromeHeight - dot) / 2);
                 workbenchChromeClose.SetBounds(Px(14), dotY, dot, dot);
                 workbenchChromeMin.SetBounds(Px(14) + dot + dotGap, dotY, dot, dot);
@@ -601,6 +617,7 @@ internal static partial class LiveHub
                 LayoutWorkbenchFavorites(); LayoutWorkbenchRecent(); LayoutWorkbenchSessions(); LayoutWorkbenchPlayers();
                 Panel dataPage;
                 if (workbenchPages.TryGetValue("data", out dataPage)) WorkbenchDataUi.Relayout(dataPage, form);
+                foreach (Panel workbenchPage in workbenchPages.Values) FitWorkbenchPageScroll(workbenchPage);
                 SyncWorkbenchActions();
             }
             finally { form.ResumeLayout(true); workbenchLayoutBusy = false; }
@@ -708,8 +725,12 @@ internal static partial class LiveHub
             recentOpenMpv.SetBounds(0, y, actionWidth, Px(35)); recentOpenPot.SetBounds(actionWidth + Px(10), y, actionWidth, Px(35));
             y += Px(46);
             workbenchRecentHint.SetBounds(0, y, width, Px(24)); y += Px(32);
+            // The record list owns its own scrollbar; the page itself must not
+            // also grow, otherwise wheel input at the list end scrolls the whole
+            // page down into empty space.
+            page.AutoScroll = false;
+            page.AutoScrollMinSize = Size.Empty;
             recentBrowser.SetBounds(0, y, width, Math.Max(Px(150), page.ClientSize.Height - y - Px(4)));
-            page.AutoScrollMinSize = new Size(0, recentBrowser.Bottom + Px(4));
         }
 
         private void LayoutWorkbenchSessions()

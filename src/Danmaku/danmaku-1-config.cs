@@ -96,6 +96,8 @@ internal sealed partial class DanmakuConfig
     // 存在这里而不是另造一个设置文件 —— 跟 mpv 画质档位同一个理由：
     // danmaku.json 已经是启动器和覆盖层共用的持久配置。
     public bool DarkMode = false;
+    public string UiFontKey = "auto"; // auto / harmony / yahei-ui / yahei / system
+    public int UiFontPercent = 100;   // 启动器/设置页字体大小；100 = 标准，重启启动器生效
 
     // —— 显示哪些内容 ——
     // mpv 画质增强开关（由启动器面板勾选，启动时读这里）。
@@ -234,6 +236,8 @@ internal sealed partial class DanmakuConfig
         else if (FontName == "微软雅黑") FontFamily = "Microsoft YaHei UI";
         else { FontName = UiFonts.Available ? "鸿蒙" : "微软雅黑"; FontFamily = UiFonts.Available ? UiFonts.Family : "Microsoft YaHei UI"; }
         FontScalePercent = Clamp(FontScalePercent, 50, 300);
+        UiFontPercent = Clamp(UiFontPercent, 85, 130);
+        if (UiFontKey != "harmony" && UiFontKey != "yahei-ui" && UiFontKey != "yahei" && UiFontKey != "system") UiFontKey = "auto";
         ScaleReferenceHeight = Clamp(ScaleReferenceHeight, 360, 2160);
         OpacityPercent = Clamp(OpacityPercent, 10, 100);
         SpeedPercent = Clamp(SpeedPercent, 25, 400);

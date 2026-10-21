@@ -132,11 +132,34 @@ internal static class WorkbenchDanmakuUi
             AddCheck(filter, "SolidText", "实心字芯（透明度仅影响 SC 背景）", delegate(DanmakuConfig c) { return c.SolidText; }, delegate(DanmakuConfig c, bool v) { c.SolidText = v; });
             AddKeywords(filter);
 
+            AddCombo(ui, "UiFontKey", "界面字体", new object[] { "auto", "harmony", "yahei-ui", "yahei", "system" },
+                new[] { "自动（鸿蒙优先）", "鸿蒙 HarmonyOS", "微软雅黑 UI", "微软雅黑", "系统默认" },
+                delegate(DanmakuConfig c) { return c.UiFontKey; }, delegate(DanmakuConfig c, object v) { c.UiFontKey = Convert.ToString(v, CultureInfo.InvariantCulture); });
+            AddCombo(ui, "UiFontPercent", "界面字体大小", Objects(85, 100, 115, 130),
+                new[] { "小（85%）", "标准（100%）", "大（115%）", "超大（130%）" },
+                delegate(DanmakuConfig c) { return c.UiFontPercent; }, delegate(DanmakuConfig c, object v) { c.UiFontPercent = Int(v); });
             AddCombo(ui, "MpvQuality", "mpv 画质档位", new object[] { "off", "light", "high" },
                 new[] { "无（不增强）", "轻度（抗振铃）", "高质量" },
                 delegate(DanmakuConfig c) { return c.MpvQuality; }, delegate(DanmakuConfig c, object v) { c.MpvQuality = (string)v; c.MpvEnhance = false; });
             AddCheck(ui, "DarkMode", "深色模式（启动器与设置页）", delegate(DanmakuConfig c) { return c.DarkMode; }, delegate(DanmakuConfig c, bool v) { c.DarkMode = v; });
-            AddNote(ui, "画质增强只影响 mpv；PotPlayer 使用播放器自身的渲染设置。", "workbenchMpvQualityHint");
+            ModernButton restart = Button("重启启动器", "workbenchRestartLauncher");
+            restart.Style = ModernButton.Kind.Secondary;
+            restart.Margin = new Padding(0, DpiLayout.S(this, 4), DpiLayout.S(this, 8), DpiLayout.S(this, 8));
+            restart.Click += delegate
+            {
+                if (!SaveChanges(false)) return;
+                try
+                {
+                    System.Diagnostics.ProcessStartInfo info = new System.Diagnostics.ProcessStartInfo(Application.ExecutablePath);
+                    info.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory;
+                    info.UseShellExecute = true;
+                    System.Diagnostics.Process.Start(info);
+                    owner.BeginInvoke((MethodInvoker)delegate { owner.Close(); });
+                }
+                catch (Exception ex) { status.Text = "重启失败：" + ex.Message; }
+            };
+            ui.Controls.Add(restart);
+            AddNote(ui, "修改界面字体或字号后，点“重启启动器”即可生效；画质增强只影响 mpv，PotPlayer 使用播放器自身的渲染设置。", "workbenchMpvQualityHint");
             AddNote(ui, "热键：Ctrl+Alt+D 开关弹幕；Ctrl+Alt+S 切换 SC；Ctrl+Alt+O 隐藏覆盖层。\r\n"
                 + "Ctrl+Alt+↑ / ↓ 调字号；← / → 调显示区域；PgUp / PgDn 调速度；[ / ] 调延迟补偿。\r\n"
                 + "界面字体：HarmonyOS Sans SC（许可随 fonts/ 目录携带）。", "workbenchDanmakuHotkeys");

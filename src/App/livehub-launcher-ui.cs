@@ -191,6 +191,8 @@ internal static partial class LiveHub
                 try { dark = DanmakuHost.LoadOrCreateConfig().DarkMode; }
                 catch (Exception) { /* 配置读不出来就用浅色，别让外观问题挡住启动 */ }
             }
+            try { DanmakuConfig uiConfig = DanmakuHost.LoadOrCreateConfig(); ModernTheme.SetUiFont(uiConfig.UiFontKey, uiConfig.UiFontPercent / 100f); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("ui font setting: " + ex.Message); }
             ModernTheme.Apply(dark);
         }
 

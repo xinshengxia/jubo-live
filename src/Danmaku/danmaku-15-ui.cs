@@ -174,9 +174,27 @@ internal static class ModernTheme
     private static readonly bool HasYaheiUi = FamilyExists("Microsoft YaHei UI");
     private static readonly bool HasYahei = FamilyExists("Microsoft YaHei");
 
-    public static readonly Font UiFont = PickFont(9F);
-    public static readonly Font UiFontSmall = PickFont(8.25F);
-    public static readonly Font UiFontBold = PickFont(9F, FontStyle.Bold);
+    private static float uiScale = 1f;
+    private static string uiFamilyKey = "auto";
+    private static Font uiFont = PickFont(9F);
+    private static Font uiFontSmall = PickFont(8.25F);
+    private static Font uiFontBold = PickFont(9F, FontStyle.Bold);
+    public static Font UiFont { get { return uiFont; } }
+    public static Font UiFontSmall { get { return uiFontSmall; } }
+    public static Font UiFontBold { get { return uiFontBold; } }
+    public static float UiScale { get { return uiScale; } }
+    public static string UiFontKey { get { return uiFamilyKey; } }
+    internal static void SetUiScale(float scale) { SetUiFont(uiFamilyKey, scale); }
+    internal static void SetUiFont(string familyKey, float scale)
+    {
+        scale = Math.Max(0.85f, Math.Min(1.3f, scale));
+        string key = familyKey == "harmony" || familyKey == "yahei-ui" || familyKey == "yahei" || familyKey == "system" ? familyKey : "auto";
+        if (Math.Abs(scale - uiScale) < 0.001f && key == uiFamilyKey) return;
+        uiScale = scale; uiFamilyKey = key;
+        uiFont = PickFont(9F * scale);
+        uiFontSmall = PickFont(8.25F * scale);
+        uiFontBold = PickFont(9F * scale, FontStyle.Bold);
+    }
 
 
     /// 字体族是否真的装了。
@@ -216,10 +234,13 @@ internal static class ModernTheme
 
     private static Font PickFont(float size, FontStyle style)
     {
+        bool wantHarmony = (uiFamilyKey == "auto" || uiFamilyKey == "harmony") && UiFonts.Available;
+        bool wantYaheiUi = (uiFamilyKey == "auto" || uiFamilyKey == "yahei-ui") && HasYaheiUi;
+        bool wantYahei = (uiFamilyKey == "auto" || uiFamilyKey == "yahei") && HasYahei;
         // 首选随包携带的 HarmonyOS Sans SC（fonts\ 目录，AddFontResourceEx 注册进本进程）。
         // ⚠️ 粗体走 **Medium 字重**，不用 FontStyle.Bold —— 那是**合成粗体**，
         //    中文笔画会被描粗糊在一起；HarmonyOS Sans 自带 Medium，直接用它更干净。
-        if (UiFonts.Available)
+        if (wantHarmony || uiFamilyKey == "auto" && UiFonts.Available)
         {
             try
             {
@@ -229,9 +250,10 @@ internal static class ModernTheme
             }
             catch (Exception ex) { Diagnostics.Report("ui-font-pick", ex); }
         }
-        // 兜底：系统自带的雅黑（老系统没有 YaHei UI 就用普通雅黑）
-        if (HasYaheiUi) return new Font("Microsoft YaHei UI", size * 96f / 72f, style, GraphicsUnit.Pixel);
-        if (HasYahei) return new Font("Microsoft YaHei", size * 96f / 72f, style, GraphicsUnit.Pixel);
+        // 系统字体选择或兜底：老系统没有 YaHei UI 就用普通雅黑
+        if (wantYaheiUi || uiFamilyKey == "auto" || uiFamilyKey == "yahei-ui") return new Font("Microsoft YaHei UI", size * 96f / 72f, style, GraphicsUnit.Pixel);
+        if (wantYahei || uiFamilyKey == "yahei") return new Font("Microsoft YaHei", size * 96f / 72f, style, GraphicsUnit.Pixel);
+        if (uiFamilyKey == "system") return new Font(SystemFonts.MessageBoxFont.FontFamily, size * 96f / 72f, style, GraphicsUnit.Pixel);
         return new Font(FontFamily.GenericSansSerif, size * 96f / 72f, style, GraphicsUnit.Pixel);
     }
 

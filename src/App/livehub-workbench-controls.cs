@@ -1202,7 +1202,7 @@ internal sealed class TrafficDot : Control
         Color fill = kind == "close" ? Color.FromArgb(0xFF, 0x5F, 0x57)
             : kind == "max" ? Color.FromArgb(0x28, 0xC8, 0x40)
             : Color.FromArgb(0xFE, 0xBC, 0x2E);
-        int size = Math.Min(Width, Height) - DpiLayout.S(this, 4);
+        int size = Math.Min(Width, Height) - DpiLayout.S(this, 2);
         if (size < 4) return;
         Rectangle circle = new Rectangle((Width - size) / 2, (Height - size) / 2, size, size);
         using (SolidBrush brush = new SolidBrush(fill)) g.FillEllipse(brush, circle);
