@@ -59,6 +59,8 @@ if ($outDir -and -not (Test-Path -LiteralPath $outDir)) { New-Item -ItemType Dir
 $versionFile = Join-Path $root 'obj\legacy\build-info.cs'
 & (Join-Path $root 'tools\Write-BuildInfo.ps1') -Repo $root -Out $versionFile
 
+$antdDll = Join-Path $root 'lib\antdui\AntdUI.dll'
+if (-not (Test-Path -LiteralPath $antdDll -PathType Leaf)) { throw "缺少 AntdUI.dll：$antdDll" }
 $mainArgs = @('/nologo', '/target:winexe', '/optimize+', "/out:$exe", "/win32manifest:$root\app.manifest",
     # 2026-10-16：图标随 exe 走（app.ico 在仓库根）。此前 exe 里**没有任何图标资源**，
     # 图标全靠快捷方式 IconLocation 指向外部 mpv.exe —— 那个文件一被清理，任务栏就
@@ -66,11 +68,12 @@ $mainArgs = @('/nologo', '/target:winexe', '/optimize+', "/out:$exe", "/win32man
     "/win32icon:$root\app.ico",
     '/r:System.Windows.Forms.dll', '/r:System.Security.dll', '/r:System.Drawing.dll',
     '/r:System.Web.Extensions.dll', '/r:Microsoft.VisualBasic.dll',
-$versionFile, "/r:$root\lib\webview2\Microsoft.Web.WebView2.Core.dll", "/r:$root\lib\webview2\Microsoft.Web.WebView2.WinForms.dll") + $source
+$versionFile, "/r:$root\lib\webview2\Microsoft.Web.WebView2.Core.dll", "/r:$root\lib\webview2\Microsoft.Web.WebView2.WinForms.dll", "/r:$antdDll") + $source
 & (Join-Path $root 'tools\Copy-WebViewAssets.ps1') -SourceRoot $root -Destination $outDir
 Copy-Item -LiteralPath (Join-Path $root 'app.config') -Destination ($exe + '.config') -Force
 & $compiler @mainArgs
 if ($LASTEXITCODE -ne 0) { throw "启动器编译失败：$LASTEXITCODE" }
+Copy-Item -LiteralPath $antdDll -Destination (Join-Path $outDir 'AntdUI.dll') -Force
 # -Out 换目录时必须把精灵图一起带过去：离线测试里有一组会从**目标 exe 旁边**找
 # emoji-sheet.png，不带过去就会以「找不到 emoji-sheet.png」失败 ——
 # 而 -Out 的卖点恰恰是「目标被占用时构建到别处」，那样等于这个功能不成立（评估报告实测）。

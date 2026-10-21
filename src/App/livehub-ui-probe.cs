@@ -93,6 +93,8 @@ internal static partial class LiveHub
         {
             Dictionary<string, object> row = new Dictionary<string, object>();
             row["type"] = child.GetType().Name;
+            row["name"] = child.Name;
+            row["parentName"] = container.Name;
             row["parent"] = ReferenceEquals(container, root)
                 ? "(form)"
                 : container.GetType().Name + ":" + (container.Text == null ? "" : container.Text);

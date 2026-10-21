@@ -7,21 +7,68 @@ using System.Windows.Forms;
 internal sealed class DanmakuFeatureSettings
 {
     internal static Form Build(DanmakuConfig config)
-    { return BuildCore(config, false); }
+    { Action ignored; return BuildCore(config, false, out ignored, false); }
     internal static Form BuildPreview(DanmakuConfig config)
-    { return BuildCore(config, true); }
-    private static Form BuildCore(DanmakuConfig config, bool preview)
+    { Action ignored; return BuildCore(config, true, out ignored, false); }
+    internal static Form Build(DanmakuConfig config, out Action applyAll)
+    { return BuildCore(config, false, out applyAll, false); }
+    internal static Form BuildFlat(DanmakuConfig config, out Action applyAll)
+    { return BuildCore(config, false, out applyAll, true); }
+    private static Form BuildCore(DanmakuConfig config, bool preview, out Action applyAll, bool flat)
     {
-        DpiForm form = preview ? (DpiForm)new DanmakuSettingsPreviewForm() : new DpiForm();
-        form.Text = "更多弹幕设置"; form.StartPosition = FormStartPosition.CenterParent;
-        DpiLayout.SetDesignFont(form, ModernTheme.UiFont);
-        form.BackColor = ModernTheme.Surface; form.ForeColor = ModernTheme.Text;
-        form.HandleCreated += delegate { ModernTheme.ApplyWindowChrome(form); };
-        form.ClientSize = new Size(740, 620); form.MinimumSize = new Size(540, 440);
-        DanmakuSettingsPages tabs = new DanmakuSettingsPages(); tabs.Dock = DockStyle.Fill; form.Controls.Add(tabs);
+        Control ignored; Action<DanmakuConfig> ignoredReload;
+        return BuildCore(config, preview, out applyAll, flat, false, out ignored, out ignoredReload);
+    }
+    internal static Control BuildEmbedded(DanmakuConfig config, out Action applyAll, out Action<DanmakuConfig> reload)
+    {
+        Control content;
+        BuildCore(config, false, out applyAll, true, true, out content, out reload);
+        return content;
+    }
+    private static Form BuildCore(DanmakuConfig config, bool preview, out Action applyAll, bool flat,
+        bool embedded, out Control content, out Action<DanmakuConfig> reload)
+    {
+        DpiForm form = embedded ? null : preview ? (DpiForm)new DanmakuSettingsPreviewForm() : new DpiForm();
+        Control root = form != null ? (Control)form : new Panel { Name = "workbenchEmbeddedMore", Dock = DockStyle.Fill };
+        content = root;
+        DpiLayout.SetDesignFont(root, ModernTheme.UiFont);
+        root.BackColor = ModernTheme.Surface; root.ForeColor = ModernTheme.Text;
+        if (form != null)
+        {
+            form.Text = "更多弹幕设置"; form.StartPosition = FormStartPosition.CenterParent;
+            form.HandleCreated += delegate { ModernTheme.ApplyWindowChrome(form); };
+            form.ClientSize = new Size(740, 620); form.MinimumSize = new Size(540, 440);
+        }
+        DanmakuSettingsPages tabs = null;
+        Panel flatScroll = null; TableLayoutPanel flatStack = null;
+        if (flat)
+        {
+            flatScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+            flatScroll.HandleCreated += delegate { ModernTheme.ApplyScrollbarTheme(flatScroll); };
+            root.Controls.Add(flatScroll);
+            flatStack = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1,
+                Padding = new Padding(0, 0, 0, 12), Margin = Padding.Empty };
+            flatStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            flatScroll.Controls.Add(flatStack);
+        }
+        else { tabs = new DanmakuSettingsPages(); tabs.Dock = DockStyle.Fill; root.Controls.Add(tabs); }
         List<Action> apply = new List<Action>();
+        List<Action<DanmakuConfig>> load = new List<Action<DanmakuConfig>>();
         Func<string, TableLayoutPanel> page = delegate (string name)
         {
+            if (flat)
+            {
+                DanmakuCard card = new DanmakuCard { Dock = DockStyle.Top, AutoSize = true, Margin = new Padding(0, 0, 0, 14),
+                    Padding = new Padding(16) };
+                TableLayoutPanel grid = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
+                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
+                ModernLabel heading = new ModernLabel { Text = name, AutoSize = true, Margin = new Padding(0, 0, 0, 12) };
+                DpiLayout.SetDesignFont(heading, new Font(ModernTheme.UiFont.FontFamily, 15f, FontStyle.Bold, GraphicsUnit.Pixel));
+                grid.Controls.Add(heading, 0, 0); grid.SetColumnSpan(heading, 2); grid.RowStyles.Add(new RowStyle(SizeType.AutoSize)); grid.RowCount = 1;
+                grid.Margin = Padding.Empty; card.Controls.Add(grid);
+                flatStack.Controls.Add(card); flatStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                return grid;
+            }
             Panel tab = tabs.AddPage(name);
             Panel scroll = new Panel(); scroll.Dock = DockStyle.Fill; scroll.AutoScroll = true; scroll.BackColor = ModernTheme.Surface; tab.Controls.Add(scroll);
             scroll.HandleCreated += delegate { ModernTheme.ApplyScrollbarTheme(scroll); };
@@ -38,23 +85,28 @@ internal sealed class DanmakuFeatureSettings
             Label label = new ModernLabel(); label.Text = caption; label.Dock = DockStyle.Fill; label.TextAlign = ContentAlignment.MiddleLeft;
             control.Dock = DockStyle.Fill; control.Margin = new Padding(5, 4, 5, 4);
             control.AccessibleName = caption;
+            string fieldName;
+            if (FeatureFields.TryGetValue(caption, out fieldName)) control.Name = "featureSetting_" + fieldName;
             table.Controls.Add(label, 0, index); table.Controls.Add(control, 1, index);
         };
         Action<TableLayoutPanel, string, bool, Action<bool>> check = delegate (TableLayoutPanel table, string caption, bool value, Action<bool> save)
         {
             CheckBox box = new ModernCheckBox(); box.Checked = value; box.Text = "启用";
             row(table, caption, box, 34); apply.Add(delegate { save(box.Checked); });
+            FieldInfo field = FeatureField(caption); load.Add(delegate(DanmakuConfig latest) { box.Checked = (bool)field.GetValue(latest); });
         };
         Action<TableLayoutPanel, string, int, int, int, Action<int>> number = delegate (TableLayoutPanel table, string caption, int value, int min, int max, Action<int> save)
         {
             DanmakuSettingsNumber box = new DanmakuSettingsNumber(); box.Maximum = max; box.Minimum = min; box.Value = value;
             row(table, caption, box, 38); box.Dock = DockStyle.None; box.Anchor = AnchorStyles.Left;
             apply.Add(delegate { save(box.Value); });
+            FieldInfo field = FeatureField(caption); load.Add(delegate(DanmakuConfig latest) { box.Value = (int)field.GetValue(latest); });
         };
         Action<TableLayoutPanel, string, string[], string[], string, Action<string>> choice = delegate (TableLayoutPanel table, string caption, string[] ids, string[] labels, string value, Action<string> save)
         {
             ComboBox box = new ModernComboBox(); box.Items.AddRange(labels); box.SelectedIndex = Math.Max(0, Array.IndexOf(ids, value));
-            row(table, caption, box, 36); apply.Add(delegate { save(ids[box.SelectedIndex]); });
+            row(table, caption, box, 36); apply.Add(delegate { if (box.SelectedIndex >= 0) save(ids[box.SelectedIndex]); });
+            FieldInfo field = FeatureField(caption); load.Add(delegate(DanmakuConfig latest) { box.SelectedIndex = Math.Max(0, Array.IndexOf(ids, (string)field.GetValue(latest))); });
         };
         Action<TableLayoutPanel, string, string[], Action<string[]>> rules = delegate (TableLayoutPanel table, string caption, string[] values, Action<string[]> save)
         {
@@ -62,6 +114,7 @@ internal sealed class DanmakuFeatureSettings
             box.Inner.Text = string.Join(Environment.NewLine, values ?? new string[0]);
             row(table, caption, box, 104);
             apply.Add(delegate { save(box.Inner.Text.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)); });
+            FieldInfo field = FeatureField(caption); load.Add(delegate(DanmakuConfig latest) { box.Inner.Text = string.Join(Environment.NewLine, (string[])field.GetValue(latest) ?? new string[0]); });
         };
         TableLayoutPanel display = page("显示与外观");
         check(display, "滚动弹幕", config.ShowScrolling, delegate(bool v) { config.ShowScrolling = v; });
@@ -100,10 +153,22 @@ internal sealed class DanmakuFeatureSettings
         check(traffic, "看过 / 点赞 / 高能榜人数", config.ShowLiveStats, delegate(bool v) { config.ShowLiveStats = v; });
         Label eventsHelp = new ModernLabel(); eventsHelp.Text = "当前接入 B站礼物、上舰、进场/关注、公告和人数统计。独立提示条参与避让；默认关闭以保留画面。";
         row(traffic, "事件说明", eventsHelp, 68);
-        Panel safeTab = tabs.AddPage("画面安全区");
+        Panel safeTab = flat ? new DanmakuCard { Dock = DockStyle.Top, Height = 400,
+            Margin = new Padding(0, 0, 0, 14), Padding = new Padding(16) } : tabs.AddPage("画面安全区");
+        if (flat)
+        {
+            flatStack.Controls.Add(safeTab); flatStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
         TableLayoutPanel safeLayout = new TableLayoutPanel(); safeLayout.Dock = DockStyle.Fill;
-        safeLayout.ColumnCount = 1; safeLayout.RowCount = 3; safeLayout.Padding = new Padding(14, 8, 14, 8);
+        safeLayout.ColumnCount = 1; safeLayout.RowCount = flat ? 4 : 3; safeLayout.Padding = flat ? Padding.Empty : new Padding(14, 8, 14, 8);
         safeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        if (flat)
+        {
+            safeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            ModernLabel safeHeading = new ModernLabel { Text = "画面安全区", AutoSize = true, Margin = new Padding(0, 0, 0, 10) };
+            DpiLayout.SetDesignFont(safeHeading, new Font(ModernTheme.UiFont.FontFamily, 15f, FontStyle.Bold, GraphicsUnit.Pixel));
+            safeLayout.Controls.Add(safeHeading, 0, 0);
+        }
         safeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         safeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         safeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); safeTab.Controls.Add(safeLayout);
@@ -113,7 +178,8 @@ internal sealed class DanmakuFeatureSettings
         presets.AutoSize = true; presets.AutoSizeMode = AutoSizeMode.GrowAndShrink; presets.Margin = Padding.Empty;
         Label hint = new ModernLabel(); hint.Text = "在示意画面拖动添加矩形；右键矩形删除。区域按画面百分比保存，缩放后自动跟随。";
         hint.Dock = DockStyle.Fill; hint.AutoSize = true; hint.Margin = new Padding(0, 0, 0, 10);
-        safeLayout.Controls.Add(hint, 0, 0); safeLayout.Controls.Add(canvas, 0, 1); safeLayout.Controls.Add(presets, 0, 2);
+        int safeOffset = flat ? 1 : 0;
+        safeLayout.Controls.Add(hint, 0, safeOffset); safeLayout.Controls.Add(canvas, 0, safeOffset + 1); safeLayout.Controls.Add(presets, 0, safeOffset + 2);
         foreach (string preset in new string[] { "顶部标题", "底部字幕", "中央主体", "清空" })
         {
             string name = preset; Button button = new ModernButton(); button.Text = name; button.AutoSize = true;
@@ -125,7 +191,9 @@ internal sealed class DanmakuFeatureSettings
             }; presets.Controls.Add(button);
         }
         apply.Add(delegate { config.ReservedAreas = canvas.GetAreas(); });
-        Panel footer = new Panel(); footer.Dock = DockStyle.Bottom; footer.Height = 48; form.Controls.Add(footer);
+        load.Add(delegate(DanmakuConfig latest) { canvas.SetAreas(latest.ReservedAreas); });
+        Panel footer = new Panel(); footer.Dock = DockStyle.Bottom; footer.Height = 48; root.Controls.Add(footer);
+        footer.Visible = !embedded;
         Button ok = new ModernButton(); ((ModernButton)ok).Style = ModernButton.Kind.Primary; ok.Text = "应用"; ok.DialogResult = DialogResult.OK; ok.SetBounds(510, 8, 94, 32);
         Button cancel = new ModernButton(); cancel.Text = "取消"; cancel.DialogResult = DialogResult.Cancel; cancel.SetBounds(620, 8, 94, 32);
         footer.Controls.Add(ok); footer.Controls.Add(cancel);
@@ -133,25 +201,47 @@ internal sealed class DanmakuFeatureSettings
         Action reflow = delegate {
             if (layingOut) return; layingOut = true;
             try {
-                footer.Height = DpiLayout.S(form, 48);
-                cancel.SetBounds(Math.Max(4, footer.Width - DpiLayout.S(form, 108)), DpiLayout.S(form, 8), DpiLayout.S(form, 94), DpiLayout.S(form, 32));
-                ok.SetBounds(Math.Max(4, cancel.Left - DpiLayout.S(form, 106)), DpiLayout.S(form, 8), DpiLayout.S(form, 94), DpiLayout.S(form, 32));
+                footer.Height = DpiLayout.S(root, 48);
+                cancel.SetBounds(Math.Max(4, footer.Width - DpiLayout.S(root, 108)), DpiLayout.S(root, 8), DpiLayout.S(root, 94), DpiLayout.S(root, 32));
+                ok.SetBounds(Math.Max(4, cancel.Left - DpiLayout.S(root, 106)), DpiLayout.S(root, 8), DpiLayout.S(root, 94), DpiLayout.S(root, 32));
             } finally { layingOut = false; }
         };
-        footer.Resize += delegate { reflow(); }; form.DpiUpdated += delegate { reflow(); };
+        footer.Resize += delegate { reflow(); }; if (form != null) form.DpiUpdated += delegate { reflow(); };
         ok.Click += delegate { foreach (Action save in apply) save(); config.Normalize(); };
-        form.AcceptButton = ok; form.CancelButton = cancel;
-        Action theme = delegate { ApplyTheme(form); ModernTheme.ApplyWindowChrome(form); };
-        ModernTheme.Changed += theme; form.Disposed += delegate { ModernTheme.Changed -= theme; };
-        ApplyTheme(form);
-        DpiLayout.ScaleTree(form);
+        if (form != null) { form.AcceptButton = ok; form.CancelButton = cancel; }
+        Action theme = delegate { ApplyTheme(root); if (form != null) ModernTheme.ApplyWindowChrome(form); };
+        ModernTheme.Changed += theme; root.Disposed += delegate { ModernTheme.Changed -= theme; };
+        ApplyTheme(root);
+        if (form != null) DpiLayout.ScaleTree(form);
         reflow();
+        applyAll = delegate { foreach (Action save in apply) save(); config.Normalize(); };
+        reload = delegate(DanmakuConfig latest) { foreach (Action<DanmakuConfig> restore in load) restore(latest); };
         return form;
     }
+    private static readonly Dictionary<string, string> FeatureFields = new Dictionary<string, string>
+    {
+        { "滚动弹幕", "ShowScrolling" }, { "顶部固定", "ShowTop" }, { "底部固定", "ShowBottom" },
+        { "逆向弹幕", "ShowReverse" }, { "彩色弹幕", "ShowColored" }, { "高级弹幕的纯文字", "ShowAdvancedText" },
+        { "过长固定弹幕改为滚动", "FixedOverflowToScroll" }, { "顶部固定可用区域 %", "TopFixedZonePercent" },
+        { "底部固定可用区域 %", "BottomFixedZonePercent" }, { "每类固定条数（0 不限）", "MaxFixedPerMode" },
+        { "表情大小", "EmoteSizeMode" }, { "文字边缘", "BorderStyle" }, { "弹幕自身不透明度 %", "TextOpacityPercent" },
+        { "屏蔽用户（每行一条）", "BlockUsers" }, { "关键词高亮", "HighlightKeywords" }, { "关键词置顶", "PinKeywords" },
+        { "合并时归一空白/全半角", "NormalizeDuplicateText" }, { "合并放大上限 %", "MergedMaxScalePercent" },
+        { "平滑弹幕准入", "SmoothDanmaku" }, { "每秒上限（0 为自动）", "AdmissionPerSecond" },
+        { "短队列等待毫秒", "QueueWaitMs" }, { "短队列容量", "QueueCapacity" },
+        { "拥挤时缩小普通弹幕", "ShrinkWhenCrowded" }, { "拥挤字号 %", "CrowdedScalePercent" },
+        { "送礼提示", "ShowGift" }, { "进场/关注提示", "ShowEnterMessage" }, { "上舰提示", "ShowGuardEvents" },
+        { "平台公告", "ShowNotice" }, { "看过 / 点赞 / 高能榜人数", "ShowLiveStats" }
+    };
+    private static FieldInfo FeatureField(string caption)
+    { return typeof(DanmakuConfig).GetField(FeatureFields[caption], BindingFlags.Instance | BindingFlags.Public); }
     private static void ApplyTheme(Control root)
     {
+        Color surface = ModernTheme.Surface;
+        for (Control parent = root.Parent; parent != null; parent = parent.Parent)
+            if (parent is DanmakuCard) { surface = ModernTheme.Card; break; }
         if (root is Form || root.GetType() == typeof(Panel) || root is TableLayoutPanel || root is FlowLayoutPanel)
-        { root.BackColor = ModernTheme.Surface; root.ForeColor = ModernTheme.Text; }
+        { root.BackColor = surface; root.ForeColor = ModernTheme.Text; }
         Panel scroll = root as Panel;
         if (scroll != null && scroll.AutoScroll) ModernTheme.ApplyScrollbarTheme(scroll);
         foreach (Control child in root.Controls) ApplyTheme(child);
@@ -190,6 +280,12 @@ internal sealed class DanmakuSafeAreaCanvas : Control
         foreach (string area in areas ?? new string[0]) { RectangleF rect; if (DanmakuRegions.TryParse(area, out rect)) _areas.Add(rect); }
     }
     internal void ClearAreas() { _areas.Clear(); Invalidate(); }
+    internal void SetAreas(string[] areas)
+    {
+        _areas.Clear();
+        foreach (string area in areas ?? new string[0]) { RectangleF rect; if (DanmakuRegions.TryParse(area, out rect)) _areas.Add(rect); }
+        Invalidate();
+    }
     internal void AddArea(RectangleF area) { if (_areas.Count < 12) _areas.Add(area); Invalidate(); }
     internal string[] GetAreas() { List<string> values = new List<string>(); foreach (RectangleF area in _areas) values.Add(DanmakuRegions.Encode(area)); return values.ToArray(); }
     private RectangleF Frame

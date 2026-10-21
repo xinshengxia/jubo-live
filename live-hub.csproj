@@ -42,10 +42,11 @@
     <Reference Include="System.Security" />
     <Reference Include="Microsoft.Web.WebView2.Core"><HintPath>lib\webview2\Microsoft.Web.WebView2.Core.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="Microsoft.Web.WebView2.WinForms"><HintPath>lib\webview2\Microsoft.Web.WebView2.WinForms.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="AntdUI"><HintPath>lib\antdui\AntdUI.dll</HintPath><Private>true</Private></Reference>
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="emoji-sheet.png;emoji-sheet.txt;fonts\**\*;lib\zxing.dll;lib\webview2\**\*;tests\fixtures\**\*;THIRD_PARTY_NOTICES.md;licenses\**\*">
+    <Content Include="emoji-sheet.png;emoji-sheet.txt;fonts\**\*;lib\zxing.dll;lib\webview2\**\*;lib\antdui\**\*;tests\fixtures\**\*;THIRD_PARTY_NOTICES.md;licenses\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="live-title.lua">

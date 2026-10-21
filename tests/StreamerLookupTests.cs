@@ -530,9 +530,12 @@ internal static partial class HardeningTests
                         }
                         int[] deep = LookupBoundsInForm(LookupGet(ui, "Refresh"), form), candidates = LookupBoundsInForm(LookupGet(ui, "Candidates"), form),
                             details = LookupBoundsInForm(LookupGet(LookupGet(ui, "Details"), "Parent"), form);
-                        // Details is the inner edit; compare the surrounding card to the list edge.
-                        Check(deep[0] == platform[0] && candidates[0] == platform[0],
-                            "首列控件与候选区域使用同一左边距DPI=" + factor);
+                        System.Windows.Forms.Control candidateCard = ((System.Windows.Forms.Form)form).Controls.Find("lookupCandidatesCard", true)[0];
+                        int[] cardBounds = LookupBoundsInForm(candidateCard, form);
+                        int inset = (int)Math.Round(12 * factor);
+                        Check(deep[0] == platform[0] && cardBounds[0] == platform[0]
+                            && candidates[0] - cardBounds[0] == inset,
+                            "候选卡片与查询栏对齐，内容保留一致内边距DPI=" + factor);
                         Check(candidates[1] == details[1], "候选列表与账号详情顶边对齐DPI=" + factor);
                         foreach (System.Collections.DictionaryEntry filter in (System.Collections.IDictionary)LookupGet(ui, "PlatformFilters")) {
                             int[] bounds = LookupBoundsInForm(filter.Value, form);

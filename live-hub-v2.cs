@@ -562,6 +562,7 @@ internal static partial class LiveHub
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        AntdUiBridge.Initialize();
         ShowDialog();
     }
 

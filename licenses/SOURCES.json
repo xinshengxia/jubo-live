@@ -1,6 +1,6 @@
 {
   "schema": "livehub-third-party-sources/1",
-  "reviewedOn": "2026-10-13",
+  "reviewedOn": "2026-10-21",
   "scope": "License verification snapshots, not assertions of the original adoption revisions",
   "protocolReferences": [
     {
@@ -8,8 +8,14 @@
       "revision": "3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6",
       "usage": "Gift, guard and interaction message fields, including protobuf field numbers; no Python code port",
       "files": [
-        {"path": "blivedm/models/web.py", "sha256": "77C2FA23448555EB2036160B4B52CB179E78F5C5B40EE359D33244D65446006D"},
-        {"path": "blivedm/models/pb.py", "sha256": "C8D9E31BA7B4E62E8302BB900FF3FB3EA46E62E9F98BD80577C3D68AB089C811"}
+        {
+          "path": "blivedm/models/web.py",
+          "sha256": "77C2FA23448555EB2036160B4B52CB179E78F5C5B40EE359D33244D65446006D"
+        },
+        {
+          "path": "blivedm/models/pb.py",
+          "sha256": "C8D9E31BA7B4E62E8302BB900FF3FB3EA46E62E9F98BD80577C3D68AB089C811"
+        }
       ],
       "licensePath": "licenses/blivedm-LICENSE.txt"
     }
@@ -54,6 +60,11 @@
       "name": "Microsoft.Web.WebView2",
       "license": "BSD-3-Clause (official SDK package)",
       "usage": "Unmodified Core/WinForms SDK DLLs and x86/x64 loader; optional Douyin browser-assisted search"
+    },
+    {
+      "name": "AntdUI",
+      "license": "Apache-2.0",
+      "usage": "WinForms 控件库 2.4.15（net48 单文件 DLL）；主窗口按钮、输入、选择、标签页与状态标签"
     }
   ],
   "files": [
@@ -170,6 +181,14 @@
       "upstreamPath": "NOTICE.txt",
       "url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4258.31/microsoft.web.webview2.1.0.4258.31.nupkg",
       "packageSha256": "56F7F4B8BF9AEE4B8EFEFBBDD4F67D5F74EBD1B100ED0806DA71BF76AF481AA9"
+    },
+    {
+      "path": "licenses/AntdUI-LICENSE.txt",
+      "sha256": "50E6751797C50DEDD75EF1B8A0D9E42F5F8472E9FBCE91F34718E9F97B0C780A",
+      "upstreamRepository": "AntdUI/AntdUI",
+      "upstreamCommit": "e08d95a155583b852f7cc119e7d0b9b8bba9ae76",
+      "upstreamPath": "LICENSE",
+      "url": "https://github.com/AntdUI/AntdUI/blob/e08d95a155583b852f7cc119e7d0b9b8bba9ae76/LICENSE"
     }
   ]
 }

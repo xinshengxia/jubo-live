@@ -130,48 +130,29 @@ internal static partial class HardeningTests
 
     private static void TestLoginMainEntry()
     {
-        Exception failure = null;
-        var thread = new Thread(delegate()
+        WithWorkbenchForm(-1, delegate(Form launcher)
         {
-            string dir = ReviewDirectory();
-            FieldInfo runtime = hub.GetField("RuntimeDir", ReviewStatic), cookie = hub.GetField("Cookie", ReviewStatic);
-            object oldRuntime = runtime.GetValue(null), oldCookie = cookie.GetValue(null);
-            try
+            WorkbenchShowPage(launcher, "accounts");
+            foreach (string platform in new[] { "bili", "huya", "douyu", "douyin" })
             {
-                runtime.SetValue(null, dir); cookie.SetValue(null, Path.Combine(dir, "absent-cookie.txt"));
-                using (Form launcher = (Form)hub.GetMethod("BuildLauncherForm", ReviewStatic, null, new[] { typeof(int) }, null).Invoke(null, new object[] { -1 }))
-                using (var timer = new System.Windows.Forms.Timer { Interval = 50 })
-                {
-                    launcher.StartPosition = FormStartPosition.Manual; launcher.Left = -20000; launcher.ShowInTaskbar = false;
-                    launcher.Show(); Application.DoEvents();
-                    bool found = false;
-                    timer.Tick += delegate
-                    {
-                        Form detail = null;
-                        foreach (Form form in Application.OpenForms) if (form.Text == "本地数据与平台状态") detail = form;
-                        if (detail == null) return;
-                        timer.Stop();
-                        try
-                        {
-                            found = true;
-                            foreach (string name in new[] { "checkLogin", "checkAllLogins", "loginAgain", "logout", "clean" })
-                                Check(detail.Controls.Find(name, true).Length == 1, "真实详情窗口提供操作：" + name);
-                            TextBox info = (TextBox)detail.Controls.Find("info", true)[0];
-                            Check(info.Text.Contains("Cookie / 登录状态") && info.Text.Contains("尚未在线验证"), "真实打开事件展示独立Cookie状态与验证时间");
-                        }
-                        catch (Exception ex) { failure = ex; }
-                        finally { detail.Close(); }
-                    };
-                    timer.Start(); ((Button)launcher.Controls.Find("localDataEntry", true)[0]).PerformClick();
-                    timer.Stop(); Check(found, "主界面按钮实际打开详情，而非只有控件名称");
-                    launcher.Close();
-                }
+                foreach (string prefix in new[] { "workbenchLogin_", "workbenchCheckCookie_", "workbenchAccountDetails_", "workbenchLogout_" })
+                    Check(launcher.Controls.Find(prefix + platform, true).Length == 1,
+                        "账号页提供独立平台操作：" + prefix + platform);
             }
-            catch (Exception ex) { failure = ex; }
-            finally { runtime.SetValue(null, oldRuntime); cookie.SetValue(null, oldCookie); Directory.Delete(dir, true); }
+            Type dataUi = hub.GetNestedType("WorkbenchDataUi", ReviewInstance | BindingFlags.Static);
+            using (Form detail = (Form)dataUi.GetMethod("BuildAccountDetails", ReviewStatic).Invoke(null, new object[] { "bili" }))
+            {
+                foreach (string name in new[] { "checkCookie", "loginAgain", "logout", "close" })
+                    Check(detail.Controls.Find(name, true).Length == 1, "账号明细窗口提供操作：" + name);
+                Control info = detail.Controls.Find("workbenchCookieDetails", true)[0];
+                Check(info.Text.Contains("Cookie") && info.Text.Length > 20, "账号明细直接展示Cookie状态、检测结果及时间");
+                Check(!detail.Visible, "账号详情可在不显示窗口的情况下验收");
+            }
+            WorkbenchShowPage(launcher, "data");
+            Control data = WorkbenchFind(launcher, "workbenchPage_data");
+            Check(data.Controls.Find("checkCookie", true).Length == 0
+                && data.Controls.Find("workbenchCheckAllCookies", true).Length == 0,
+                "本地数据页不重复账号检测操作");
         });
-        thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        if (!thread.Join(10000)) throw new Exception("主界面登录详情回归超时");
-        if (failure != null) throw failure;
     }
 }

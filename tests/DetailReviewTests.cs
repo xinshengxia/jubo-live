@@ -44,8 +44,9 @@ internal static partial class HardeningTests
                         int needed = TextRenderer.MeasureText(status.Text, status.Font,
                             new Size(status.Width, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
                         Check(needed <= status.Height, "状态文字全部可读 DPI=" + dpi + " width=" + width + " height=" + status.Height + " needed=" + needed);
-                        foreach (Control control in form.Controls)
-                            if (control != status) Check(!control.Bounds.IntersectsWith(status.Bounds), "状态提示换行后不覆盖其他控件");
+                        foreach (Control control in status.Parent.Controls)
+                            if (control != status && WorkbenchLocallyVisible(control))
+                                Check(!control.Bounds.IntersectsWith(status.Bounds), "状态提示换行后不覆盖同容器的其他操作");
                     }
                     status.Text = new string('长', 500);
                     Check(status.AutoEllipsis && status.Height <= 72 * dpi / 96, "异常长提示限定三行并提供省略提示，不把全部操作推出窗口");

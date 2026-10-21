@@ -4,12 +4,17 @@
 
 ## 随包分发的组件
 
+2026-10-22 的查询页分组、输入框和更多弹幕设置调整未新增外部图标、字体或运行库；继续使用下列固定版本及随包原始许可材料。
+
+侧栏工作台、收藏卡片、历史双播放器操作和本地数据窗口使用本项目的 WinForms / GDI+ 控件；主窗口的按钮、输入框、下拉选择、标签页和状态标签使用 AntdUI 2.4.15（net48 单文件程序集，随包放在启动器同级）。没有引入 ReaLTaiizor、Krypton 或 Lucide 运行库、源码或素材；界面仍使用随包字体，许可原文随 `fonts/`、`licenses/` 携带。界面选型研究和网页预览不作为实际分发依赖。
+
 | 组件 | 用途 | 许可 |
 | --- | --- | --- |
 | [mpv](https://mpv.io/) | 默认播放器（仅 `full` 包内置） | GPLv2+ / LGPLv2.1+，原文见 `licenses/mpv-LICENSE.GPL.txt`、`licenses/mpv-LICENSE.LGPL.txt` |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | B站取流解析 | 原文见 `licenses/yt-dlp-LICENSE.txt`、`licenses/yt-dlp-THIRD_PARTY_LICENSES.txt` |
 | [ZXing.Net](https://github.com/micjahn/ZXing.Net) | 扫码登录的二维码生成 | 原文见 `licenses/ZXing.Net-COPYING.txt` |
 | [WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | 网页辅助登录（抖音） | 原文见 `licenses/WebView2-SDK-LICENSE.txt`、`licenses/WebView2-SDK-NOTICE.txt` |
+| [AntdUI](https://github.com/AntdUI/AntdUI) | 主窗口按钮、输入、下拉选择、标签页与状态标签 | Apache-2.0，原文见 `licenses/AntdUI-LICENSE.txt` |
 | 字体资源（`fonts/`） | 弹幕渲染所用字形 | 原文见 `fonts/LICENSE.txt` |
 
 **PotPlayer 不在其中**：它是专有免费软件，其许可不允许再分发。本程序支持调用它，但需要用户自行安装并在界面里指定路径。

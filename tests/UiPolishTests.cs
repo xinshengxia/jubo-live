@@ -28,6 +28,7 @@ internal static partial class HardeningTests
             MethodInfo build = hub.GetMethod("BuildLauncherForm", Flags, null, new Type[] { typeof(int) }, null);
             using (Form form = (Form)build.Invoke(null, new object[] { 1 }))
             {
+                WorkbenchShowPage(form, "sessions");
                 foreach (int dpi in new[] { 96, 120, 144, 192, 288 })
                 {
                     SetDpi(form, dpi);
@@ -35,15 +36,19 @@ internal static partial class HardeningTests
                     {
                         form.ClientSize = new Size((int)Math.Round(width * dpi / 96.0), (int)Math.Round(600 * dpi / 96.0));
                         form.PerformLayout();
-                        foreach (Control control in form.Controls)
+                        int sessionTables = 0;
+                        foreach (Control control in WorkbenchDescendants(form))
                         {
-                            ListView list = control as ListView; if (list == null) continue;
+                            ListView list = control as ListView;
+                            if (list == null || list.Name != "workbenchSessions") continue;
+                            sessionTables++;
                             Check(list.Columns.Count == 5, "会话表只有五个有效字段，不产生窄空列");
                             int total = 0;
                             foreach (ColumnHeader column in list.Columns)
                             { Check(!string.IsNullOrEmpty(column.Text), "所有列均为真实字段"); total += column.Width; }
                             Check(Math.Abs(total - list.ClientSize.Width) <= 1, "列宽覆盖实际客户区，尾部不留多重分隔线");
                         }
+                        Check(sessionTables == 1, "明确检查唯一会话表，不因控件被移入容器而空转");
                     }
                 }
                 SaveDpiForm(form, Path.Combine(SourceRoot, "artifacts", "dpi-preview", "launcher-no-filler-dark.png"));

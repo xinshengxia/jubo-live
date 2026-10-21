@@ -106,7 +106,7 @@ internal static partial class LiveHub
     ///
     /// 等价性证据：`--ui-probe` 导出的控件树在拆分前后**逐字段一致**（tests\LauncherUiTests.cs），
     /// 外加 GUI 冒烟与离线断言。
-    private sealed class LauncherUi
+    private sealed partial class LauncherUi
     {
         // ==== 状态与控件（原来是 BuildLauncherForm 里的局部变量）====
         internal List<KeyValuePair<string, string>> favorites = LoadFavorites();
@@ -204,6 +204,7 @@ internal static partial class LiveHub
             BuildSessionTable();
             BuildTimers();
             WireEvents();
+            BuildWorkbench();
         RefreshAll();
         // ⚠️ DPI 缩放的**唯一入口** —— 必须在所有控件建完之后。
         //    ScaleTree 只缩放 **静态 SetBounds** 那一批；动态的 Layout() 由它自己按
@@ -255,7 +256,7 @@ internal static partial class LiveHub
         try { form.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
         form.StartPosition = FormStartPosition.CenterScreen;
-        form.FormBorderStyle = FormBorderStyle.Sizable;
+        form.FormBorderStyle = FormBorderStyle.None;
         // 现代化外观：和「弹幕与 SC 设置」同一套自绘控件 + 同一份调色板（danmaku-15-ui.cs）。
         // 主题已经由 ApplyTheme() 在**构造本类之前**定好了（见 BuildLauncherForm 的注释），
         // 这里只记录状态、并按当前配色刷窗体自身 + 标题栏。
@@ -462,7 +463,7 @@ internal static partial class LiveHub
         danmakuSettings.Text = "弹幕设置…";
         danmakuSettings.SetBounds(728, 58, 104, 31);
         form.Controls.Add(danmakuSettings);
-        danmakuSettings.Click += delegate { DanmakuSettingsDialog.Show(form); };
+        danmakuSettings.Click += delegate { SelectWorkbenchPage("danmaku"); };
 
         }
 
@@ -946,6 +947,7 @@ internal static partial class LiveHub
 
         internal void Layout()
         {
+            if (workbenchReady) { LayoutWorkbench(); return; }
             if (layingOut || ((DpiForm)form).ApplyingDpi) return;
             layingOut = true;
             Point scroll = new Point(-form.AutoScrollPosition.X, -form.AutoScrollPosition.Y);
@@ -1071,6 +1073,19 @@ internal static partial class LiveHub
             finally { sizingSessionColumns = false; }
         }
 
+        private int FavoriteRank(KeyValuePair<string, string> favorite)
+        {
+            Target target = Parse(favorite.Value, "bili");
+            RoomStateKind state;
+            if (target != null && roomBadges.TryGetValue(target.Platform + ":" + target.Room, out state))
+            {
+                if (state == RoomStateKind.Live) return 0;
+                if (state == RoomStateKind.Replay) return 1;
+                if (state == RoomStateKind.Offline) return 2;
+            }
+            return 3;
+        }
+
         internal string Badge(Target target)
         {
             RoomStateKind live;
@@ -1094,6 +1109,7 @@ internal static partial class LiveHub
             for (int i = 0; i < currentHistory.Count; i++)
                 if (currentHistory[i].Room == target.Room)
                     recentList.Items[i] = Badge(target) + HistoryLabel(currentHistory[i]);
+            RefreshLists();
         }
 
         internal void RefreshLists()
@@ -1116,6 +1132,11 @@ internal static partial class LiveHub
             List<HistoryEntry> entries;
             if (history.TryGetValue(platform, out entries) && entries != null) currentHistory.AddRange(entries);
 
+            currentFavorites.Sort(delegate(KeyValuePair<string, string> left, KeyValuePair<string, string> right)
+            {
+                int rank = FavoriteRank(left).CompareTo(FavoriteRank(right));
+                return rank != 0 ? rank : string.Compare(left.Key, right.Key, StringComparison.CurrentCulture);
+            });
             favList.Items.Clear();
             foreach (var favorite in currentFavorites)
                 favList.Items.Add(Badge(Parse(favorite.Value, "bili")) + FavoriteLabel(favorite));
@@ -1124,7 +1145,8 @@ internal static partial class LiveHub
                 recentList.Items.Add(Badge(Parse(entry.Room, platform)) + HistoryLabel(entry));
 
             recentLabel.Text = "最近播放（" + PlatformName(platform) + "，双击用 mpv 打开）";
-            favLabel.Text = "收藏（" + PlatformName(platform) + "，" + currentFavorites.Count + " 个）";
+            favLabel.Text = PlatformName(platform) + " 收藏 " + currentFavorites.Count + " 个 · 本地收藏";
+            RefreshWorkbenchRooms();
         }
 
         internal void RefreshAll()
@@ -1260,6 +1282,7 @@ internal static partial class LiveHub
             }
             sessionsList.EndUpdate();
             LayoutSessionColumns();
+            RefreshWorkbenchHomeSession();
         }
 
         internal void Launch(string player)

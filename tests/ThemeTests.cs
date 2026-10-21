@@ -22,14 +22,24 @@ internal static partial class HardeningTests
     private static string RunUiProbe(string launcher, string mode, string theme)
     {
         string json = Path.Combine(Path.GetTempPath(), "livehub-probe-" + Guid.NewGuid().ToString("N") + ".json");
+        string isolated = Path.Combine(Path.GetTempPath(), "livehub-theme-" + Guid.NewGuid().ToString("N"));
         try
         {
+            Directory.CreateDirectory(isolated);
+            File.WriteAllText(Path.Combine(isolated, "favorites.json"), "[]");
+            File.WriteAllText(Path.Combine(isolated, "history.json"), "{}");
+            File.WriteAllText(Path.Combine(isolated, "path-config.json"), "{}");
             string arguments = mode + " \"" + json + "\"" + (theme == null ? "" : " " + theme);
+            arguments += WorkbenchProbePathArguments(isolated);
             int code = RunLauncherExitCode(launcher, arguments);
             if (code != 0 || !File.Exists(json)) return null;
             return File.ReadAllText(json, Encoding.UTF8);
         }
-        finally { try { File.Delete(json); } catch (Exception) { } }
+        finally
+        {
+            try { File.Delete(json); } catch (Exception) { }
+            try { if (Directory.Exists(isolated)) Directory.Delete(isolated, true); } catch (IOException) { }
+        }
     }
 
     /// <summary>#RRGGBB / #AARRGGBB → 相对亮度（0=黑 1=白）；解析失败返回 -1。</summary>
@@ -64,7 +74,12 @@ internal static partial class HardeningTests
             if (map == null) continue;
             string back = Convert.ToString(map["back"]);
             double lum = Luminance(back);
-            if (lum < 0) continue;              // 透明 / 解析不出 → 跳过
+            // 透明 / 解析不出 → 跳过。AntdUI 的自绘控件（工作台账号页/数据页里的
+            // AntdUI.Button、AntdUI.Tag、AntdUI.Select）经 Control.BackColor 读出来就是
+            // Color.Transparent（实测 AntdUI 2.4.15：#00FFFFFF），真正的着色发生在这类控件
+            // 自己的 OnPaint 里、由 AntdUI.Config 决定 —— 测试程序不引用 AntdUI.dll 就验不到；
+            // 这是已知覆盖边界（不是对亮底放行），要补需要给测试编译行加 /r:AntdUI.dll。
+            if (lum < 0) continue;
             bool wrong = dark ? lum > 0.5 : lum < 0.3;
             if (!wrong) continue;
             string text = Convert.ToString(map["text"]);

@@ -30,38 +30,37 @@ internal static class ModernTheme
     private static bool _dark;
 
     // 浅色
-    private static readonly Color LSurface = Color.FromArgb(0xFA, 0xFA, 0xFA);
+    private static readonly Color LSurface = Color.FromArgb(0xF5, 0xF6, 0xFA);
     private static readonly Color LCard = Color.FromArgb(0xFF, 0xFF, 0xFF);
-    private static readonly Color LBorder = Color.FromArgb(0xDC, 0xDC, 0xDC);
+    private static readonly Color LBorder = Color.FromArgb(0xE4, 0xE6, 0xEF);
     private static readonly Color LBorderHover = Color.FromArgb(0xB0, 0xB0, 0xB0);
-    private static readonly Color LAccent = Color.FromArgb(0x00, 0x67, 0xC0);
-    private static readonly Color LAccentHover = Color.FromArgb(0x1A, 0x7A, 0xD0);
-    private static readonly Color LAccentPressed = Color.FromArgb(0x00, 0x54, 0xA0);
+    private static readonly Color LAccent = Color.FromArgb(0x79, 0x62, 0xDF);
+    private static readonly Color LAccentHover = Color.FromArgb(0x87, 0x72, 0xE5);
+    private static readonly Color LAccentPressed = Color.FromArgb(0x66, 0x50, 0xCA);
     private static readonly Color LOnAccent = Color.FromArgb(0xFF, 0xFF, 0xFF);
     private static readonly Color LText = Color.FromArgb(0x1A, 0x1A, 0x1A);
     private static readonly Color LTextSecondary = Color.FromArgb(0x66, 0x66, 0x66);
     private static readonly Color LTextDisabled = Color.FromArgb(0xA0, 0xA0, 0xA0);
     private static readonly Color LHover = Color.FromArgb(0xF0, 0xF0, 0xF0);
-    private static readonly Color LSelection = Color.FromArgb(0xE8, 0xF1, 0xFB);
+    private static readonly Color LSelection = Color.FromArgb(0xEE, 0xEB, 0xFB);
     private static readonly Color LDisabledFill = Color.FromArgb(0xC8, 0xD6, 0xE6);
     private static readonly Color LSuccess = Color.FromArgb(0x10, 0x7C, 0x10);
     private static readonly Color LDanger = Color.FromArgb(0xC4, 0x2B, 0x1C);
 
     // 深色
-    private static readonly Color DSurface = Color.FromArgb(0x20, 0x20, 0x20);
-    private static readonly Color DCard = Color.FromArgb(0x2B, 0x2B, 0x2B);
-    private static readonly Color DBorder = Color.FromArgb(0x3D, 0x3D, 0x3D);
+    private static readonly Color DSurface = Color.FromArgb(0x10, 0x12, 0x17);
+    private static readonly Color DCard = Color.FromArgb(0x1B, 0x1E, 0x27);
+    private static readonly Color DBorder = Color.FromArgb(0x2C, 0x31, 0x40);
     private static readonly Color DBorderHover = Color.FromArgb(0x5A, 0x5A, 0x5A);
-    private static readonly Color DAccent = Color.FromArgb(0x4C, 0xC2, 0xFF);
-    private static readonly Color DAccentHover = Color.FromArgb(0x6C, 0xCE, 0xFF);
-    private static readonly Color DAccentPressed = Color.FromArgb(0x35, 0xA8, 0xE0);
-    // 深色下强调色是亮的，所以按钮上的字必须是**深色**，否则白字压浅蓝看不清
-    private static readonly Color DOnAccent = Color.FromArgb(0x00, 0x1E, 0x2E);
+    private static readonly Color DAccent = Color.FromArgb(0x79, 0x62, 0xDF);
+    private static readonly Color DAccentHover = Color.FromArgb(0x87, 0x72, 0xE5);
+    private static readonly Color DAccentPressed = Color.FromArgb(0x66, 0x50, 0xCA);
+    private static readonly Color DOnAccent = Color.FromArgb(0xFF, 0xFF, 0xFF);
     private static readonly Color DText = Color.FromArgb(0xF2, 0xF2, 0xF2);
-    private static readonly Color DTextSecondary = Color.FromArgb(0xA0, 0xA0, 0xA0);
+    private static readonly Color DTextSecondary = Color.FromArgb(0xA8, 0xB0, 0xC4);
     private static readonly Color DTextDisabled = Color.FromArgb(0x66, 0x66, 0x66);
-    private static readonly Color DHover = Color.FromArgb(0x35, 0x35, 0x35);
-    private static readonly Color DSelection = Color.FromArgb(0x2D, 0x4A, 0x66);
+    private static readonly Color DHover = Color.FromArgb(0x24, 0x28, 0x35);
+    private static readonly Color DSelection = Color.FromArgb(0x30, 0x2A, 0x48);
     private static readonly Color DDisabledFill = Color.FromArgb(0x3A, 0x3A, 0x3A);
     // 语义色也要分深浅两套：SeaGreen / Firebrick 这种在深底上根本读不清
     private static readonly Color DSuccess = Color.FromArgb(0x6C, 0xCB, 0x5F);
@@ -144,6 +143,8 @@ internal static class ModernTheme
             int value = _dark ? 1 : 0;
             if (DwmSetWindowAttribute(form.Handle, 20, ref value, sizeof(int)) != 0)
                 DwmSetWindowAttribute(form.Handle, 19, ref value, sizeof(int));
+            int corner = 2; // DWMWA_WINDOW_CORNER_PREFERENCE: round
+            DwmSetWindowAttribute(form.Handle, 33, ref corner, sizeof(int));
         }
         catch (Exception ex)
         {
@@ -360,8 +361,11 @@ internal sealed class ModernComboBox : ComboBox, IDpiScaled
                 ? Graphics.FromHdc(m.WParam) : Graphics.FromHwnd(Handle))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Parent != null ? Parent.BackColor : ModernTheme.Surface);
+                int radius = DpiLayout.S(this, 8);
+                using (GraphicsPath path = ModernTheme.RoundRect(new Rectangle(0, 0, Width - 1, Height - 1), radius))
                 using (SolidBrush back = new SolidBrush(ModernTheme.Card))
-                    g.FillRectangle(back, 0, 0, Width, Height);
+                    g.FillPath(back, path);
 
                 if (SelectedIndex >= 0 && SelectedIndex < Items.Count)
                 {
@@ -372,8 +376,9 @@ internal sealed class ModernComboBox : ComboBox, IDpiScaled
                 }
                 ModernTheme.DrawChevron(g, new Rectangle(Width - 22, 0, 22, Height),
                     Enabled ? ModernTheme.TextSecondary : ModernTheme.TextDisabled);
+                using (GraphicsPath path = ModernTheme.RoundRect(new Rectangle(0, 0, Width - 1, Height - 1), radius))
                 using (Pen pen = new Pen(_hover ? ModernTheme.BorderHover : ModernTheme.Border))
-                    g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+                    g.DrawPath(pen, path);
             }
         }
     }
@@ -513,7 +518,7 @@ internal sealed class ModernButton : Button
 
     private bool _hover;
     private bool _pressed;
-    private bool _selected;
+    private bool _selected, _tab;
     private Kind _kind = Kind.Secondary;
 
     public ModernButton()
@@ -543,6 +548,13 @@ internal sealed class ModernButton : Button
         set { if (_selected != value) { _selected = value; Invalidate(); } }
     }
 
+    /// <summary>Text-style tab: no border or card fill until selected.</summary>
+    public bool Tab
+    {
+        get { return _tab; }
+        set { if (_tab != value) { _tab = value; Invalidate(); } }
+    }
+
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
@@ -556,7 +568,7 @@ internal sealed class ModernButton : Button
         g.Clear(Parent != null ? Parent.BackColor : ModernTheme.Surface);
 
         Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using (GraphicsPath path = ModernTheme.RoundRect(rect, DpiLayout.S(this, 6)))
+        using (GraphicsPath path = ModernTheme.RoundRect(rect, DpiLayout.S(this, 8)))
         {
             Color fill, border, fore;
             if (!Enabled)
@@ -565,10 +577,21 @@ internal sealed class ModernButton : Button
                 border = Color.Transparent;
                 fore = ModernTheme.TextDisabled;
             }
-            else if (_selected || _kind == Kind.Primary)
+            else if (_tab)
             {
-                // 选中态和主按钮**同一种视觉**（强调色实心）—— 平台切换按钮选中时
-                // 就该像主按钮一样突出，不必再造一套。
+                fill = _selected || _hover ? ModernTheme.Hover : Color.Transparent;
+                border = Color.Transparent;
+                fore = _selected || _hover ? ModernTheme.Text : ModernTheme.TextSecondary;
+            }
+            else if (_selected)
+            {
+                // 选中平台要有明显轮廓：软紫底 + 强调色描边 + 白字。
+                fill = _pressed ? ModernTheme.AccentPressed : (_hover ? ModernTheme.AccentHover : ModernTheme.Selection);
+                border = ModernTheme.Accent;
+                fore = _pressed || _hover ? ModernTheme.OnAccent : ModernTheme.Text;
+            }
+            else if (_kind == Kind.Primary)
+            {
                 fill = _pressed ? ModernTheme.AccentPressed : (_hover ? ModernTheme.AccentHover : ModernTheme.Accent);
                 border = Color.Transparent;
                 fore = ModernTheme.OnAccent;
@@ -622,6 +645,20 @@ internal sealed class ModernInput : Panel, IDpiScaled
 {
     public readonly TextBox Inner;
     private bool _focused;
+    private int cornerRadius = 5;
+    private bool drawBorder = true;
+
+    internal int CornerRadius
+    {
+        get { return cornerRadius; }
+        set { cornerRadius = Math.Max(0, value); Invalidate(); }
+    }
+
+    internal bool DrawBorder
+    {
+        get { return drawBorder; }
+        set { drawBorder = value; Invalidate(); }
+    }
 
     public ModernInput(bool multiline)
     {
@@ -734,16 +771,22 @@ internal sealed class ModernInput : Panel, IDpiScaled
         }
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(Parent == null ? ModernTheme.Surface : Parent.BackColor);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using (GraphicsPath path = ModernTheme.RoundRect(rect, DpiLayout.S(this, 5)))
+        using (GraphicsPath path = ModernTheme.RoundRect(rect, DpiLayout.S(this, cornerRadius)))
         {
             using (SolidBrush fill = new SolidBrush(ModernTheme.Card)) e.Graphics.FillPath(fill, path);
-            using (Pen pen = new Pen(_focused ? ModernTheme.Accent : ModernTheme.Border, _focused ? 1.6f : 1f))
-                e.Graphics.DrawPath(pen, path);
+            if (drawBorder)
+                using (Pen pen = new Pen(_focused ? ModernTheme.Accent : ModernTheme.Border, _focused ? 1.6f : 1f))
+                    e.Graphics.DrawPath(pen, path);
         }
     }
 
@@ -790,6 +833,7 @@ internal sealed class ModernInput : Panel, IDpiScaled
 /// </summary>
 internal sealed class ModernListBox : ListBox, IDpiScaled
 {
+    internal bool DrawBorder = true;
     public ModernListBox()
     {
         DrawMode = DrawMode.OwnerDrawFixed;
@@ -846,7 +890,7 @@ internal sealed class ModernListBox : ListBox, IDpiScaled
     protected override void WndProc(ref Message m)
     {
         base.WndProc(ref m);
-        if ((m.Msg == 0x000F || m.Msg == 0x0317 || m.Msg == 0x0318)
+        if (DrawBorder && (m.Msg == 0x000F || m.Msg == 0x0317 || m.Msg == 0x0318)
             && IsHandleCreated && Width > 2 && Height > 2)
         {
             using (Graphics g = (m.Msg == 0x0317 || m.Msg == 0x0318) && m.WParam != IntPtr.Zero

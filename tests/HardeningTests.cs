@@ -1024,6 +1024,10 @@ internal static partial class HardeningTests
         RegisterReviewFixCases(launcher, self);
         RegisterCloseoutCases(launcher);
         RegisterLoginHealthCases();
+        RegisterWorkbenchUiCases();
+        RegisterWorkbenchDataCases();
+        RegisterWorkbenchSettingsCases();
+        RegisterWorkbenchContinuationCases();
         RegisterLoginBrowserCases();
         RegisterLookupCases();
         RegisterDpiCases();

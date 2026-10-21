@@ -16,6 +16,10 @@ $legacy = Join-Path $Workspace 'legacy-output'
 $sdk = Join-Path $Workspace 'sdk-output'
 $previousTemp = $env:TEMP; $previousTmp = $env:TMP
 $previousCli = $env:DOTNET_CLI_HOME; $previousPackages = $env:NUGET_PACKAGES
+# Git emits UTF-8 paths; PowerShell decodes native output with the console
+# encoding (GBK on this host), which corrupts non-ASCII tracked names.
+$previousConsoleEncoding = [Console]::OutputEncoding
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 try {
     $env:TEMP = $env:TMP = Join-Path $Workspace 'temp'
     $env:DOTNET_CLI_HOME = Join-Path $Workspace 'dotnet-home'
@@ -62,4 +66,5 @@ try {
 } finally {
     $env:TEMP = $previousTemp; $env:TMP = $previousTmp
     $env:DOTNET_CLI_HOME = $previousCli; $env:NUGET_PACKAGES = $previousPackages
+    try { [Console]::OutputEncoding = $previousConsoleEncoding } catch { }
 }

@@ -176,6 +176,17 @@ internal class DpiForm : Form
         }
         float next = Math.Max(0.5f, Math.Min(10f, dpi / 96f));
         applying = true; SuspendLayout();
+        // 侧栏工作台让控件树翻了数倍：若像以前那样逐个 SuspendLayout，
+        // 每次 c.Bounds 赋值仍会让**未挂起的父容器**立刻重排，TableLayoutPanel
+        // 会为每个兄弟控件重新量一遍文字（实测 96→120 要 10 秒）。
+        // 先把 metrics 里所有容器挂起，再统一改属性，最后从内向外恢复。
+        List<Control> suspended = new List<Control>();
+        foreach (Metric m in metrics)
+        {
+            Control c = m.Control;
+            if (c.IsDisposed || suspended.Contains(c)) continue;
+            c.SuspendLayout(); suspended.Add(c);
+        }
         try
         {
             foreach (ScrollableControl scroll in scrollPositions.Keys) scroll.AutoScrollPosition = Point.Empty;
@@ -184,8 +195,6 @@ internal class DpiForm : Form
             {
                 Control c = m.Control;
                 if (c.IsDisposed) continue;
-                c.SuspendLayout();
-                try
                 {
                     // Explicit target pixel fonts avoid GDI's system-DPI point conversion
                     // on a second monitor. Each application happens from original metrics.
@@ -236,7 +245,6 @@ internal class DpiForm : Form
                     }
                     c.Invalidate();
                 }
-                finally { c.ResumeLayout(false); }
             }
             Rectangle work = Screen.FromControl(this).WorkingArea;
             Size minimum = ScaleSize(designMinimum, next);
@@ -253,6 +261,8 @@ internal class DpiForm : Form
         }
         finally
         {
+            for (int i = suspended.Count - 1; i >= 0; i--)
+                if (!suspended[i].IsDisposed) suspended[i].ResumeLayout(false);
             ResumeLayout(true); applying = false;
         }
         EventHandler updated = DpiUpdated;
@@ -318,6 +328,34 @@ internal class DpiForm : Form
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == 0x84 && FormBorderStyle == FormBorderStyle.None && WindowState == FormWindowState.Normal)
+        {
+            base.WndProc(ref m);
+            int lp = m.LParam.ToInt32();
+            Point screen = new Point((short)(lp & 0xffff), (short)((lp >> 16) & 0xffff));
+            Point point = PointToClient(screen);
+            int edge = Math.Max(4, Scale(6, RenderScale));
+            bool left = point.X <= edge, right = point.X >= ClientSize.Width - edge;
+            bool top = point.Y <= edge, bottom = point.Y >= ClientSize.Height - edge;
+            if (top && left) m.Result = new IntPtr(13);
+            else if (top && right) m.Result = new IntPtr(14);
+            else if (bottom && left) m.Result = new IntPtr(16);
+            else if (bottom && right) m.Result = new IntPtr(17);
+            else if (left) m.Result = new IntPtr(10);
+            else if (right) m.Result = new IntPtr(11);
+            else if (top) m.Result = new IntPtr(12);
+            else if (bottom) m.Result = new IntPtr(15);
+            return;
+        }
+        if (m.Msg == 0x24 && FormBorderStyle == FormBorderStyle.None && !syntheticDpi)
+        {
+            base.WndProc(ref m);
+            Rectangle work = Screen.FromControl(this).WorkingArea;
+            MinMaxInfo limits = (MinMaxInfo)Marshal.PtrToStructure(m.LParam, typeof(MinMaxInfo));
+            limits.MaxPosition.X = work.Left; limits.MaxPosition.Y = work.Top;
+            limits.MaxSize.X = work.Width; limits.MaxSize.Y = work.Height;
+            Marshal.StructureToPtr(limits, m.LParam, false); return;
+        }
         if (m.Msg == 0x24 && syntheticDpi)
         {
             base.WndProc(ref m);

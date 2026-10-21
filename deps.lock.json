@@ -1,6 +1,6 @@
 {
   "schema": "livehub-deps-lock/1",
-  "generatedAt": "2026-10-16T16:35:06Z",
+  "generatedAt": "2026-10-21T14:52:08Z",
   "hashAlgorithm": "SHA-256；文件哈希与 components/bundles.files 里的 sha256 存小写十六进制，用于比较时统一转大写",
   "treeHashRule": "目录内每个文件写成一行 <小写相对路径（/ 分隔）>LF<大写文件 sha256>LF，行按小写相对路径字典序排列，对拼接后的 UTF-8 字节取 SHA-256（小写 hex）",
   "sourcePackages": [
@@ -127,6 +127,30 @@
       "size": 155488,
       "license": "BSD-3-Clause SDK; licenses/WebView2-SDK-LICENSE.txt and NOTICE.txt",
       "note": "WebView2 SDK only; system Runtime is not redistributed"
+    },
+    {
+      "name": "antdui",
+      "target": "AntdUI.dll",
+      "source": "repo:lib/antdui/AntdUI.dll",
+      "version": "2.4.15",
+      "versionEvidence": "NuGet AntdUI 2.4.15 的 lib/net48/AntdUI.dll；包内 nuspec 版本与 DLL 文件版本一致",
+      "sha256": "41d74e8ab7c0b296171bac3166be30271806e84587754aaaa3021d6061946079",
+      "size": 3328512,
+      "license": "Apache-2.0（AntdUI，Copyright © Tom 2024-2030）",
+      "note": "主窗口/工作台使用的 WinForms 控件库；随包分发 DLL 与 Apache-2.0 原文",
+      "upstreamCommit": "e08d95a155583b852f7cc119e7d0b9b8bba9ae76"
+    },
+    {
+      "name": "antdui-lib",
+      "target": "lib/antdui/AntdUI.dll",
+      "source": "repo:lib/antdui/AntdUI.dll",
+      "version": "2.4.15",
+      "versionEvidence": "与 antdui 组件同一份 NuGet AntdUI 2.4.15 lib/net48/AntdUI.dll；包内 lib/antdui 副本供源构建 /r 引用",
+      "sha256": "41d74e8ab7c0b296171bac3166be30271806e84587754aaaa3021d6061946079",
+      "size": 3328512,
+      "license": "Apache-2.0（AntdUI，Copyright © Tom 2024-2030）",
+      "note": "随包保留在 lib/antdui 的源构建副本；运行时仍由包根的 AntdUI.dll 加载",
+      "upstreamCommit": "e08d95a155583b852f7cc119e7d0b9b8bba9ae76"
     }
   ],
   "bundles": [
@@ -1230,6 +1254,7 @@
     "项目标题脚本已更新为发布 commit 的版本；repo: 来源必须指向该 commit 的 staging。",
     "当前只有一个可用依赖目录，不伪造独立镜像校验。原目录只读，已安装绿色版的同步另行执行。",
     "对外发布不从已安装目录导入任何 data/runtime 种子，排除 PotPlayer Playlist 与 mpv shader cache；自用更新保留原数据。",
-    "外部组件仍适用各自许可；原文及来源快照见 licenses/SOURCES.json。"
+    "外部组件仍适用各自许可；原文及来源快照见 licenses/SOURCES.json。",
+    "AntdUI 2.4.15（net48）新增两项锁定：包根 AntdUI.dll 供运行时加载，lib/antdui/AntdUI.dll 供源构建 /r 引用；同一源文件、同一 sha256。"
   ]
 }

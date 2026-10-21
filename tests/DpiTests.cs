@@ -37,47 +37,40 @@ internal static partial class HardeningTests
                 using (Form form = (Form)build.Invoke(null, new object[] { -1 }))
                 using (Form other = (Form)build.Invoke(null, new object[] { -1 }))
                 {
+                    form.GetType().GetField("FitWorkingArea", ReviewInstance).SetValue(form, false);
+                    other.GetType().GetField("FitWorkingArea", ReviewInstance).SetValue(other, false);
                     SetDpi(form, 96); SetDpi(other, 144);
                     Size original = form.ClientSize;
-                    foreach (int dpi in new int[] { 96, 120, 144, 168, 192, 240, 288, 96 })
+                    foreach (int dpi in new[] { 96, 120, 144, 168, 192, 240, 288, 96 })
                     {
                         SetDpi(form, dpi);
-                        CheckLauncherAlignment(form, dpi);
-                        foreach (Control c in form.Controls)
+                        foreach (string key in WorkbenchPageKeys)
                         {
-                            Check(c.Left >= 0 && c.Right <= form.ClientSize.Width + 1,
-                                "DPI=" + dpi + " 控件横向可达：" + c.GetType().Name + " " + c.Text + " bounds=" + c.Bounds + " client=" + form.ClientSize);
-                            Check(c.Bottom <= Math.Max(form.ClientSize.Height, form.AutoScrollMinSize.Height) + 2,
-                                "DPI=" + dpi + " 控件可见或可纵向滚动到达");
+                            WorkbenchShowPage(form, key);
+                            WorkbenchCheckViewport(form, dpi);
                         }
-                        for (int i = 0; i < form.Controls.Count; i++)
-                            for (int j = i + 1; j < form.Controls.Count; j++)
-                            {
-                                Control a = form.Controls[i], b = form.Controls[j];
-                                Check(!a.Bounds.IntersectsWith(b.Bounds), "DPI=" + dpi + " 顶层控件不重叠 " + i + "/" + j);
-                            }
-                        Control button = null;
-                        foreach (Control c in form.Controls) if (c.Text == "加入收藏") button = c;
-                        Check(button != null && button.Font.Unit == GraphicsUnit.Pixel
-                            && Math.Abs(button.Font.Size - 9f * dpi / 72f) < 0.01f,
+                        WorkbenchShowPage(form, "favorites");
+                        CheckLauncherAlignment(form, dpi);
+                        Control button = WorkbenchField(form, "addFav");
+                        Check(button.Font.Unit == GraphicsUnit.Pixel && Math.Abs(button.Font.Size - 9f * dpi / 72f) < 0.01f,
                             "字体直接按目标显示器像素尺寸渲染，DPI=" + dpi);
                         Check(Math.Abs((float)other.GetType().GetField("RenderScale", ReviewInstance).GetValue(other) - 1.5f) < 0.001f,
                             "另一窗口的 DPI 不被当前窗口改变");
-                        if (dpi == 144 || dpi == 192)
-                            SaveDpiForm(form, Path.Combine(output, "launcher-" + dpi + ".png"));
+                        if (dpi == 144 || dpi == 192) SaveDpiForm(form, Path.Combine(output, "launcher-" + dpi + ".png"));
                     }
                     Check(form.ClientSize == original, "多次倍率往返后客户端尺寸无累计误差");
                     SetDpi(form, 192); form.ClientSize = new Size(1240, 1000); form.PerformLayout();
-                    CheckLauncherAlignment(form, 192);
-                    ListBox recent = null, favorite = null;
-                    foreach (Control c in form.Controls)
+                    foreach (string key in WorkbenchPageKeys)
                     {
-                        if (c is ListBox) { if (recent == null) recent = (ListBox)c; else favorite = (ListBox)c; }
-                        Check(c.Left >= 0 && c.Right <= form.ClientSize.Width + 1, "窄窗口所有操作均横向可达");
+                        WorkbenchShowPage(form, key); WorkbenchCheckViewport(form, 192);
                     }
-                    Check(recent != null && favorite != null && recent.Left == favorite.Left && favorite.Top > recent.Bottom,
-                        "窄窗口最近播放与收藏切换为上下排列");
-                    Check(form.AutoScrollMinSize.Height > form.ClientSize.Height, "内容过高时保留纵向滚动入口");
+                    WorkbenchShowPage(form, "favorites");
+                    Check(WorkbenchActive(WorkbenchFind(form, "favoritesBrowser")), "窄窗口可进入完整收藏视口");
+                    Check(!WorkbenchActive(WorkbenchFind(form, "recentBrowser")), "窄窗口不把最近播放叠在收藏前面");
+                    WorkbenchShowPage(form, "recent");
+                    Check(WorkbenchActive(WorkbenchFind(form, "recentBrowser")), "窄窗口可独立进入最近播放视口");
+                    Check(WorkbenchActive(WorkbenchFind(form, "recentOpenPot")) && WorkbenchActive(WorkbenchFind(form, "recentOpenMpv")),
+                        "窄窗口保留两个明确播放器动作");
                     SaveDpiForm(form, Path.Combine(output, "launcher-narrow-192.png"));
                 }
                 object parts = DanmakuType("DanmakuSettingsDialog").GetMethod("Build", ReviewStatic)
@@ -99,54 +92,38 @@ internal static partial class HardeningTests
             catch (Exception ex) { failure = ex; }
         });
         thread.SetApartmentState(ApartmentState.STA); thread.Start();
-        if (!thread.Join(20000)) throw new Exception("高 DPI 矩阵超时");
+        if (!thread.Join(60000)) throw new Exception("高 DPI 八页矩阵超时");
         if (failure != null) throw failure;
     }
     private static void CheckLauncherAlignment(Form form, int dpi)
     {
+        Control input = WorkbenchField(form, "input"), inputLabel = WorkbenchField(form, "inputLabel");
+        Check(WorkbenchActive(input), "收藏页房间输入框可见，DPI=" + dpi);
+        if (WorkbenchActive(inputLabel))
+            Check(Math.Abs((2 * input.Top + input.Height) - (2 * inputLabel.Top + inputLabel.Height)) <= 1,
+                "房间输入与可见标签垂直居中，DPI=" + dpi);
         var settings = new List<Control>();
-        Control platform = null, input = null, inputLabel = null, quality = null, enhance = null;
-        Control sessionLabel = null, reopen = null, lastPlayback = null, sessions = null;
-        foreach (Control control in form.Controls)
+        foreach (string name in new[] { "qualityBox", "bufferBox", "danmakuBox", "scBox", "enhanceBox" })
         {
-            Label label = control as Label;
-            if (label != null)
-                Check(label.TextAlign == ContentAlignment.MiddleLeft, "启动器标签垂直居中，DPI=" + dpi + " " + label.Text);
-            if (control.Text == "B站") platform = control;
-            if (control.GetType().Name == "ModernInput") input = control;
-            if (control.Text == "房间号 / 链接：") inputLabel = control;
-            if (control.Text == "正在观看 / 最近打开") sessionLabel = control;
-            if (control.Text == "重新打开选中房间") reopen = control;
-            if (control.Text == "用 mpv 打开（回车）") lastPlayback = control;
-            if (control is ListView) sessions = control;
-            ComboBox combo = control as ComboBox;
-            if (combo != null)
-            {
-                settings.Add(combo);
-                if (combo.Items.Contains("原画优先")) quality = combo;
-                if (combo.Items.Contains("轻度")) enhance = combo;
-            }
-            if (control.Text == "取消启动" || control.Text == "弹幕设置…" || control.Text == "查找主播"
-                || control.Text == "画质：" || control.Text == "mpv 缓冲：" || control.Text == "弹幕："
-                || control.Text == "SC：" || control.Text == "画质增强") settings.Add(control);
+            Control combo = WorkbenchField(form, name);
+            Check(WorkbenchActive(combo), "收藏快捷设置不丢失，DPI=" + dpi + " " + name);
+            settings.Add(combo);
         }
-        Check(input != null && inputLabel != null && input.Top == inputLabel.Top && input.Height == inputLabel.Height,
-            "房间输入框与标签等高对齐，DPI=" + dpi);
-        if (platform != null && input != null && input.Left > platform.Right && input.Top < platform.Bottom)
-            Check(input.Top == platform.Top && input.Height == platform.Height, "顶部输入框与平台按钮上下对齐，DPI=" + dpi);
         for (int i = 0; i < settings.Count; i++)
-            for (int j = i + 1; j < settings.Count; j++)
-            {
-                Control a = settings[i], b = settings[j];
-                if (a.Top >= b.Bottom || b.Top >= a.Bottom) continue;
-                Check(Math.Abs((2 * a.Top + a.Height) - (2 * b.Top + b.Height)) <= 1,
-                    "设置同行控件共用中心线，DPI=" + dpi + " " + a.Text + "/" + b.Text);
-            }
-        Check(quality != null && enhance != null && quality.Left == enhance.Left, "画质与画质增强下拉框左边缘对齐，DPI=" + dpi);
-        Check(sessionLabel != null && reopen != null && sessionLabel.Top == reopen.Top && sessionLabel.Height == reopen.Height,
-            "观看列表标题与重新打开按钮居中对齐，DPI=" + dpi);
-        Check(lastPlayback != null && sessions != null && lastPlayback.Right == sessions.Right,
-            "底部播放按钮与列表右边缘对齐，DPI=" + dpi);
+        for (int j = i + 1; j < settings.Count; j++)
+        {
+            Control a = settings[i], b = settings[j];
+            if (a.Top >= b.Bottom || b.Top >= a.Bottom) continue;
+            Check(Math.Abs((2 * a.Top + a.Height) - (2 * b.Top + b.Height)) <= 1,
+                "快捷下拉同一行保持垂直居中，DPI=" + dpi + " " + a.Name + "/" + b.Name);
+            Check(!a.Bounds.IntersectsWith(b.Bounds), "快捷下拉互不覆盖，DPI=" + dpi);
+        }
+        WorkbenchShowPage(form, "sessions");
+        ListView sessions = (ListView)WorkbenchFind(form, "workbenchSessions");
+        Check(sessions != null && sessions.Columns.Count == 5, "会话表在独立页面保留五列，DPI=" + dpi);
+        int used = 0; foreach (ColumnHeader column in sessions.Columns) used += column.Width;
+        Check(Math.Abs(used - sessions.ClientSize.Width) <= 6, "会话列宽适应当前页面视口，DPI=" + dpi);
+        WorkbenchShowPage(form, "favorites");
     }
 
     private static Bitmap RenderDpiControl(Control control)
@@ -156,6 +133,9 @@ internal static partial class HardeningTests
         // controls. Invoke their production painter to avoid a stale HWND font in previews.
         using (Graphics paint = Graphics.FromImage(image))
         {
+            // ModernButton / 自绘 ComboBox 直接调生产绘制方法；AntdUI 的自绘控件
+            //（Button/Tag/Select）走下面的默认 DrawToBitmap —— 实测 2.4.15 能画出内容
+            // 且不抛异常，所以预览渲染不需要为它们特判。
             if (control.GetType().Name == "ModernButton")
                 control.GetType().GetMethod("OnPaint", ReviewInstance).Invoke(control,
                     new object[] { new PaintEventArgs(paint, new Rectangle(Point.Empty, image.Size)) });
@@ -172,7 +152,8 @@ internal static partial class HardeningTests
         {
             g.SetClip(control.ClientRectangle);
             foreach (Control child in control.Controls)
-                using (Bitmap part = RenderDpiControl(child)) g.DrawImageUnscaled(part, child.Left, child.Top);
+                if (WorkbenchLocallyVisible(child))
+                    using (Bitmap part = RenderDpiControl(child)) g.DrawImageUnscaled(part, child.Left, child.Top);
         }
         return image;
     }
@@ -183,7 +164,8 @@ internal static partial class HardeningTests
         {
             graphics.Clear(form.BackColor);
             foreach (Control c in form.Controls)
-                using (Bitmap part = RenderDpiControl(c)) graphics.DrawImageUnscaled(part, c.Left, c.Top);
+                if (WorkbenchLocallyVisible(c))
+                    using (Bitmap part = RenderDpiControl(c)) graphics.DrawImageUnscaled(part, c.Left, c.Top);
             image.Save(path, ImageFormat.Png);
         }
     }

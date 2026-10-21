@@ -43,7 +43,9 @@ internal static partial class HardeningTests
                             Check(form.Left==-12000 && form.Top==-12000 && form.Width==width && form.Height==height,"使用 Windows 建议窗口矩形 "+dpi);
                             foreach(Control control in form.Controls)
                                 Check(control.Left>=0 && control.Right<=form.ClientSize.Width+1,"WM_DPICHANGED 后控件横向可达 "+dpi+" "+control.Text);
-                            Control input=null; foreach(Control control in form.Controls) if(control.GetType().Name=="ModernInput") input=control;
+                            WorkbenchShowPage(form, "favorites");
+                            WorkbenchCheckViewport(form, dpi);
+                            Control input=WorkbenchField(form, "input");
                             Check(input!=null && input.Font.Unit==GraphicsUnit.Pixel,"WM_DPICHANGED 使用物理像素字体");
                             if(dpi==144) {
                                 string dir=Path.Combine(SourceRoot,"artifacts","audit-pending-20261010","desktop"); Directory.CreateDirectory(dir);

@@ -30,6 +30,10 @@ $exeName = if ($Layout -eq 'portable') { '看直播.exe' } else { '看直播-mpv
 if (-not (Test-Path -LiteralPath (Join-Path $targetRoot $exeName) -PathType Leaf)) { throw 'Expected existing installation launcher is missing' }
 $files[$exeName] = $sourceExe
 $files[$exeName + '.config'] = $sourceExe + '.config'
+$files['AntdUI.dll'] = Join-Path $BuiltLayout 'AntdUI.dll'
+# 源构建包（src\build.ps1 → tools\portable-src-build.ps1）从**包根 lib\antdui** 取 /r 引用；
+# Build-Hardened 的 -Out 只把 AntdUI.dll 拷到包根，lib\antdui 副本从仓库干净检出补齐。
+$files['lib/antdui/AntdUI.dll'] = Join-Path $Repo 'lib/antdui/AntdUI.dll'
 foreach ($relative in @('Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','lib/zxing.dll','lib/webview2/assets.json','lib/webview2/Microsoft.Web.WebView2.Core.dll','lib/webview2/Microsoft.Web.WebView2.WinForms.dll','lib/webview2/x64/WebView2Loader.dll','lib/webview2/x86/WebView2Loader.dll','emoji-sheet.png','emoji-sheet.txt')) {
     $files[$relative] = Join-Path $BuiltLayout $relative
 }

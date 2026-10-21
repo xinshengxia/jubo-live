@@ -29,9 +29,12 @@ foreach ($asset in @('fonts','lib','licenses','tests','emoji-sheet.png','emoji-s
 & (Join-Path $root 'tools/Copy-WebViewAssets.ps1') -SourceRoot $root -Destination $output
 $exe = Join-Path $output '看直播.exe'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app.config') -Destination ($exe + '.config')
+$antdDll = Join-Path $root 'lib/antdui/AntdUI.dll'
+if (-not (Test-Path -LiteralPath $antdDll -PathType Leaf)) { throw "缺少 AntdUI.dll：$antdDll（安装包应带 lib/antdui 副本）" }
 $arguments = @('/nologo','/target:winexe','/optimize+',('/out:' + $exe),('/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')),('/win32icon:' + (Join-Path $PSScriptRoot 'app.ico')),
     '/r:System.Windows.Forms.dll','/r:System.Security.dll','/r:System.Drawing.dll','/r:System.Web.Extensions.dll','/r:Microsoft.VisualBasic.dll',
-    ('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.Core.dll')),('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.WinForms.dll'))) + $source
+    ('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.Core.dll')),('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.WinForms.dll')),('/r:' + $antdDll)) + $source
+Copy-Item -LiteralPath $antdDll -Destination (Join-Path $output 'AntdUI.dll') -Force
 Invoke-BoundedProcess -FilePath $compiler -Arguments $arguments -Log (Join-Path $Workspace 'compile.log') -TimeoutSeconds 120
 $testExe = Join-Path $output 'tests/HardeningTests.exe'
 $testSources = @(Get-ChildItem -LiteralPath (Join-Path $root 'tests') -Filter '*.cs' -File | ForEach-Object FullName)

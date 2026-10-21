@@ -55,8 +55,8 @@ internal static partial class HardeningTests
                     SendTransition(launcher, dpi, new Size(2300,1500));
                     Check(launcher.DeviceDpi == dpi, "框架 DeviceDpi 同步原生消息 " + dpi + " actual=" + launcher.DeviceDpi);
                     Check(Math.Abs((float)launcher.GetType().GetField("RenderScale",ReviewInstance).GetValue(launcher)-dpi/96f)<0.001, "应用倍率同步 " + dpi);
-                    foreach(Control c in launcher.Controls) if(c.Text=="加入收藏")
-                        Check(c.Font.Unit==GraphicsUnit.Pixel && Math.Abs(c.Font.Size-9f*dpi/72f)<0.01f, "框架衔接不会重复缩放字体 " + dpi);
+                    Control c=WorkbenchField(launcher,"addFav");
+                    Check(c.Font.Unit==GraphicsUnit.Pixel && Math.Abs(c.Font.Size-9f*dpi/72f)<0.01f, "框架衔接不会重复缩放字体 " + dpi);
                 }
             }
         });

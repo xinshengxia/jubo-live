@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -16,7 +17,9 @@ internal static partial class LiveHub
 
     internal sealed class LookupUi : IDisposable
     {
-        internal readonly Form Form = new DpiForm();
+        internal readonly Form Form;
+        internal readonly Control View;
+        private readonly bool ownsForm;
         internal readonly ComboBox Platform = new ModernComboBox();
         internal readonly ModernInput Input = new ModernInput(false);
         internal readonly Button Search = new ModernButton(), Cancel = new ModernButton(), Deep = new ModernButton(), ContinueAi = new ModernButton();
@@ -46,19 +49,29 @@ internal static partial class LiveHub
         internal LookupUi(string platform, string initial, Action<LookupCandidate, string> onSave)
             : this(platform, initial, onSave, new LookupService(), new LookupVerifier()) { }
         internal LookupUi(string platform, string initial, Action<LookupCandidate, string> onSave, LookupService service, LookupVerifier verifier)
+            : this(platform, initial, onSave, service, verifier, null) { }
+        internal LookupUi(string platform, string initial, Action<LookupCandidate, string> onSave, LookupService service, LookupVerifier verifier, Form owner)
         {
+            ownsForm = owner == null; Form = owner ?? new DpiForm();
             save = onSave; Service = service; Verifier = verifier;
-            Form.Name = "streamerLookup"; Form.Text = "查找主播"; DpiLayout.SetDesignFont(Form, ModernTheme.UiFont);
-            Form.BackColor = ModernTheme.Surface; Form.ForeColor = ModernTheme.Text; Form.StartPosition = FormStartPosition.CenterParent;
-            Form.HandleCreated += delegate { ModernTheme.ApplyWindowChrome(Form); };
+            if (ownsForm)
+            {
+                Form.Name = "streamerLookup"; Form.Text = "查找主播"; DpiLayout.SetDesignFont(Form, ModernTheme.UiFont);
+                Form.BackColor = ModernTheme.Surface; Form.ForeColor = ModernTheme.Text; Form.StartPosition = FormStartPosition.CenterParent;
+                Form.HandleCreated += delegate { ModernTheme.ApplyWindowChrome(Form); };
+            }
             Details = detailsInput.Inner; Name = nameInput.Inner;
-            Form.ClientSize = new Size(DpiLayout.S(980), DpiLayout.S(660));
-            Form.MinimumSize = new Size(DpiLayout.S(820) + Form.Width - Form.ClientSize.Width,
-                DpiLayout.S(590) + Form.Height - Form.ClientSize.Height);
-            Form.AutoScaleMode = AutoScaleMode.None;
+            if (ownsForm)
+            {
+                Form.ClientSize = new Size(DpiLayout.S(980), DpiLayout.S(660));
+                Form.MinimumSize = new Size(DpiLayout.S(820) + Form.Width - Form.ClientSize.Width,
+                    DpiLayout.S(590) + Form.Height - Form.ClientSize.Height);
+                Form.AutoScaleMode = AutoScaleMode.None;
+            }
             ModernTheme.Changed += FollowTheme;
             Form.Disposed += delegate { ModernTheme.Changed -= FollowTheme; };
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(DpiLayout.S(12)), ColumnCount = 1, RowCount = 6 };
+            View = layout;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, DpiLayout.S(42)));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -102,16 +115,20 @@ internal static partial class LiveHub
                 string filter = key; var button = new ModernButton();
                 SetButton(button, key == "all" ? "全部 (0)" : Platforms.Name(key) + " (0)", "lookupFilter_" + key);
                 button.Click += delegate { FilterResults(filter); };
-                PlatformFilters[key] = button; filters.Controls.Add(button);
+                button.Tab = true;
+            PlatformFilters[key] = button; filters.Controls.Add(button);
             }
             UpdateFilters(); layout.Controls.Add(filters, 0, 3);
             var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
             body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Candidates.Name = "lookupCandidates"; Candidates.Dock = DockStyle.Fill; Candidates.IntegralHeight = false;
-            var candidateSection = Section("候选主播 · 选择后核验", Candidates); candidateSection.Margin = new Padding(0, 0, DpiLayout.S(12), 0);
+            var candidateSection = Section("候选主播 · 选择后核验", Candidates); candidateSection.Name = "lookupCandidatesCard";
+            candidateSection.Margin = new Padding(0, 0, DpiLayout.S(12), 0);
             body.Controls.Add(candidateSection, 0, 0);
             Candidates.HorizontalScrollbar = false; Sources.HorizontalScrollbar = true;
+            Candidates.BorderStyle = Sources.BorderStyle = BorderStyle.None;
+            ((ModernListBox)Sources).DrawBorder = false;
             ((IDpiScaled)Candidates).OnDpiScaled(DpiLayout.Scale); ((IDpiScaled)Sources).OnDpiScaled(DpiLayout.Scale);
             Details.Name = "lookupDetails"; Details.ReadOnly = true; Details.WordWrap = true;
             Details.Text = "先输入主播名称或链接，再点击查询。\r\n\r\n选择候选后，这里显示账号、匹配理由与平台核验结果。\r\n候选不会自动选中或加入收藏。";
@@ -119,12 +136,16 @@ internal static partial class LiveHub
             Sources.Name = "lookupSources"; Sources.Dock = DockStyle.Fill; Sources.IntegralHeight = false;
             var evidence = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
             evidence.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); evidence.RowStyles.Add(new RowStyle(SizeType.Percent, 25)); evidence.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
-            evidence.Controls.Add(Section("账号详情与核验", detailsInput), 0, 0);
-            var sourceSection = Section("搜索来源 · 选择可查看摘录", Sources); sourceSection.Margin = new Padding(0, DpiLayout.S(8), 0, 0);
+            var detailsSection = Section("账号详情与核验", detailsInput); detailsSection.Name = "lookupDetailsCard";
+            evidence.Controls.Add(detailsSection, 0, 0);
+            var sourceSection = Section("搜索来源 · 选择可查看摘录", Sources); sourceSection.Name = "lookupSourcesCard";
+            sourceSection.Margin = new Padding(0, DpiLayout.S(10), 0, 0);
             evidence.Controls.Add(sourceSection, 0, 1);
             SourcePreview.Name = "lookupSourcePreview"; SourcePreview.Inner.ReadOnly = true; SourcePreview.Inner.WordWrap = true; SourcePreview.Dock = DockStyle.Fill;
             SourcePreview.Inner.Text = "选择来源查看摘录，账号详情会保留。";
-            evidence.Controls.Add(Section("所选来源摘录", SourcePreview), 0, 2);
+            var previewSection = Section("所选来源摘录", SourcePreview); previewSection.Name = "lookupSourcePreviewCard";
+            previewSection.Margin = new Padding(0, DpiLayout.S(10), 0, 0);
+            evidence.Controls.Add(previewSection, 0, 2);
             var evidenceViewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
             evidence.Dock = DockStyle.Top; evidenceViewport.Controls.Add(evidence);
             bool layingEvidence = false;
@@ -134,7 +155,7 @@ internal static partial class LiveHub
                 layingEvidence = true;
                 try
                 {
-                    int height = Math.Max(evidenceViewport.ClientSize.Height, DpiLayout.S(Form, 400));
+                    int height = Math.Max(evidenceViewport.ClientSize.Height, DpiLayout.S(Form, 460));
                     evidence.Height = height;
                     evidenceViewport.AutoScrollMinSize = new Size(0, height);
                 }
@@ -158,7 +179,25 @@ internal static partial class LiveHub
                 TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0, 0, DpiLayout.S(6), DpiLayout.S(6)) };
             nameLabel.Width = Math.Max(nameLabel.Width, TextRenderer.MeasureText(nameLabel.Text, nameLabel.Font).Width + DpiLayout.S(8));
             addRow.Controls.AddRange(new Control[] { nameLabel, nameInput, Add, Resolve, OpenRoom, OpenProfile, SourcesButton }); layout.Controls.Add(addRow, 0, 5);
-            Form.Controls.Add(layout); Form.AcceptButton = Search; Form.CancelButton = Cancel;
+            // Editable inputs draw one matching border; read-only evidence shares
+            // the surrounding card surface instead of nesting a second outline.
+            Input.CornerRadius = nameInput.CornerRadius = detailsInput.CornerRadius = SourcePreview.CornerRadius = 8;
+            detailsInput.DrawBorder = SourcePreview.DrawBorder = false;
+            Control[] roundedControls = new Control[] { Candidates, Sources };
+            for (int i = 0; i < roundedControls.Length; i++)
+            {
+                Control rounded = roundedControls[i];
+                rounded.SizeChanged += delegate { RoundLookupControl(rounded, 8); };
+                rounded.HandleCreated += delegate { RoundLookupControl(rounded, 8); };
+            }
+            Action roundAll = delegate
+            {
+                for (int i = 0; i < roundedControls.Length; i++) RoundLookupControl(roundedControls[i], 8);
+            };
+            ((DpiForm)Form).DpiUpdated += delegate { roundAll(); };
+            if (ownsForm) Form.Shown += delegate { roundAll(); };
+            if (View.IsHandleCreated) roundAll(); else View.HandleCreated += delegate { roundAll(); };
+            if (ownsForm) { Form.Controls.Add(layout); Form.AcceptButton = Search; Form.CancelButton = Cancel; }
             Refresh.Click += delegate { BeginSearchCore(false, false, null, true); };
             Clues.Click += delegate { ShowClues(); };
             OpenProfile.Click += delegate { if (selected != null && OpenProfile.Enabled) OpenPublicUrl(LookupDiscovery.AccountPage(selected)); };
@@ -186,7 +225,8 @@ internal static partial class LiveHub
                 try { save(candidate, Name.Text); Status.Text = "收藏操作已完成，可回到启动器播放。"; Add.Enabled = false; }
                 catch (Exception ex) { Status.Text = "收藏失败：" + ex.Message; }
             };
-            Form.FormClosing += delegate { closed = true; Reset(null); };
+            Form.FormClosing += delegate { CloseLookupWork(); };
+            View.Disposed += delegate { CloseLookupWork(); };
             ((DpiForm)Form).DpiUpdated += delegate
             {
                 int targetHeight = DpiLayout.S(Form, 34);
@@ -194,21 +234,25 @@ internal static partial class LiveHub
                 UpdateFilters();
                 inputRow.PerformLayout();
             };
-            Form.Shown += delegate { Input.Focus(); };
+            if (ownsForm) Form.Shown += delegate { Input.Focus(); };
         }
         private void FollowTheme()
         {
             Form.BackColor = ModernTheme.Surface; Form.ForeColor = ModernTheme.Text;
             ModernTheme.ApplyWindowChrome(Form);
         }
-        private static TableLayoutPanel Section(string title, Control content)
+        private static Control Section(string title, Control content)
         {
-            var section = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+            var card = new WorkbenchPanel { IsCard = true, Dock = DockStyle.Fill,
+                Padding = new Padding(DpiLayout.S(12)), Margin = Padding.Empty };
+            var section = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
+                Margin = Padding.Empty, Padding = Padding.Empty };
             section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             section.RowStyles.Add(new RowStyle(SizeType.Absolute, DpiLayout.S(26))); section.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             var heading = ModernTheme.SectionHeader(title); heading.Dock = DockStyle.Fill; heading.TextAlign = ContentAlignment.MiddleLeft;
             heading.Margin = content.Margin = Padding.Empty;
-            section.Controls.Add(heading, 0, 0); section.Controls.Add(content, 0, 1); return section;
+            section.Controls.Add(heading, 0, 0); section.Controls.Add(content, 0, 1);
+            card.Controls.Add(section); return card;
         }
         private static FlowLayoutPanel Flow()
         {
@@ -222,9 +266,29 @@ internal static partial class LiveHub
             button.MinimumSize = new Size(DpiLayout.S(80), DpiLayout.S(34));
             button.Padding = new Padding(DpiLayout.S(8), DpiLayout.S(3), DpiLayout.S(8), DpiLayout.S(3)); button.Margin = new Padding(0, 0, DpiLayout.S(6), DpiLayout.S(6));
         }
-        private string CurrentPlatform() { return new[] { "bili", "huya", "douyu", "douyin", "all" }[Platform.SelectedIndex]; }
+        // Clip one control to a rounded rectangle. The lookup page uses the shared
+        // ModernInput/ListBox classes, which paint their own square corners; a window
+        // Region gives the draft's 8px result/field shape without changing their API
+        // or control names. Radius is logical and tracks the window DPI.
+        private static void RoundLookupControl(Control control, int radius)
+        {
+            if (control == null || control.IsDisposed || control.Width <= 2 || control.Height <= 2) return;
+            using (GraphicsPath path = ModernTheme.RoundRect(new Rectangle(0, 0, control.Width, control.Height), DpiLayout.S(control, radius)))
+            {
+                Region previous = control.Region;
+                control.Region = new Region(path);
+                if (previous != null) previous.Dispose();
+            }
+        }
+        private string CurrentPlatform()
+        {
+            string[] platforms = { "bili", "huya", "douyu", "douyin", "all" };
+            int index = Platform.SelectedIndex;
+            return index >= 0 && index < platforms.Length ? platforms[index] : "all";
+        }
         private void UpdateFilters()
         {
+            if (closed || Form.Disposing || View.Disposing || View.IsDisposed) return;
             DouyinBrowser.Enabled = queryCancel == null && (CurrentPlatform() == "all" || CurrentPlatform() == "douyin");
             foreach (var pair in PlatformFilters)
             {
@@ -273,6 +337,7 @@ internal static partial class LiveHub
         }
         private void Reset(string note)
         {
+            if (closed || Form.Disposing || View.Disposing || View.IsDisposed) return;
             CancelWork(note);
             replacing = true; Candidates.Items.Clear(); Sources.Items.Clear(); replacing = false;
             allCandidates.Clear(); aiRecommendation = null; ((LookupCandidateList)Candidates).Recommendation = null;
@@ -513,7 +578,15 @@ internal static partial class LiveHub
             if (item == null) { Status.Text = "请先在来源列表选择一条来源。"; return; }
             OpenPublicUrl(item.Source.url);
         }
-        public void Dispose() { closed = true; Reset(null); Form.Dispose(); }
+        private void CloseLookupWork()
+        {
+            if (closed) return;
+            closed = true; queries.Next(); selections.Next();
+            if (queryCancel != null) queryCancel.Cancel();
+            if (verifyCancel != null) verifyCancel.Cancel();
+            queryCancel = null; verifyCancel = null;
+        }
+        public void Dispose() { CloseLookupWork(); ModernTheme.Changed -= FollowTheme; if (ownsForm) Form.Dispose(); else View.Dispose(); }
     }
     internal sealed class SourceItem
     {
