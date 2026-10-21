@@ -270,7 +270,10 @@ try {
     Say '  布局     : 隔离的离线工具占位布局；不依赖作者机器安装，不运行真实播放器'
     $buildArguments = @('-NoProfile', '-File', $buildScript, '-Out', $validationExe, '-Report', $offlineReportPath)
     if ($Headless) { $buildArguments += '-Headless' }
-    $buildOut = @(Invoke-Native 'pwsh' $buildArguments)
+    $previousReleaseEnv = $env:LIVEHUB_RELEASE_STAGING
+    $env:LIVEHUB_RELEASE_STAGING = '1'
+    try { $buildOut = @(Invoke-Native 'pwsh' $buildArguments) }
+    finally { if ($null -eq $previousReleaseEnv) { Remove-Item Env:\LIVEHUB_RELEASE_STAGING -ErrorAction SilentlyContinue } else { $env:LIVEHUB_RELEASE_STAGING = $previousReleaseEnv } }
     $buildExit = $script:lastExit
     $buildLog = Join-Path $outDir 'build-output.log'
     $buildOut | Out-File -LiteralPath $buildLog -Encoding utf8

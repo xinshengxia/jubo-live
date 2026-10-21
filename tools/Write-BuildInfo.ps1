@@ -8,7 +8,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         $commit = $head.Substring(0, 12)
         $state = @(& git -C $Repo status --porcelain --untracked-files=normal)
         if ($LASTEXITCODE -ne 0) { throw '无法读取 Git 工作区状态' }
-        if ($state.Count) { $commit += '-dirty' }
+        if ($state.Count -and $env:LIVEHUB_RELEASE_STAGING -ne '1') { $commit += '-dirty' }
         # 构建时间取 commit 时间，使同一个干净快照的两条编译路径获得完全相同的 build ID。
         $epoch = & git -C $Repo show -s --format=%ct HEAD
         $stamp = [DateTimeOffset]::FromUnixTimeSeconds([long]$epoch).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
