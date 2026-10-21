@@ -194,12 +194,24 @@ internal static partial class LiveHub
         }
         internal LookupCandidate Verify(LookupCandidate input, CancellationToken token)
         {
+            return VerifyCore(input, token, false);
+        }
+        internal LookupCandidate VerifyFresh(LookupCandidate input, CancellationToken token)
+        {
+            var fresh = LookupData.Copy(input);
+            // A Douyin session identifies one broadcast, while sec_uid identifies the account.
+            // An explicit refresh must rediscover the current session and bypass prior mappings.
+            if (fresh.platform == "douyin") fresh.session_room_id = null;
+            return VerifyCore(fresh, token, true);
+        }
+        private LookupCandidate VerifyCore(LookupCandidate input, CancellationToken token, bool refresh)
+        {
             var result = LookupData.Copy(input); result.verification = "unverified"; result.user_confirmed = false;
             result.account_verified = false; result.live_status = "unknown"; result.resolution_path = null; result.failure_code = null;
             string key = result.platform + ":" + (result.sec_uid ?? result.account_id) + ":" + result.room_id + ":" + result.session_room_id + ":" + result.direct_input + ":" + RoomEvidence(result)
                 + ":" + result.profile_url + ":" + result.account_handle + ":" + HuyaAliasEvidence(result);
             Tuple<DateTime, LookupCandidate> known;
-            lock (mappings) if (mappings.TryGetValue(key, out known) && (DateTime.UtcNow - known.Item1).TotalSeconds < 60)
+            lock (mappings) if (!refresh && mappings.TryGetValue(key, out known) && (DateTime.UtcNow - known.Item1).TotalSeconds < 60)
             {
                 LookupCandidate cached = LookupData.Copy(known.Item2);
                 foreach (LookupSource source in result.sources) if (!cached.sources.Exists(delegate(LookupSource s) { return s.url == source.url; })) cached.sources.Add(source);

@@ -336,7 +336,7 @@ internal static partial class LiveHub
         public override string BaseUrl { get { return "https://live.douyin.com/"; } }
         public override string RoomPattern { get { return @"^\d+$"; } }
         public override bool NeedsRelay { get { return true; } }
-        // 抖音能明确区分「主播下播」（房间页 status != 2）和「抓取失败」，所以它敢判 offline。
+        // 抖音仅将已知 status=4 判为下播；未知状态和抓取失败不能冒充 offline。
         public override bool CanTellOffline { get { return true; } }
         public override string GetTitle(Target target) { return FetchDouyinTitle(target.Room); }
         public override string ResolveStreamUrl(Target target, out bool offline, out string failureReason)

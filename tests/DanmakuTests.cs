@@ -134,6 +134,7 @@ internal static partial class HardeningTests
         // ---- 6i) 虎牙 Tars 未定义类型不能拖垮连接 ----
         TestRunner.Add("弹幕-协议", "虎牙未知 Tars 类型容错", delegate { TestHuyaUnknownTarsType(launcher); });
         RegisterDanmakuRecoveryCases();
+        RegisterLogicAuditDanmakuCases();
         RegisterDanmakuLayoutCases();
         TestRunner.AddDesktop("弹幕-UI", "设置对话框保存往返", delegate { TestSettingsRoundTrip(launcher); });
         TestRunner.Add("弹幕-渲染", "防重叠轨道选择", delegate { TestDanmakuNoOverlap(launcher); });

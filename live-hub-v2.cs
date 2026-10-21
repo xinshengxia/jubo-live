@@ -142,8 +142,7 @@ internal static partial class LiveHub
             {
                 string name = Path.GetFileName(path);
                 if (!IsRuntimeTemporaryFile(name)) continue;
-                if (Cookie != null && (string.Equals(Path.GetFullPath(path), Path.GetFullPath(Cookie), StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(Path.GetFullPath(path), Path.GetFullPath(Cookie) + ".json", StringComparison.OrdinalIgnoreCase))) continue;
+                if (IsPersistentDataPath(path)) continue;
                 try
                 {
                     if (File.GetLastWriteTimeUtc(path) >= cutoff) continue;

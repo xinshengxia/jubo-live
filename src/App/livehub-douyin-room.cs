@@ -191,7 +191,12 @@ internal static partial class LiveHub
         offline = false;
         DouyinRoom info = FetchDouyinRoom(room);
         if (info == null) return null;                       // 页面没抓到：临时故障
-        if (info.Status != 2) { offline = true; return null; }   // 明确下播
+        if (info.Status == 4) { offline = true; return null; }   // 只有已知状态 4 才明确下播
+        if (info.Status != 2)
+        {
+            PlatformHealth.Record("douyin", "playback", "parse-error");
+            return null;
+        }
         return PickDouyinFlvUrlForQuality(info.FlvUrls, RelayQuality);
     }
 
@@ -220,7 +225,12 @@ internal static partial class LiveHub
             : info.Title != null ? info.Title
             : "抖音直播 " + target.Room;
         roomTitle = CreatePlaybackTitleInfo(title, info.Title).RoomTitle;
-        if (info.Status != 2) throw new InvalidOperationException("抖音 " + target.Room + " 现在没有开播");
+        if (info.Status == 4) throw new InvalidOperationException("抖音 " + target.Room + " 现在没有开播");
+        if (info.Status != 2)
+        {
+            PlatformHealth.Record("douyin", "playback", "parse-error");
+            throw new InvalidOperationException("抖音 " + target.Room + " 房间状态无法确认（status=" + info.Status + "），请稍后重试");
+        }
         string url = PickDouyinFlvUrlForQuality(info.FlvUrls, target.Quality);
         if (url == null) throw new InvalidOperationException("抖音 " + target.Room + " 没解析出可用的直播地址");
         WriteBitrateHint(target, url);

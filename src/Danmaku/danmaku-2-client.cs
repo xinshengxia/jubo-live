@@ -638,9 +638,16 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
     private void HandleSuperChatDelete(Dictionary<string, object> root)
     {
         Dictionary<string, object> data = Dict(Val(root, "data"));
-        long id = data == null ? 0 : Long(data, "id", 0);
+        System.Collections.IList ids = List(Val(data, "ids"));
         SuperChatDeleteHandler handler = SuperChatDeleted;
-        if (handler != null && id != 0) handler(id);
+        if (handler == null || ids == null) return;
+        var seen = new HashSet<long>();
+        foreach (object value in ids)
+        {
+            long id;
+            if (long.TryParse(ToStr(value), NumberStyles.Integer, CultureInfo.InvariantCulture, out id)
+                && id > 0 && seen.Add(id)) handler(id);
+        }
     }
 
     // ------------------------------------------------------------------ HTTP / 签名 / JSON 小工具

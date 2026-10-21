@@ -15,6 +15,7 @@ internal static partial class HardeningTests
 {
     private static void RegisterAuditPendingCases()
     {
+        RegisterLogicAuditPlaybackCases();
         TestRunner.Add("审计待确认", "FLV 两次时钟归零及中间重叠保持音视频续接", TestAuditRepeatedReset);
         TestRunner.Add("审计待确认", "压缩弹幕展开超过限额时拒绝", TestAuditInflateLimit);
         TestRunner.Add("审计待确认", "配置热重载损坏和占用保留最后有效值并恢复", TestAuditConfigReload);

@@ -150,12 +150,12 @@ internal sealed class DanmakuOverlayForm : Form
     // 不补偿的话弹幕会领先画面 2.5~4 秒，等于**剧透**：
     // 先看到「哈哈哈他没了」，几秒后画面里才没。
     //
-    // 做法：到达后不直接交给渲染器，先按 ReleaseAt 排队，到点再放。
+    // 记录原始入队时间，释放时使用当前补偿值；实时调节不改变消息到达顺序。
     // 这样防重叠逻辑只看到「真正要显示的」弹幕，不受影响。
     private struct PendingDanmaku
     {
         public DanmakuItem Item;
-        public DateTime ReleaseAt;
+        public DateTime ArrivedAt;
     }
     private readonly List<PendingDanmaku> _pendingDanmaku = new List<PendingDanmaku>();
 
@@ -554,13 +554,15 @@ internal sealed class DanmakuOverlayForm : Form
         _renderer.ShowTransient("弹幕速度：" + SpeedLabels[index]);
     }
 
-    /// 把到点的弹幕交给渲染器。**顺序很重要**：必须按原始到达顺序释放，
-    /// 所以从队首扫到第一个还没到点的就停（队列天然按 ReleaseAt 递增）。
+    /// 按到达顺序释放，统一使用当前延迟。托盘、快捷键和热重载调低延迟时，
+    /// 积压消息一起提前；关闭补偿后新消息也不能越过积压队列。
     private void ReleasePendingDanmaku(DateTime now)
     {
         if (_pendingDanmaku.Count == 0) return;
+        int delayMs = Math.Max(0, _config.DanmakuDelayMs);
         int released = 0;
-        while (_pendingDanmaku.Count > 0 && _pendingDanmaku[0].ReleaseAt <= now)
+        while (_pendingDanmaku.Count > 0 && (delayMs == 0
+            || _pendingDanmaku[0].ArrivedAt.AddMilliseconds(delayMs) <= now))
         {
             if (!_renderer.IsBlocked(_pendingDanmaku[0].Item))
                 _renderer.AddDanmaku(_pendingDanmaku[0].Item);
@@ -939,11 +941,11 @@ internal sealed class DanmakuOverlayForm : Form
             DanmakuItem danmaku = message as DanmakuItem;
             if (danmaku != null)
             {
-                if (_config.DanmakuDelayMs > 0)
+                if (_config.DanmakuDelayMs > 0 || _pendingDanmaku.Count > 0)
                 {
                     PendingDanmaku pending;
                     pending.Item = danmaku;
-                    pending.ReleaseAt = DateTime.UtcNow.AddMilliseconds(_config.DanmakuDelayMs);
+                    pending.ArrivedAt = DateTime.UtcNow;
                     _pendingDanmaku.Add(pending);
                 }
                 else _renderer.AddDanmaku(danmaku);

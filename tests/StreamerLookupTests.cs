@@ -358,6 +358,7 @@ internal static partial class HardeningTests
         RegisterDouyinSearchCases();
         RegisterLookupDiscoveryCases();
         RegisterLookupDouyinPageCases();
+        RegisterLogicAuditLookupCases();
         TestRunner.Add("主播查询", "原生搜索协议与凭据边界", TestLookupContract);
         TestRunner.Add("主播查询", "SSE引用、结构化候选及ID精度", TestLookupSources);
         TestRunner.Add("主播查询", "平台优先、手动AI、缓存与取消代次", TestLookupOrder);

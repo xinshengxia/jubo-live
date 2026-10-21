@@ -463,6 +463,9 @@ internal static partial class LiveHub
         long timestampShift = 0;
         int droppedTags = 0;
         string publishedState = null;   // 只在状态变化时写文件，别每轮都写盘
+        // CDN 正常切断短连接后通常数百毫秒内续上，不为这些无感续接反复闪重连提示。
+        // 以真正转发的音视频 tag 为进展；只有 FLV 头、元数据或重叠片段不能冒充恢复。
+        Stopwatch mediaProgress = Stopwatch.StartNew();
         int stalled = 0;                // 连续「一个字节都没转发出去」的上游尝试次数
         // 走到循环外时的收尾状态：null = 什么都不写（下播等待超时那条路，保留已写好的 OFFLINE）
         string finalState = "RECONNECTING";
@@ -544,11 +547,6 @@ internal static partial class LiveHub
                         totalBytes += flvHeader.Length;
                     }
                     firstUpstream = false;
-                    if (publishedState != "ONLINE")   // 到这一步才算「确实在取流」（见上面的说明）
-                    {
-                        publishedState = "ONLINE";
-                        PublishRelayState(platform, room, "ONLINE");
-                    }
                     // 每接上一条新的上游流，音视频都重新进入「追赶」状态：
                     // 丢掉与上一段重叠的部分，追上之后立刻恢复正常转发。
                     catchingUp[0] = true;
@@ -630,6 +628,15 @@ internal static partial class LiveHub
                         try { output.Write(tag, 0, tag.Length); }
                         catch (Exception) { RelayLog("播放器断开，结束"); return; }
                         totalBytes += tag.Length;
+                        if (slot >= 0)
+                        {
+                            mediaProgress.Restart();
+                            if (publishedState != "ONLINE")
+                            {
+                                publishedState = "ONLINE";
+                                PublishRelayState(platform, room, "ONLINE");
+                            }
+                        }
                         if ((DateTime.UtcNow - lastReport).TotalSeconds >= 30)
                         {
                             RelayLog("已转发 " + (totalBytes / 1024 / 1024) + " MB（最近 30 秒 "
@@ -659,6 +666,12 @@ internal static partial class LiveHub
             // 播放器已经走了就别再解析上游地址：解析一次就是一次整页抓取
             // （实测死循环时 25 秒能抓 30 多次抖音房间页），只等新连接进来。
             if (ClientGone(client)) { RelayLog("播放器断开，结束"); return; }
+            if (publishedState != "RECONNECTING"
+                && (publishedState != "ONLINE" || mediaProgress.ElapsedMilliseconds >= 1500))
+            {
+                publishedState = "RECONNECTING";
+                PublishRelayState(platform, room, "RECONNECTING");
+            }
             reconnects++;
             RelayLog("准备重连 #" + reconnects + "（已转发 " + (totalBytes / 1024 / 1024) + " MB）");
             Thread.Sleep(300);

@@ -52,11 +52,15 @@ internal static partial class HardeningTests
     {
         string dir = ReviewDirectory();
         FieldInfo runtime = hub.GetField("RuntimeDir", ReviewStatic), cookie = hub.GetField("Cookie", ReviewStatic);
+        FieldInfo favorites = hub.GetField("Favorites", ReviewStatic), history = hub.GetField("History", ReviewStatic);
         object oldRuntime = runtime.GetValue(null), oldCookie = cookie.GetValue(null);
-        string[] keep = { "douyin-cookies.txt", "douyu-cookies.txt", "huya-cookies.txt", "douyin-cookies.txt.json", "session-private.txt", "session-private.txt.json", "bili-unknown.txt" };
+        object oldFavorites = favorites.GetValue(null), oldHistory = history.GetValue(null);
+        string[] keep = { "douyin-cookies.txt", "douyu-cookies.txt", "huya-cookies.txt", "douyin-cookies.txt.json", "session-private.txt", "session-private.txt.json", "bili-unknown.txt", "session-favorites.txt", "history.state.txt" };
         try
         {
             runtime.SetValue(null, dir); cookie.SetValue(null, Path.Combine(dir, "session-private.txt"));
+            favorites.SetValue(null, Path.Combine(dir, "session-favorites.txt"));
+            history.SetValue(null, Path.Combine(dir, "history.state.txt"));
             foreach (string name in keep) { File.WriteAllText(Path.Combine(dir, name), "synthetic"); File.SetLastWriteTimeUtc(Path.Combine(dir, name), DateTime.UtcNow.AddDays(-9)); }
             string stale = Path.Combine(dir, "session-old.state.txt"), fresh = Path.Combine(dir, "session-new.state.txt");
             File.WriteAllText(stale, "old"); File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-9)); File.WriteAllText(fresh, "new");
@@ -64,7 +68,12 @@ internal static partial class HardeningTests
             foreach (string name in keep) Check(File.Exists(Path.Combine(dir, name)), "清理保留 " + name);
             Check(!File.Exists(stale) && File.Exists(fresh), "只清理过期会话文件");
         }
-        finally { runtime.SetValue(null, oldRuntime); cookie.SetValue(null, oldCookie); Directory.Delete(dir, true); }
+        finally
+        {
+            runtime.SetValue(null, oldRuntime); cookie.SetValue(null, oldCookie);
+            favorites.SetValue(null, oldFavorites); history.SetValue(null, oldHistory);
+            Directory.Delete(dir, true);
+        }
     }
 
     private static void TestReviewPrivateWrite()

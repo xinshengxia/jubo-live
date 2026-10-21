@@ -167,7 +167,7 @@ internal static partial class LiveHub
             Input.TextChanged += delegate { Reset("输入已改变，请点击查询。"); }; Platform.SelectedIndexChanged += delegate { Reset("平台已改变，请重新查询。"); };
             Candidates.SelectedIndexChanged += delegate { SelectCandidate(); };
             Name.TextChanged += delegate { UpdateAdd(); }; Sources.DoubleClick += delegate { OpenSource(); }; SourcesButton.Click += delegate { OpenSource(); };
-            Resolve.Click += delegate { if (Candidates.SelectedItem == null) return; Verifier.ClearCache(); SelectCandidate(); };
+            Resolve.Click += delegate { if (Candidates.SelectedItem != null) VerifySelectedCandidate(true); };
             OpenRoom.Click += delegate { if (selected != null && OpenRoom.Enabled) OpenPublicUrl(selected.room_url); };
             Sources.SelectedIndexChanged += delegate
             {
@@ -400,6 +400,10 @@ internal static partial class LiveHub
         }
         private void SelectCandidate()
         {
+            VerifySelectedCandidate(false);
+        }
+        private void VerifySelectedCandidate(bool refresh)
+        {
             if (replacing) return;
             int generation = selections.Next(); if (verifyCancel != null) verifyCancel.Cancel();
             selected = Candidates.SelectedItem as LookupCandidate; Add.Enabled = false; Resolve.Enabled = OpenRoom.Enabled = OpenProfile.Enabled = false;
@@ -413,7 +417,7 @@ internal static partial class LiveHub
             {
                 try
                 {
-                    LookupCandidate result = Verifier.Verify(input, cancellation.Token);
+                    LookupCandidate result = refresh ? Verifier.VerifyFresh(input, cancellation.Token) : Verifier.Verify(input, cancellation.Token);
                     Ui(delegate
                     {
                         if (!selections.Current(generation) || !queries.Current(query) || cancellation.IsCancellationRequested) return;
