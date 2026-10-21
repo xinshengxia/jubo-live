@@ -259,8 +259,7 @@ try {
     #   离线回归是针对**开发布局**写的，所以先在开发布局下跑完整回归，再把依赖装进包 ——
     #   编译只做一次，回归、冒烟、打包用的是同一个 exe。
     $exePath = Join-Path $staging '看直播.exe'
-    $offlineReportPath = Join-Path $staging 'runtime\release-offline-report.json'
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $offlineReportPath) | Out-Null
+    $offlineReportPath = Join-Path $outDir 'release-offline-report.json'
     $buildScript = Join-Path $staging 'Build-Hardened.ps1'
     if (-not (Test-Path -LiteralPath $buildScript)) { Fatal '构建' ('staging 里没有 Build-Hardened.ps1：' + $buildScript) '确认该文件已提交到仓库' 3 }
     Say ('  产物     : ' + $exePath + '   （本次唯一的启动器 exe；回归、冒烟、打包都用它）')
