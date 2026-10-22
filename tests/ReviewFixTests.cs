@@ -36,6 +36,7 @@ internal static partial class HardeningTests
         TestRunner.Add("审查修复", "私有写入保护旧目标且失败不冒充成功", TestReviewPrivateWrite);
         TestRunner.Add("审查修复", "profile 子项权限与继承", TestReviewProfile);
         TestRunner.Add("审查修复", "路径覆盖传到真实子进程", delegate { TestReviewChildPaths(launcher); });
+        TestRunner.Add("审查修复", "重启保留原始参数与自定义数据路径", delegate { TestReviewLauncherRestart(launcher); });
         TestRunner.Add("审查修复", "HTTP 请求分片与截断", TestReviewRequest);
         TestRunner.Add("审查修复", "protobuf 恶意长度与截断", TestReviewProto);
         TestRunner.Add("审查修复", "斗鱼重连心跳退出", TestReviewHeartbeat);
@@ -46,6 +47,50 @@ internal static partial class HardeningTests
     private static object ReviewCall(Type type, string name, params object[] args)
     {
         return type.GetMethod(name, ReviewStatic).Invoke(null, args);
+    }
+
+    private static void TestReviewLauncherRestart(string launcher)
+    {
+        string dir = ReviewDirectory();
+        try
+        {
+            string runtime = Path.Combine(dir, "合成 runtime") + Path.DirectorySeparatorChar;
+            string config = Path.Combine(dir, "合成 config.json");
+            string favorites = Path.Combine(dir, "合成 favorites.json");
+            File.WriteAllText(config, "{}", Encoding.UTF8);
+            string[] original = { launcher, "--self-test", "--runtime=" + runtime,
+                "--config=" + config, "--favorites=" + favorites,
+                "--cookie=" + Path.Combine(dir, "synthetic-cookie.txt"),
+                "--history=" + Path.Combine(dir, "synthetic-history.json") };
+            var info = (ProcessStartInfo)Call("CreateLauncherRestartInfo", new object[] { original });
+            Check(info.FileName == System.Windows.Forms.Application.ExecutablePath,
+                "重启同一启动器");
+            Check(info.WorkingDirectory == Environment.CurrentDirectory && info.UseShellExecute,
+                "重启保持工作目录与启动方式");
+            string[] parsed = ParseCommandLine("launcher.exe " + info.Arguments);
+            Check(parsed.Length == original.Length, "重启保留完整参数数量");
+            for (int i = 1; i < original.Length; i++)
+                Check(parsed[i] == original[i], "重启参数完整往返 " + i);
+            string[] edgeCases = { launcher, "", "synthetic \"quoted\" value", "tail\\" };
+            var edgeInfo = (ProcessStartInfo)Call("CreateLauncherRestartInfo", new object[] { edgeCases });
+            string[] edgeParsed = ParseCommandLine("launcher.exe " + edgeInfo.Arguments);
+            Check(edgeParsed.Length == edgeCases.Length, "空参数、引号与反斜杠保留数量");
+            for (int i = 1; i < edgeCases.Length; i++)
+                Check(edgeParsed[i] == edgeCases[i], "特殊重启参数完整往返 " + i);
+            info.FileName = launcher;
+            info.UseShellExecute = false;
+            info.CreateNoWindow = true;
+            using (Process process = Process.Start(info))
+            {
+                if (!process.WaitForExit(30000)) { process.Kill(); throw new Exception("重启参数自检超时"); }
+                Check(process.ExitCode == 0, "真实子进程接受重启参数");
+            }
+            string report = File.ReadAllText(Path.Combine(runtime, "selftest.txt"));
+            Check(report.Contains("CONFIG=" + config), "重启继续读取自定义配置文件");
+            Check(report.Contains("TOOL runtime = " + runtime), "重启继续使用自定义 runtime");
+            Check(report.Contains("TOOL favorites = " + favorites), "重启继续使用自定义收藏路径");
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     private static void TestReviewPrune()

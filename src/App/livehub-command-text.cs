@@ -74,6 +74,23 @@ internal static partial class LiveHub
         return result.ToString();
     }
 
+    internal static ProcessStartInfo CreateLauncherRestartInfo(string[] commandLineArgs)
+    {
+        var arguments = new StringBuilder();
+        // GetCommandLineArgs includes the executable at index zero. Keep the
+        // original arguments before ApplyPathOverrides removes path options.
+        for (int i = 1; i < commandLineArgs.Length; i++)
+        {
+            if (i > 1) arguments.Append(' ');
+            arguments.Append(QuoteWindowsArg(commandLineArgs[i]));
+        }
+        return new ProcessStartInfo(Application.ExecutablePath, arguments.ToString())
+        {
+            WorkingDirectory = Environment.CurrentDirectory,
+            UseShellExecute = true
+        };
+    }
+
     // 虎牙的主播/房间名：网页端已经不在 HTML 里给配置了，改用手機端公开接口
     // （https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=... → nick + introduction）
 }

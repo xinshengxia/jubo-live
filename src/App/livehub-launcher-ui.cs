@@ -93,6 +93,10 @@ internal static partial class LiveHub
         LauncherUi.ApplyTheme(themeOverride);
         LauncherUi ui = new LauncherUi();
         ui.Build();
+        // The shell is built before the workbench replaces its controls; clear any
+        // legacy form-level scroll range so the whole window cannot drift.
+        ui.form.AutoScroll = false;
+        ui.form.AutoScrollMinSize = Size.Empty;
         return ui.form;
     }
 
@@ -949,7 +953,7 @@ internal static partial class LiveHub
 
         internal void Layout()
         {
-            if (workbenchReady) { LayoutWorkbench(); return; }
+            if (workbenchReady) { LayoutWorkbench(); form.AutoScroll = false; form.AutoScrollMinSize = Size.Empty; return; }
             if (layingOut || ((DpiForm)form).ApplyingDpi) return;
             layingOut = true;
             Point scroll = new Point(-form.AutoScrollPosition.X, -form.AutoScrollPosition.Y);

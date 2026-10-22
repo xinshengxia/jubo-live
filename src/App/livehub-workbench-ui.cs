@@ -95,7 +95,7 @@ internal static partial class LiveHub
             form.SuspendLayout();
             try
             {
-                form.Controls.Clear(); form.Tag = this; form.AutoScroll = false;
+                form.Controls.Clear(); form.Tag = this; form.AutoScroll = false; form.AutoScrollMinSize = Size.Empty;
                 form.ClientSize = new Size(Px(1024), Px(866));
                 form.MinimumSize = new Size(740, 540);
                 // Draft shell: a 34px chrome strip across the top, then the flat
@@ -555,8 +555,8 @@ internal static partial class LiveHub
                 if (!child.Visible || child.Dock == DockStyle.Fill) continue;
                 bottom = Math.Max(bottom, child.Bottom);
             }
-            bool needs = bottom > page.ClientSize.Height + Px(2);
-            page.AutoScrollMinSize = needs ? new Size(0, bottom + Px(8)) : Size.Empty;
+            page.AutoScrollMinSize = bottom > page.ClientSize.Height + Px(2)
+                ? new Size(0, bottom + Px(8)) : Size.Empty;
         }
 
         private void LayoutWorkbench()
@@ -619,6 +619,8 @@ internal static partial class LiveHub
                 if (workbenchPages.TryGetValue("data", out dataPage)) WorkbenchDataUi.Relayout(dataPage, form);
                 foreach (Panel workbenchPage in workbenchPages.Values) FitWorkbenchPageScroll(workbenchPage);
                 SyncWorkbenchActions();
+                form.AutoScroll = false;
+                form.AutoScrollMinSize = Size.Empty;
             }
             finally { form.ResumeLayout(true); workbenchLayoutBusy = false; }
         }
@@ -705,11 +707,11 @@ internal static partial class LiveHub
             int cardPad = Px(13), avatarSize = Px(34);
             workbenchHomeAvatar.SetBounds(cardPad, (Px(66) - avatarSize) / 2, avatarSize, avatarSize);
             int textLeft = cardPad + avatarSize + Px(12);
-            int reopenWidth = Px(92), stateWidth = Px(126);
+            int reopenWidth = Px(92), stateWidth = Px(150);
             workbenchHomeTitle.SetBounds(textLeft, Px(10),
                 Math.Max(Px(80), width - textLeft - reopenWidth - stateWidth - Px(30)), Px(20));
-            workbenchHomeMeta.SetBounds(textLeft, Px(31), Math.Max(Px(80), width - textLeft - reopenWidth - Px(20)), Px(18));
-            workbenchHomeState.SetBounds(width - cardPad - reopenWidth - Px(10) - stateWidth, Px(24), stateWidth, Px(18));
+            workbenchHomeMeta.SetBounds(textLeft, Px(31), Math.Max(Px(80), width - textLeft - reopenWidth - stateWidth - Px(30)), Px(18));
+            workbenchHomeState.SetBounds(width - cardPad - reopenWidth - Px(10) - stateWidth, Px(22), stateWidth, Px(22));
             workbenchHomeReopen.SetBounds(width - cardPad - reopenWidth, Px(18), reopenWidth, Px(30));
             page.AutoScrollMinSize = new Size(0, workbenchHomeCard.Bottom + Px(2));
         }

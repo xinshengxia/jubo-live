@@ -150,9 +150,7 @@ internal static class WorkbenchDanmakuUi
                 if (!SaveChanges(false)) return;
                 try
                 {
-                    System.Diagnostics.ProcessStartInfo info = new System.Diagnostics.ProcessStartInfo(Application.ExecutablePath);
-                    info.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory;
-                    info.UseShellExecute = true;
+                    System.Diagnostics.ProcessStartInfo info = LiveHub.CreateLauncherRestartInfo(Environment.GetCommandLineArgs());
                     System.Diagnostics.Process.Start(info);
                     owner.BeginInvoke((MethodInvoker)delegate { owner.Close(); });
                 }

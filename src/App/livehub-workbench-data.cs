@@ -523,7 +523,7 @@ internal static partial class LiveHub
                     sizes[i].Text = SizeText(category.Bytes);
                     updated[i].Text = category.ModifiedUtc == DateTime.MinValue ? "尚无文件" : category.ModifiedUtc.ToLocalTime().ToString("MM-dd HH:mm");
                 }
-                note.Text = snapshot.Warning.Length == 0 ? "示例数据清单 · 点击“查看明细”打开只读数据窗口" : snapshot.Warning;
+                note.Text = snapshot.Warning.Length == 0 ? "本地数据清单 · 点击“查看明细”打开只读数据窗口" : snapshot.Warning;
             };
             Action refresh = delegate
             {
