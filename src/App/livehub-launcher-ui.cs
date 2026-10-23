@@ -425,13 +425,11 @@ internal static partial class LiveHub
         catch (Exception) { enhanceBox.SelectedIndex = 0; }
         enhanceBox.SetBounds(94, 95, 150, 28);
         enhanceTip.SetToolTip(enhanceBox,
-            "mpv 画质档位（**只影响 mpv**，PotPlayer 走它自己的渲染器）。\r\n"
-            + "实测三档 GPU 代价（B站 7777，各 20 秒）：\r\n"
-            + "  默认   什么都不加                 均 22.3%  峰 25.7%\r\n"
-            + "  轻度   --scale-antiring=0.7      均 21.9%  峰 38%   ← 平均几乎不涨，去边缘振铃\r\n"
-            + "  高质量 --profile=high-quality     均 46.7%  峰 63.3% ← 缩放器换 ewa_lanczossharp\r\n"
-            + "注：这版 mpv 默认渲染器本来就是 gpu-next(libplacebo)，\r\n"
-            + "    即 madVR 的等价物；高质量档只是把缩放算法再提一档。");
+            "mpv 画质档位（只影响 mpv，PotPlayer 使用自己的渲染器）。\r\n"
+            + "无：使用播放器默认渲染设置。\r\n"
+            + "轻度：启用 --scale-antiring=0.7，减轻缩放边缘振铃。\r\n"
+            + "高质量：使用 --profile=high-quality。\r\n"
+            + "显卡负载随分辨率、帧率和硬件而变化。");
         enhanceBox.SelectedIndexChanged += delegate
         {
             try
@@ -637,6 +635,7 @@ internal static partial class LiveHub
             // 原来是「每 2 秒的定时器只发一个房间」，14 个房间要串行等 ≈28 秒才把 [播]/[休] 填满，
             // 用户看到的就是一个一个慢慢跳出来。调度策略见 BadgeScheduler（纯函数、有离线回归）。
             PumpBadgeChecks();
+            PumpWorkbenchAvatars();
             RefreshSessions();
         };
         watchTimer.Start();
@@ -755,7 +754,7 @@ internal static partial class LiveHub
         /// <summary>其余事件接线：输入回车、取消启动、双击开播、扫码按钮、收藏增删、关闭窗口。</summary>
         private void WireEvents()
         {
-        status.TextChanged += delegate { Layout(); };
+        status.TextChanged += delegate { if (workbenchReady) RefreshWorkbenchStatusLayout(); else Layout(); };
         input.TextChanged += delegate
         {
             previewToken++;
@@ -787,11 +786,13 @@ internal static partial class LiveHub
 
         recentList.SelectedIndexChanged += delegate
         {
+            if (refreshingLists) return;
             if (recentList.SelectedIndex >= 0 && recentList.SelectedIndex < currentHistory.Count)
                 input.Text = currentHistory[recentList.SelectedIndex].Room;
         };
         favList.SelectedIndexChanged += delegate
         {
+            if (refreshingLists) return;
             if (favList.SelectedIndex >= 0 && favList.SelectedIndex < currentFavorites.Count)
             {
                 Target t = Parse(currentFavorites[favList.SelectedIndex].Value, "bili");
@@ -900,15 +901,23 @@ internal static partial class LiveHub
 
         private void RefreshLoginSummaries()
         {
+            // These labels exist only on the accounts page. The 2-second timer
+            // must not rewrite text/tooltips while another page is visible.
+            if (!workbenchReady || workbenchPage != "accounts") return;
             foreach (string p in platforms)
             {
                 LoginHealth.Result result = LoginHealth.Get(p);
                 Label label = loginLabels[p];
-                label.Text = PlatformName(p) + " Cookie：" + LoginHealth.Title(result) + "\r\n"
+                string text = PlatformName(p) + " Cookie：" + LoginHealth.Title(result) + "\r\n"
                     + (result.CheckedUtc > 0 ? "检测 " + LoginHealth.TimeText(result.CheckedUtc) : "点击查看详情 / 检测");
-                label.ForeColor = LoginHealth.ColorFor(result);
-                label.BackColor = ModernTheme.Card;
-                enhanceTip.SetToolTip(label, LoginHealth.Details(p));
+                Color color = LoginHealth.ColorFor(result);
+                if (label.Text != text)
+                {
+                    label.Text = text;
+                    enhanceTip.SetToolTip(label, LoginHealth.Details(p));
+                }
+                if (label.ForeColor != color) label.ForeColor = color;
+                if (label.BackColor != ModernTheme.Card) label.BackColor = ModernTheme.Card;
             }
         }
 
@@ -1106,20 +1115,18 @@ internal static partial class LiveHub
             roomBadges[key] = live;
             badgeTimes[key] = DateTime.UtcNow;
             if (target.Platform != platform) return;
-            for (int i = 0; i < currentFavorites.Count; i++)
-            {
-                Target itemTarget = Parse(currentFavorites[i].Value, "bili");
-                if (itemTarget != null && itemTarget.Room == target.Room)
-                    favList.Items[i] = Badge(itemTarget) + FavoriteLabel(currentFavorites[i]);
-            }
-            for (int i = 0; i < currentHistory.Count; i++)
-                if (currentHistory[i].Room == target.Room)
-                    recentList.Items[i] = Badge(target) + HistoryLabel(currentHistory[i]);
             RefreshLists();
         }
 
+        private bool refreshingLists;
+        private string lastRoomListSignature;
+        private string lastRoomListPlatform;
         internal void RefreshLists()
         {
+            string selectedFavorite = favList.SelectedIndex >= 0 && favList.SelectedIndex < currentFavorites.Count
+                ? FavoriteRoomKey(currentFavorites[favList.SelectedIndex].Value) : null;
+            string selectedRecent = recentList.SelectedIndex >= 0 && recentList.SelectedIndex < currentHistory.Count
+                ? lastRoomListPlatform + ":" + currentHistory[recentList.SelectedIndex].Room : null;
             foreach (KeyValuePair<string, ModernButton> pair in platformButtons)
             {
                 // 选中态和文字色都由 ModernButton 自绘决定 —— 原来那两行设的
@@ -1143,12 +1150,31 @@ internal static partial class LiveHub
                 int rank = FavoriteRank(left).CompareTo(FavoriteRank(right));
                 return rank != 0 ? rank : string.Compare(left.Key, right.Key, StringComparison.CurrentCulture);
             });
-            favList.Items.Clear();
-            foreach (var favorite in currentFavorites)
-                favList.Items.Add(Badge(Parse(favorite.Value, "bili")) + FavoriteLabel(favorite));
-            recentList.Items.Clear();
-            foreach (var entry in currentHistory)
-                recentList.Items.Add(Badge(Parse(entry.Room, platform)) + HistoryLabel(entry));
+            List<string> favoriteRows = new List<string>(), recentRows = new List<string>();
+            foreach (var favorite in currentFavorites) favoriteRows.Add(Badge(Parse(favorite.Value, "bili")) + FavoriteLabel(favorite));
+            foreach (var entry in currentHistory) recentRows.Add(Badge(Parse(entry.Room, platform)) + HistoryLabel(entry));
+            string signature = platform + "\n" + string.Join("\n", favoriteRows) + "\n--\n" + string.Join("\n", recentRows);
+            if (signature == lastRoomListSignature) return;
+            lastRoomListSignature = signature;
+            lastRoomListPlatform = platform;
+            bool previousSync = syncingWorkbench;
+            refreshingLists = true; syncingWorkbench = true;
+            favList.BeginUpdate(); recentList.BeginUpdate();
+            try
+            {
+                favList.Items.Clear(); recentList.Items.Clear();
+                foreach (string row in favoriteRows) favList.Items.Add(row);
+                foreach (string row in recentRows) recentList.Items.Add(row);
+                favList.SelectedIndex = selectedFavorite == null ? -1 : currentFavorites.FindIndex(delegate(KeyValuePair<string, string> entry)
+                    { return FavoriteRoomKey(entry.Value) == selectedFavorite; });
+                recentList.SelectedIndex = selectedRecent == null ? -1 : currentHistory.FindIndex(delegate(HistoryEntry entry)
+                    { return platform + ":" + entry.Room == selectedRecent; });
+            }
+            finally
+            {
+                recentList.EndUpdate(); favList.EndUpdate();
+                refreshingLists = false; syncingWorkbench = previousSync;
+            }
 
             recentLabel.Text = "最近播放（" + PlatformName(platform) + "，双击用 mpv 打开）";
             favLabel.Text = PlatformName(platform) + " 收藏 " + currentFavorites.Count + " 个 · 本地收藏";
@@ -1245,7 +1271,7 @@ internal static partial class LiveHub
             {
                 // 「已下播」优先于「播放器已退出」：mpv 拉不到流时会自己退出（keep-open 只管
                 // 播完之后），原来那一行就只显示「播放器已退出」，看不出真正原因 ——
-                // 2026-10-16 虎牙 910323 下播转重播就是这个表现。
+                // 房间由直播转为下播或重播时也应保留真正的原因。
                 string relayState = "";
                 try
                 {

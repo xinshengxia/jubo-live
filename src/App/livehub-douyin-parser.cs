@@ -51,6 +51,9 @@ internal static partial class LiveHub
         public string OwnerId;
         public string OwnerSecUid;
         public string OwnerWebRid;
+        // Room page carries the anchor avatar even when the reflow request is
+        // blocked; keep it so a favorite can still show the real account image.
+        public string OwnerAvatar;
         // 仅供本次弹幕握手使用，不落盘。
         public string UserUniqueId;
         public string Ttwid;
@@ -115,6 +118,19 @@ internal static partial class LiveHub
         return data.TryGetValue(name, out value) ? value as Dictionary<string, object> : null;
     }
 
+    private static string DouyinAvatar(Dictionary<string, object> anchor)
+    {
+        var thumb = NestedDict(anchor, "avatar_thumb");
+        object raw;
+        if (thumb == null || !thumb.TryGetValue("url_list", out raw)) return null;
+        foreach (object value in AsArray(raw) ?? new object[0])
+        {
+            string url = value as string;
+            if (!string.IsNullOrWhiteSpace(url)) return url;
+        }
+        return null;
+    }
+
     // 纯函数：给页面 HTML 返回房间信息（离线测试直接调它）
     internal static DouyinRoom ParseDouyinRoom(string html)
     {
@@ -149,11 +165,13 @@ internal static partial class LiveHub
                 info.Status = int.TryParse(Field(room, "status"), out status) ? status : 0;
                 info.RoomId = Field(room, "id_str");
                 info.Title = Field(room, "title");
-                info.Owner = Field(NestedDict(room, "owner"), "nickname");
-                var owner = NestedDict(room, "owner");
+                // Lookup and playback page variants label the anchor as owner or anchor.
+                var owner = NestedDict(room, "owner") ?? NestedDict(room, "anchor");
+                info.Owner = Field(owner, "nickname");
                 info.OwnerId = Field(owner, "id_str") ?? Field(owner, "id");
                 info.OwnerSecUid = Field(owner, "sec_uid");
                 info.OwnerWebRid = Field(owner, "web_rid");
+                info.OwnerAvatar = DouyinAvatar(owner);
                 var flv = NestedDict(NestedDict(room, "stream_url"), "flv_pull_url");
                 if (flv != null)
                     foreach (var pair in flv)

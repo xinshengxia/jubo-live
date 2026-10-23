@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -63,7 +63,8 @@ internal static partial class LiveHub
                 }
                 else if (!(candidate.platform == "huya" && HuyaAlias(candidate.profile_url))) return false;
             }
-            return candidate.room_id != null || candidate.account_id != null || candidate.sec_uid != null || !string.IsNullOrWhiteSpace(candidate.display_name);
+            return candidate.room_id != null || candidate.account_id != null || candidate.sec_uid != null
+                || candidate.profile_url != null || !string.IsNullOrWhiteSpace(candidate.display_name);
         }
         internal static bool HuyaAlias(string value)
         {
@@ -386,6 +387,10 @@ internal static partial class LiveHub
                     if (page == null || page.OwnerSecUid == null || page.RoomId == null) throw new LookupFailure("blocked", "抖音房间页缺少账号关联，可能被验证、登录或页面变化阻挡。");
                     if (candidate.sec_uid != null && candidate.sec_uid != page.OwnerSecUid) throw new LookupFailure("mismatch", "抖音房间页主播与所选账号不同。");
                     candidate.sec_uid = page.OwnerSecUid; candidate.session_room_id = page.RoomId;
+                    // Reflow can be blocked or expire while the room page still
+                    // carries the anchor avatar; keep it for favorites/recent.
+                    if (string.IsNullOrEmpty(candidate.avatar_url) && !string.IsNullOrWhiteSpace(page.OwnerAvatar))
+                        candidate.avatar_url = LookupAvatarCache.Normalize(page.OwnerAvatar);
                 }
                 else if (candidate.profile_url != null)
                 {
@@ -396,6 +401,8 @@ internal static partial class LiveHub
                         {
                             if (page.OwnerSecUid != candidate.sec_uid) throw new LookupFailure("mismatch", "抖音主页中的直播账号与所选账号不同。");
                             candidate.session_room_id = page.RoomId; candidate.resolution_path = "profile_ssr_then_reflow";
+                            if (string.IsNullOrEmpty(candidate.avatar_url) && !string.IsNullOrWhiteSpace(page.OwnerAvatar))
+                                candidate.avatar_url = LookupAvatarCache.Normalize(page.OwnerAvatar);
                         }
                     }
                     catch (LookupFailure ex) { if (ex.Code == "mismatch" || ex.Code == "url") throw; }
@@ -475,7 +482,9 @@ internal static partial class LiveHub
                         var data = ObjectAt(view, start); var anchor = LookupData.Obj(data, "anchor");
                         string id = LookupData.Text(data, "roomId"), sec = LookupData.Text(anchor, "sec_uid");
                         if (LookupData.Digits(id) && id != "0" && !string.IsNullOrWhiteSpace(sec))
-                            return new DouyinRoom { RoomId = id, OwnerSecUid = sec, OwnerId = LookupData.Text(anchor, "id_str") ?? LookupData.Text(anchor, "uid"), Owner = LookupData.Text(anchor, "nickname") };
+                            return new DouyinRoom { RoomId = id, OwnerSecUid = sec,
+                                OwnerId = LookupData.Text(anchor, "id_str") ?? LookupData.Text(anchor, "uid"),
+                                Owner = LookupData.Text(anchor, "nickname"), OwnerAvatar = DouyinAvatar(anchor) };
                     }
                 }
             return null;
@@ -574,7 +583,13 @@ internal static partial class LiveHub
             string category = First(row, "area_name", "parent_area_name", "game_name", "gameFullName", "cate2_name", "cate_name");
             string description = First(row, "signature", "sign", "introduction", "description", "desc");
             string title = First(row, "title", "room_name", "live_intro", "introduction");
-            string avatar = First(row, "face", "uface", "avatar180", "game_avatarUrl180", "game_avatarUrl52", "avatarUrl", "avatar", "avatar_thumb", "logo", "owner_avatar");
+            string avatar = null;
+            foreach (string field in new[] { "face", "uface", "avatar180", "game_avatarUrl180", "game_avatarUrl52", "owner_avatar_big", "owner_avatar_middle", "owner_avatar_small", "owner_avatar", "avatar_mid", "avatar_small", "avatarUrl", "avatar", "avatar_thumb", "logo" })
+            {
+                object raw;
+                if (row != null && row.TryGetValue(field, out raw) && raw is string && !string.IsNullOrWhiteSpace((string)raw))
+                { avatar = (string)raw; break; }
+            }
             // 四个平台各自公开的粉丝字段：B站 attentions/attention/follower_num、虎牙 game_activityCount/fans、
             // 斗鱼 fansNum/followerCount、抖音 follower_count。只写入平台真实返回的纯数字。
             string followers = First(row, "attentions", "attention", "follower_count", "follower_num", "fansNum", "followerCount", "fans", "game_activityCount");
@@ -583,11 +598,7 @@ internal static partial class LiveHub
             if (!string.IsNullOrWhiteSpace(title)) candidate.live_title = LookupDiscovery.Clean(title);
             var nestedAvatar = LookupData.Obj(row, "avatar_thumb");
             if (nestedAvatar != null) { var urls = LookupData.Rows(nestedAvatar, "url_list"); if (urls != null) foreach (object raw in urls) { if (raw is string) { avatar = (string)raw; break; } } }
-            if (!string.IsNullOrWhiteSpace(avatar)) {
-                if (avatar.StartsWith("//")) avatar = "https:" + avatar;
-                else if (avatar.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) avatar = "https://" + avatar.Substring(7);
-                candidate.avatar_url = avatar;
-            }
+            if (!string.IsNullOrWhiteSpace(avatar)) candidate.avatar_url = LookupAvatarCache.Normalize(avatar);
             if (!string.IsNullOrWhiteSpace(followers)) LookupData.Followers(candidate, followers);
         }
         private static string First(Dictionary<string, object> row, params string[] keys)

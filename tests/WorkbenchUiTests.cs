@@ -22,6 +22,13 @@ internal static partial class HardeningTests
         TestRunner.Add("工作台", "最近打开取最新会话且同房间旧会话不重复", TestWorkbenchLatestSessionCard);
         TestRunner.Add("布局", "默认窗口宽扁且常用尺寸下收藏页无纵向长滚", TestWorkbenchDefaultWindowShape);
         TestRunner.Add("工作台", "收藏两排完整显示且右栏多条记录可独立滚动", TestWorkbenchFavoritesDensity);
+        TestRunner.Add("交互连续性", "状态刷新保留房间选择和选项且不重排播放栏", TestWorkbenchRefreshContinuity);
+        TestRunner.Add("交互连续性", "窗口按钮右置常显图标且恢复重绘合并", TestWorkbenchChromeRestore);
+        TestRunner.Add("交互连续性", "主播头像异步有界加载且绘制到收藏卡片", TestWorkbenchAccountAvatars);
+        TestRunner.Add("交互连续性", "四平台头像字段核验、离线房间与B站缩略图", TestWorkbenchAvatarPlatforms);
+        TestRunner.Add("交互连续性", "头像缓存落盘且再次选中只在变化时替换", TestWorkbenchAvatarCacheRefresh);
+        TestRunner.Add("交互连续性", "状态与切页刷新后选中和五个设置不闪变", TestWorkbenchSelectionStability);
+        TestRunner.Add("交互连续性", "相同配置重复进入设置页不重写控件", TestWorkbenchSettingsReloadIdempotent);
     }
 
     private static string WorkbenchProbePathArguments(string directory)

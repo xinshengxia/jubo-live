@@ -21,17 +21,8 @@ internal class DpiForm : Form
     internal event EventHandler DpiUpdated;
     internal bool ApplyingDpi { get { return applying || preparing; } }
     internal bool FitWorkingArea = true;
-    // Minimize shrinks the window to the shell's minimized rect and restore grows
-    // it back. Neither changes the laid-out normal size, but both arrive as
-    // ordinary WM_SIZE notices, so the framework used to run the whole workbench
-    // relayout for the tiny minimized rect and again for the restored rect. That
-    // blocked the UI thread for about a second and left the freshly restored
-    // window showing stale/garbage pixels until the work finished. Keep the
-    // normal-size layout for those transient notices and invalidate once so the
-    // restored window is repainted without a relayout.
-    private bool suppressRestoredSizeLayout;
-    private bool restoringNormalSize;
-    private Size normalClientSize = Size.Empty;
+    private bool wasMinimized, processingMinimizedSize, restoreRepaintQueued;
+    internal bool MinimizedLayout { get { return processingMinimizedSize || WindowState == FormWindowState.Minimized; } }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect { public int Left, Top, Right, Bottom; }
@@ -44,6 +35,7 @@ internal class DpiForm : Form
     [DllImport("user32.dll")] private static extern IntPtr GetMenu(IntPtr hwnd);
     [DllImport("user32.dll", EntryPoint="GetWindowLongW")] private static extern int GetWindowStyle(IntPtr hwnd, int index);
     [DllImport("user32.dll")] private static extern bool ShowScrollBar(IntPtr hwnd, int bar, bool show);
+    [DllImport("user32.dll")] private static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
 
     private sealed class Metric
     {
@@ -98,25 +90,16 @@ internal class DpiForm : Form
 
     protected override void OnClientSizeChanged(EventArgs e)
     {
-        // A minimize/restore resize is transient: the normal-size layout is still
-        // valid, so raising ClientSizeChanged here would only run the expensive
-        // workbench layout for a size the user never sees (and block the restore).
-        if (WindowState == FormWindowState.Minimized) return;
-        // The framework raises ClientSizeChanged for the restored frame before the
-        // restore WM_SIZE arrives, so arm the skip from the pending-restore flag and
-        // the remembered normal size instead of the window state.
-        bool restoringFrame = (suppressRestoredSizeLayout || restoringNormalSize)
-            && (normalClientSize.IsEmpty || ClientSize == normalClientSize);
-        if (restoringFrame) { Invalidate(true); return; }
+        // Native and library controls still receive their normal framework events.
+        // The workbench skips minimized frames and deduplicates equal-size layout.
         base.OnClientSizeChanged(e);
         // Retain the user's logical size, not intermediate DPI/scrollbar sizes.
         // A work-area clamp must not become the basis for the return transition.
         if (initialized && !updatingDpi && !processingDpiMessage && !applying && !preparing
-            && WindowState == FormWindowState.Normal && RenderScale > 0
+            && !MinimizedLayout && WindowState == FormWindowState.Normal && RenderScale > 0
             && (syntheticDpi || WindowDpi(this) == (int)Math.Round(RenderScale * 96)))
         {
             logicalClientSize = new SizeF(ClientSize.Width / RenderScale, ClientSize.Height / RenderScale);
-            normalClientSize = ClientSize;
         }
     }
 
@@ -352,24 +335,15 @@ internal class DpiForm : Form
 
     protected override void WndProc(ref Message m)
     {
-        // WM_WINDOWPOSCHANGING arrives before the framework raises its
-        // ClientSizeChanged event, so flag an un-minimize here as well: the
-        // restored size already equals the normal-size layout we keep.
-        if (m.Msg == 0x0046 && !syntheticDpi && suppressRestoredSizeLayout)
-            restoringNormalSize = true;
         if (m.Msg == 0x0005 && !syntheticDpi)
         {
             int sizeKind = m.WParam.ToInt32();
-            bool handledRestore = false;
-            if (sizeKind == 1) { suppressRestoredSizeLayout = true; restoringNormalSize = false; } // SIZE_MINIMIZED
-            else if (sizeKind == 0 && suppressRestoredSizeLayout)                  // SIZE_RESTORED after minimize
-            {
-                suppressRestoredSizeLayout = false;
-                restoringNormalSize = true; handledRestore = true;
-            }
-            else if (sizeKind != 0) suppressRestoredSizeLayout = false;
+            bool restore = wasMinimized && (sizeKind == 0 || sizeKind == 2);
+            if (sizeKind == 1) wasMinimized = true;
+            processingMinimizedSize = sizeKind == 1;
             try { base.WndProc(ref m); }
-            finally { if (handledRestore) restoringNormalSize = false; }
+            finally { processingMinimizedSize = false; }
+            if (restore) { wasMinimized = false; QueueRestoreRepaint(); }
             return;
         }
         if (m.Msg == 0x84 && FormBorderStyle == FormBorderStyle.None && WindowState == FormWindowState.Normal)
@@ -394,9 +368,10 @@ internal class DpiForm : Form
         if (m.Msg == 0x24 && FormBorderStyle == FormBorderStyle.None && !syntheticDpi)
         {
             base.WndProc(ref m);
-            Rectangle work = Screen.FromControl(this).WorkingArea;
+            Screen monitor = Screen.FromControl(this);
+            Rectangle work = monitor.WorkingArea;
             MinMaxInfo limits = (MinMaxInfo)Marshal.PtrToStructure(m.LParam, typeof(MinMaxInfo));
-            limits.MaxPosition.X = work.Left; limits.MaxPosition.Y = work.Top;
+            limits.MaxPosition.X = work.Left - monitor.Bounds.Left; limits.MaxPosition.Y = work.Top - monitor.Bounds.Top;
             limits.MaxSize.X = work.Width; limits.MaxSize.Y = work.Height;
             Marshal.StructureToPtr(limits, m.LParam, false); return;
         }
@@ -433,6 +408,25 @@ internal class DpiForm : Form
             return;
         }
         base.WndProc(ref m);
+    }
+
+    private void QueueRestoreRepaint()
+    {
+        if (restoreRepaintQueued || IsDisposed || !IsHandleCreated) return;
+        restoreRepaintQueued = true;
+        try
+        {
+            BeginInvoke((MethodInvoker)delegate
+            {
+                restoreRepaintQueued = false;
+                if (IsDisposed || !IsHandleCreated || MinimizedLayout) return;
+                QueueDpiReconcile();
+                Invalidate(true);
+                // Invalidate and repaint native child windows once, after restore settles.
+                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x0001 | 0x0080 | 0x0100 | 0x0400);
+            });
+        }
+        catch (InvalidOperationException) { restoreRepaintQueued = false; }
     }
 
     private bool reconcileQueued;

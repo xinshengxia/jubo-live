@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
+using System.IO;
 using System.Windows.Forms;
 
 // Workbench controls use the project's existing palette and ordinary GDI+
@@ -307,7 +308,10 @@ internal sealed class WorkbenchNavigationButton : Button
 
 internal sealed class WorkbenchRoomItem
 {
-    internal string Name, Room, Meta, State;
+    internal string Key, Name, Room, Meta, State, AvatarUrl;
+    // Cached 48px PNG from the on-disk avatar cache; lets the first paint show
+    // the account image without another network request.
+    internal byte[] AvatarPng;
     internal bool Live;
     internal Color Accent;
 }
@@ -325,6 +329,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
     private int selectedIndex = -1, columns = 1, hoverItem = -1, hoverAction, pressedItem = -1, pressedAction;
     private Font boldFont, smallFont;
     private string fontKey;
+    internal readonly LiveHub.LookupAvatarCache Avatars = new LiveHub.LookupAvatarCache();
     // Compact covers leave room for two rows and the keyboard hint.
     private const int CardHeight = 160, CardCover = 64;
 
@@ -367,15 +372,56 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
     public void SetItems(List<WorkbenchRoomItem> values)
     {
         int previous = selectedIndex;
+        string selectedKey = previous >= 0 && previous < items.Count ? items[previous].Key : null;
+        bool geometryChanged = values == null || values.Count != items.Count;
+        if (!geometryChanged) for (int i = 0; i < items.Count; i++)
+            if (values[i] == null || items[i].Key != values[i].Key) { geometryChanged = true; break; }
         if (ReferenceEquals(values, items)) values = new List<WorkbenchRoomItem>(values);
         items.Clear();
         if (values != null) foreach (WorkbenchRoomItem item in values) if (item != null) items.Add(item);
-        selectedIndex = previous >= 0 && previous < items.Count ? previous : -1;
-        hoverItem = pressedItem = -1;
-        hoverAction = pressedAction = 0;
-        ArrangeItems();
+        selectedIndex = selectedKey == null ? (previous >= 0 && previous < items.Count ? previous : -1)
+            : items.FindIndex(delegate(WorkbenchRoomItem item) { return item.Key == selectedKey; });
+        if (geometryChanged)
+        {
+            hoverItem = pressedItem = -1; hoverAction = pressedAction = 0;
+            ArrangeItems();
+        }
+        else Invalidate();
+        // Seed once per URL; rebuilding the card list must not decode and replace
+        // every avatar bitmap again (that churn repaints the whole grid).
+        foreach (WorkbenchRoomItem item in items)
+            if (item.AvatarPng != null && item.AvatarUrl != null && !Avatars.Contains(item.AvatarUrl))
+                Avatars.Put(item.AvatarUrl, item.AvatarPng);
+        PreloadAvatars();
         UpdateAccessibleDescription();
-        if (IsHandleCreated) AccessibilityNotifyClients(AccessibleEvents.Reorder, -1);
+        if (geometryChanged && IsHandleCreated) AccessibilityNotifyClients(AccessibleEvents.Reorder, -1);
+    }
+
+    internal void UpdateAvatar(string key, string url, byte[] png)
+    {
+        bool changed = false;
+        foreach (WorkbenchRoomItem item in items)
+        {
+            if (item.Key != key) continue;
+            if (url != null && item.AvatarUrl != url) { item.AvatarUrl = url; changed = true; }
+            if (png != null && !ReferenceEquals(item.AvatarPng, png))
+            {
+                item.AvatarPng = png;
+                if (!Avatars.Contains(url)) Avatars.Put(url, png);
+                changed = true;
+            }
+        }
+        if (!changed) return;
+        PreloadAvatars(); Invalidate();
+    }
+
+    private void PreloadAvatars()
+    {
+        if (!Application.MessageLoop || !IsHandleCreated) return;
+        var candidates = new List<LiveHub.LookupCandidate>();
+        foreach (WorkbenchRoomItem item in items)
+            if (!string.IsNullOrEmpty(item.AvatarUrl)) candidates.Add(new LiveHub.LookupCandidate { avatar_url = item.AvatarUrl });
+        Avatars.Preload(candidates, this, System.Threading.CancellationToken.None);
     }
 
     public void OnDpiScaled(float scale)
@@ -548,8 +594,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
                 }
                 finally { g.Restore(saved); }
             }
-            DrawGamepad(g, new Rectangle(box.Left + Px(15), box.Top + coverHeight - Px(13) - Px(20), Px(26), Px(20)),
-                Color.FromArgb(205, ModernTheme.TextSecondary));
+            DrawAvatar(g, item, new Rectangle(box.Left + Px(14), box.Top + Px(14), Px(36), Px(36)));
             DrawStatePill(g, item, box, inner);
             if (chosen) DrawChosenBadge(g, box, inner);
             Rectangle choose = layout.Select; choose.Offset(scroll);
@@ -570,17 +615,45 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
         {
             bool narrow = box.Width < Px(540);
             int right = narrow ? box.Right - inner : mpv.Left - Px(14);
-            int textWidth = Math.Max(0, right - box.Left - inner);
+            // Same account image as the favorites cards, at the left edge of the row.
+            Rectangle avatar = new Rectangle(box.Left + inner, box.Top + Px(10), Px(36), Px(36));
+            DrawAvatar(g, item, avatar);
+            int textLeft = avatar.Right + Px(10);
+            int textWidth = Math.Max(0, right - textLeft);
             int stateWidth = Math.Min(Px(100), Math.Max(0, textWidth / 3));
-            DrawText(g, item.Name, boldFont, new Rectangle(box.Left + inner, box.Top + Px(10), Math.Max(0, textWidth - stateWidth - Px(6)), Px(23)), ModernTheme.Text);
+            DrawText(g, item.Name, boldFont, new Rectangle(textLeft, box.Top + Px(10), Math.Max(0, textWidth - stateWidth - Px(6)), Px(23)), ModernTheme.Text);
             DrawState(g, item, new Rectangle(right - stateWidth, box.Top + Math.Max(0, (box.Height - Px(20)) / 2), stateWidth, Px(20)), false);
-            DrawText(g, item.Meta, smallFont, new Rectangle(box.Left + inner, box.Top + Px(36), textWidth, Px(18)), ModernTheme.TextSecondary);
-            DrawText(g, "房间 " + (item.Room ?? ""), smallFont, new Rectangle(box.Left + inner, box.Top + Px(57), textWidth, Px(18)), ModernTheme.TextSecondary);
+            DrawText(g, item.Meta, smallFont, new Rectangle(textLeft, box.Top + Px(36), textWidth, Px(18)), ModernTheme.TextSecondary);
+            DrawText(g, "房间 " + (item.Room ?? ""), smallFont, new Rectangle(textLeft, box.Top + Px(57), textWidth, Px(18)), ModernTheme.TextSecondary);
         }
         DrawOpenButton(g, mpv, "▷  mpv", index, 1);
         DrawOpenButton(g, pot, "PotPlayer", index, 2);
         if (chosen && Focused && ShowFocusCues)
             ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(cardBox, -Px(4), -Px(4)), ModernTheme.Text, ModernTheme.Card);
+    }
+
+    /// <summary>Clip one round account image; fall back to the name's first glyph.</summary>
+    private void DrawAvatar(Graphics g, WorkbenchRoomItem item, Rectangle avatar)
+    {
+        using (GraphicsPath clip = new GraphicsPath())
+        {
+            clip.AddEllipse(avatar);
+            GraphicsState saved = g.Save();
+            try
+            {
+                g.SetClip(clip, CombineMode.Intersect);
+                if (!Avatars.Draw(g, item.AvatarUrl, avatar))
+                {
+                    using (SolidBrush fill = new SolidBrush(ModernTheme.SelectionSoft)) g.FillEllipse(fill, avatar);
+                    string initial = string.IsNullOrWhiteSpace(item.Name) ? "主"
+                        : System.Globalization.StringInfo.GetNextTextElement(item.Name.Trim());
+                    TextRenderer.DrawText(g, initial, boldFont, avatar,
+                        ModernTheme.IsDark ? ModernTheme.Text : ModernTheme.SelectionText,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                }
+            }
+            finally { g.Restore(saved); }
+        }
     }
 
     private static Color Blend(Color first, Color second, float weight)
@@ -619,19 +692,15 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
         DrawText(g, item.State, smallFont, new Rectangle(pill.Left + Px(16), pill.Top, pill.Width - Px(18), pill.Height), color);
     }
 
-    /// 选中卡片的左上角角标：亮橙 pill + 深棕勾/字。纯绘制，不新增控件，
-    /// 也不改任何控件的 Text / AccessibleName（避免动到 UI 测试的控件树断言）。
+    /// A small check beside the avatar leaves the account image unobscured.
     private void DrawChosenBadge(Graphics g, Rectangle box, int inner)
     {
-        const string mark = "✓ 已选";
+        const string mark = "✓";
         TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter
             | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix;
-        int text = TextRenderer.MeasureText(g, mark, smallFont, Size.Empty, flags).Width;
-        int width = text + Px(16), height = Px(22);
-        Rectangle badge = new Rectangle(box.Left + inner - Px(3), box.Top + Px(9), width, height);
-        using (GraphicsPath path = ModernTheme.RoundRect(badge, Px(5)))
+        Rectangle badge = new Rectangle(box.Left + Px(40), box.Top + Px(42), Px(14), Px(14));
         using (SolidBrush fill = new SolidBrush(ModernTheme.Selection))
-            g.FillPath(fill, path);
+            g.FillEllipse(fill, badge);
         TextRenderer.DrawText(g, mark, smallFont, badge, ModernTheme.SelectionText, flags);
     }
 
@@ -805,6 +874,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
     {
         if (index < -1 || index >= items.Count) index = -1;
         bool changed = index != selectedIndex;
+        if (!changed) return;
         selectedIndex = index;
         if (scroll && index >= 0 && index < layouts.Count)
         {
@@ -932,7 +1002,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { ModernTheme.Changed -= UpdateTheme; ReleaseFonts(); }
+        if (disposing) { ModernTheme.Changed -= UpdateTheme; ReleaseFonts(); Avatars.Dispose(); }
         base.Dispose(disposing);
     }
 }
@@ -1092,6 +1162,31 @@ internal sealed class WorkbenchGlyph : Control
     private string glyph = "monitor-play";
     private bool tiled = true;
     private int iconSize;
+    private Bitmap avatar;
+    private byte[] avatarBytes;
+
+    /// <summary>
+    /// Draw the cached account image instead of the vector glyph. The same byte
+    /// array instance is a no-op, so the 2-second session refresh does not decode
+    /// or repaint the avatar again.
+    /// </summary>
+    internal void SetAvatar(byte[] png)
+    {
+        if (ReferenceEquals(avatarBytes, png)) return;
+        avatarBytes = png;
+        if (avatar != null) { avatar.Dispose(); avatar = null; }
+        if (png != null && png.Length > 0)
+        {
+            try
+            {
+                using (var stream = new MemoryStream(png))
+                using (Image image = Image.FromStream(stream, true, true))
+                    avatar = new Bitmap(image, 48, 48);
+            }
+            catch (Exception) { avatar = null; }
+        }
+        Invalidate();
+    }
 
     internal WorkbenchGlyph()
     {
@@ -1133,6 +1228,19 @@ internal sealed class WorkbenchGlyph : Control
         if (Width < 2 || Height < 2) return;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         Rectangle box = new Rectangle(0, 0, Width - 1, Height - 1);
+        if (avatar != null)
+        {
+            int side = Math.Min(Width, Height);
+            Rectangle circle = new Rectangle((Width - side) / 2, (Height - side) / 2, side, side);
+            using (GraphicsPath clip = new GraphicsPath())
+            {
+                clip.AddEllipse(circle);
+                GraphicsState saved = g.Save();
+                try { g.SetClip(clip, CombineMode.Intersect); g.DrawImage(avatar, circle); }
+                finally { g.Restore(saved); }
+            }
+            return;
+        }
         if (tiled)
         {
             using (GraphicsPath tile = ModernTheme.RoundRect(box, Px(9)))
@@ -1177,7 +1285,11 @@ internal sealed class WorkbenchGlyph : Control
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) ModernTheme.Changed -= OnThemeChanged;
+        if (disposing)
+        {
+            ModernTheme.Changed -= OnThemeChanged;
+            if (avatar != null) { avatar.Dispose(); avatar = null; }
+        }
         base.Dispose(disposing);
     }
 }
@@ -1208,6 +1320,12 @@ internal sealed class TrafficDot : Control
 {
     private readonly string kind;
     private bool hot;
+    private bool restore;
+    internal bool Restore
+    {
+        get { return restore; }
+        set { if (restore != value) { restore = value; AccessibleName = value ? "还原" : "最大化"; Invalidate(); } }
+    }
     internal TrafficDot(string kind, Action click)
     {
         this.kind = kind ?? "close";
@@ -1216,12 +1334,18 @@ internal sealed class TrafficDot : Control
             | ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        TabStop = false;
+        TabStop = true;
+        AccessibleRole = AccessibleRole.PushButton;
         AccessibleName = kind == "close" ? "关闭" : kind == "max" ? "最大化" : "最小化";
         Click += delegate { if (click != null) click(); };
     }
     protected override void OnMouseEnter(EventArgs e) { hot = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { hot = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space) { OnClick(EventArgs.Empty); e.Handled = e.SuppressKeyPress = true; }
+        base.OnKeyDown(e);
+    }
     protected override void OnPaint(PaintEventArgs e)
     {
         Graphics g = e.Graphics;
@@ -1230,17 +1354,32 @@ internal sealed class TrafficDot : Control
         Color fill = kind == "close" ? Color.FromArgb(0xFF, 0x5F, 0x57)
             : kind == "max" ? Color.FromArgb(0x28, 0xC8, 0x40)
             : Color.FromArgb(0xFE, 0xBC, 0x2E);
-        int size = Math.Min(Width, Height) - DpiLayout.S(this, 2);
+        if (hot) fill = WorkbenchPalette.Blend(fill, Color.White, .16f);
+        int size = Math.Min(DpiLayout.S(this, 18), Math.Min(Width, Height) - DpiLayout.S(this, 2));
         if (size < 4) return;
         Rectangle circle = new Rectangle((Width - size) / 2, (Height - size) / 2, size, size);
         using (SolidBrush brush = new SolidBrush(fill)) g.FillEllipse(brush, circle);
-        if (!hot) return;
-        using (Pen pen = new Pen(Color.FromArgb(0x4A, 0x24, 0x24), Math.Max(1, DpiLayout.S(this, 2))))
+        using (Pen pen = new Pen(Color.FromArgb(0x36, 0x26, 0x20), Math.Max(1f, 1.4f * DpiLayout.For(this))))
         {
-            int c = Math.Max(2, size / 2);
-            if (kind == "close") g.DrawLine(pen, circle.Left + c - 2, circle.Top + c - 2, circle.Right - c + 2, circle.Bottom - c + 2);
-            else if (kind == "max") g.DrawRectangle(pen, circle.Left + c - 3, circle.Top + c - 3, 6, 6);
-            else g.DrawLine(pen, circle.Left + c - 3, circle.Top + c, circle.Right - c + 3, circle.Top + c);
+            Rectangle glyph = new Rectangle((Width - DpiLayout.S(this, 8)) / 2, (Height - DpiLayout.S(this, 8)) / 2,
+                DpiLayout.S(this, 8), DpiLayout.S(this, 8));
+            if (kind == "close")
+            {
+                g.DrawLine(pen, glyph.Left, glyph.Top, glyph.Right, glyph.Bottom);
+                g.DrawLine(pen, glyph.Right, glyph.Top, glyph.Left, glyph.Bottom);
+            }
+            else if (kind == "max")
+            {
+                if (restore)
+                {
+                    int offset = DpiLayout.S(this, 2);
+                    g.DrawRectangle(pen, glyph.Left + offset, glyph.Top, glyph.Width - offset, glyph.Height - offset);
+                    using (SolidBrush back = new SolidBrush(fill)) g.FillRectangle(back, glyph.Left, glyph.Top + offset, glyph.Width - offset, glyph.Height - offset);
+                    g.DrawRectangle(pen, glyph.Left, glyph.Top + offset, glyph.Width - offset, glyph.Height - offset);
+                }
+                else g.DrawRectangle(pen, glyph);
+            }
+            else g.DrawLine(pen, glyph.Left, glyph.Top + glyph.Height / 2, glyph.Right, glyph.Top + glyph.Height / 2);
         }
     }
 }

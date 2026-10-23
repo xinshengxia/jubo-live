@@ -142,6 +142,10 @@ internal static partial class LiveHub
                 workbenchChromeClose = new TrafficDot("close", delegate { form.Close(); }) { Name = "workbenchChromeClose" };
                 workbenchChromeMin = new TrafficDot("min", delegate { form.WindowState = FormWindowState.Minimized; }) { Name = "workbenchChromeMin" };
                 workbenchChromeMax = new TrafficDot("max", delegate { WorkbenchWindowDrag.ToggleMaximize(form); }) { Name = "workbenchChromeMax" };
+                enhanceTip.SetToolTip(workbenchChromeMin, "最小化");
+                enhanceTip.SetToolTip(workbenchChromeMax, "最大化 / 还原");
+                enhanceTip.SetToolTip(workbenchChromeClose, "关闭");
+                form.SizeChanged += delegate { workbenchChromeMax.Restore = form.WindowState == FormWindowState.Maximized; };
                 workbenchFooterIcon = new WorkbenchGlyph { Name = "workbenchFooterIcon", Tiled = false, IconSize = 16, Glyph = "drive" };
                 WorkbenchFont(workbenchWatchGroup, 10, FontStyle.Regular);
                 WorkbenchFont(workbenchSettingsGroup, 10, FontStyle.Regular);
@@ -224,6 +228,7 @@ internal static partial class LiveHub
                 form.Disposed += delegate
                 {
                     if (workbenchLookup != null) workbenchLookup.Dispose();
+                    workbenchAvatars.Dispose();
                     foreach (Font font in workbenchFonts) font.Dispose();
                 };
                 workbenchReady = true;
@@ -261,7 +266,12 @@ internal static partial class LiveHub
                 workbenchLaunch.Controls.Add(scope);
             }
             favoritesBrowser = new WorkbenchRoomBrowser { Name = "favoritesBrowser", Cards = true, AccessibleName = "收藏房间" };
-            favoritesBrowser.SelectionChanged += delegate(int index) { if (index >= 0 && index < favList.Items.Count) favList.SelectedIndex = index; };
+            favoritesBrowser.SelectionChanged += delegate(int index)
+            {
+                if (!syncingWorkbench && index >= 0 && index < favList.Items.Count) favList.SelectedIndex = index;
+                // Re-selecting a room is the only moment its avatar is re-checked.
+                if (index >= 0 && index < currentFavorites.Count) RefreshWorkbenchAvatar(Parse(currentFavorites[index].Value, "bili"));
+            };
             favoritesBrowser.OpenRequested += delegate(int index, string player) { LaunchWorkbenchFavorite(index, player); };
             favoritesBrowser.ChooseRequested += delegate(int index)
             {
@@ -320,6 +330,7 @@ internal static partial class LiveHub
             row.Reopen = WorkbenchAntdButton("workbenchHomeReopen" + suffix, "重新打开", delegate
             {
                 if (row.Target == null || currentLaunch != null) return;
+                RefreshWorkbenchAvatar(row.Target);
                 input.Text = row.Target.Platform + ":" + row.Target.Room;
                 if (row.Session != null)
                 {
@@ -357,7 +368,11 @@ internal static partial class LiveHub
             recentOpenPot = WorkbenchButton("recentOpenPot", "用 PotPlayer 打开选中房间", delegate { LaunchWorkbenchRecent(recentList.SelectedIndex, "potplayer"); });
             WorkbenchFont(recentOpenMpv, 12, FontStyle.Regular); WorkbenchFont(recentOpenPot, 12, FontStyle.Regular);
             recentBrowser = new WorkbenchRoomBrowser { Name = "recentBrowser", Cards = false, AccessibleName = "最近播放记录" };
-            recentBrowser.SelectionChanged += delegate(int index) { if (index >= 0 && index < recentList.Items.Count) recentList.SelectedIndex = index; };
+            recentBrowser.SelectionChanged += delegate(int index)
+            {
+                if (index >= 0 && index < recentList.Items.Count) recentList.SelectedIndex = index;
+                if (index >= 0 && index < currentHistory.Count) RefreshWorkbenchAvatar(Parse(platform + ":" + currentHistory[index].Room, platform));
+            };
             recentBrowser.OpenRequested += delegate(int index, string player) { LaunchWorkbenchRecent(index, player); };
             page.Controls.AddRange(new Control[] { workbenchRecentHint, recentOpenMpv, recentOpenPot, recentBrowser });
         }
@@ -453,6 +468,7 @@ internal static partial class LiveHub
                 : key == "accounts" ? "四个平台的登录与 Cookie 状态，一处管理。"
                 : "浏览本地数据，查看解析、取流和弹幕运行状态。";
             workbenchSubtitle.Text = subtitle;
+            if (key == "accounts") RefreshLoginSummaries();
             form.AcceptButton = key == "favorites" ? openMpv : key == "recent" ? recentOpenMpv : key == "lookup" ? workbenchLookup.Search : null;
             form.CancelButton = key == "lookup" ? workbenchLookup.Cancel : null;
             if (key == "danmaku" && workbenchDanmakuPage != null) WorkbenchDanmakuUi.Refresh(workbenchDanmakuPage);
@@ -469,7 +485,7 @@ internal static partial class LiveHub
                     : "只读查看本地数据；清理仅作用于缓存和日志。";
                 status.ForeColor = ModernTheme.TextSecondary; status.Text = workbenchIdleHint;
             }
-            SyncWorkbenchActions(); LayoutWorkbench();
+            SyncWorkbenchActions(); LayoutWorkbench(true);
         }
 
         private static Color PlatformAccent(string platform)
@@ -494,13 +510,16 @@ internal static partial class LiveHub
             if (index < 0 || index >= currentFavorites.Count) return;
             favList.SelectedIndex = index;
             Target target = Parse(currentFavorites[index].Value, "bili");
-            if (target != null) { input.Text = target.Platform + ":" + target.Room; Launch(player); }
+            if (target != null) { RefreshWorkbenchAvatar(target); input.Text = target.Platform + ":" + target.Room; Launch(player); }
         }
 
         private void LaunchWorkbenchRecent(int index, string player)
         {
             if (index < 0 || index >= currentHistory.Count) return;
-            recentList.SelectedIndex = index; input.Text = platform + ":" + currentHistory[index].Room; Launch(player);
+            recentList.SelectedIndex = index;
+            Target target = Parse(platform + ":" + currentHistory[index].Room, platform);
+            if (target != null) RefreshWorkbenchAvatar(target);
+            input.Text = platform + ":" + currentHistory[index].Room; Launch(player);
         }
 
         private void CancelWorkbenchLaunch()
@@ -590,10 +609,14 @@ internal static partial class LiveHub
                     row.Meta.Text = PlatformName(entry.Key) + " · " + entry.Value.Room;
                     row.State.Text = "最近 · " + (entry.Value.At ?? "");
                 }
+                row.Avatar.SetAvatar(row.Target == null ? null : workbenchAvatars.ImageBytes(WorkbenchAvatarService.Key(row.Target)));
                 row.Reopen.Enabled = row.Target != null && currentLaunch == null;
             }
-            if (!workbenchLayoutBusy) LayoutWorkbenchFavorites();
+            if (!workbenchLayoutBusy && previousHomeRowCount != Math.Max(1, count)) LayoutWorkbenchFavorites();
+            previousHomeRowCount = Math.Max(1, count);
         }
+
+        private int previousHomeRowCount;
 
         /// <summary>
         /// 启动时按当前显示器工作区把窗口调成宽扁比例（第一次显示前执行，不会闪）。
@@ -630,7 +653,9 @@ internal static partial class LiveHub
                 Target target = Parse(entry.Value, "bili");
                 if (target == null) continue;
                 RoomStateKind kind; bool known = roomBadges.TryGetValue(target.Platform + ":" + target.Room, out kind);
-                favoriteItems.Add(new WorkbenchRoomItem { Name = entry.Key, Room = target.Room,
+                favoriteItems.Add(new WorkbenchRoomItem { Key = target.Platform + ":" + target.Room, Name = entry.Key, Room = target.Room,
+                    AvatarUrl = workbenchAvatars.Get(target.Platform + ":" + target.Room),
+                    AvatarPng = workbenchAvatars.ImageBytes(target.Platform + ":" + target.Room),
                     Meta = PlatformName(target.Platform) + " · " + target.Room,
                     State = known ? RoomStateLabel(target.Platform, kind) : "待检测", Live = known && kind == RoomStateKind.Live,
                     Accent = PlatformAccent(target.Platform) });
@@ -639,7 +664,9 @@ internal static partial class LiveHub
             foreach (HistoryEntry entry in currentHistory)
             {
                 RoomStateKind kind; bool known = roomBadges.TryGetValue(platform + ":" + entry.Room, out kind);
-                recentItems.Add(new WorkbenchRoomItem { Name = string.IsNullOrEmpty(entry.Name) ? entry.Room : entry.Name,
+                recentItems.Add(new WorkbenchRoomItem { Key = platform + ":" + entry.Room, Name = string.IsNullOrEmpty(entry.Name) ? entry.Room : entry.Name,
+                    AvatarUrl = workbenchAvatars.Get(platform + ":" + entry.Room),
+                    AvatarPng = workbenchAvatars.ImageBytes(platform + ":" + entry.Room),
                     Room = entry.Room, Meta = PlatformName(platform) + " · " + entry.Room + " · " + (entry.At ?? ""),
                     State = known ? RoomStateLabel(platform, kind) : "待检测", Live = known && kind == RoomStateKind.Live,
                     Accent = PlatformAccent(platform) });
@@ -652,6 +679,7 @@ internal static partial class LiveHub
             }
             finally { syncingWorkbench = previous; }
             SyncWorkbenchActions();
+            PumpWorkbenchAvatars();
         }
 
         private void FitWorkbenchPageScroll(Panel page)
@@ -668,9 +696,24 @@ internal static partial class LiveHub
                 ? new Size(0, bottom + Px(8)) : Size.Empty;
         }
 
-        private void LayoutWorkbench()
+        private Size lastWorkbenchSize;
+        private float lastWorkbenchScale;
+        private void RefreshWorkbenchStatusLayout()
         {
-            if (!workbenchReady || workbenchLayoutBusy || ((DpiForm)form).ApplyingDpi) return;
+            if (!workbenchReady || workbenchLayoutBusy) return;
+            int textHeight = TextRenderer.MeasureText(status.Text, status.Font,
+                new Size(Math.Max(Px(100), status.Width + Px(16)), int.MaxValue), TextFormatFlags.WordBreak).Height;
+            int expected = Math.Max(Px(32), Math.Min(Px(54), textHeight + Px(8)));
+            if (expected != workbenchFooter.Height) LayoutWorkbench(true);
+        }
+
+        private void LayoutWorkbench() { LayoutWorkbench(false); }
+        private void LayoutWorkbench(bool force)
+        {
+            if (!workbenchReady || workbenchLayoutBusy || ((DpiForm)form).ApplyingDpi || ((DpiForm)form).MinimizedLayout) return;
+            float scale = DpiLayout.For(form);
+            if (!force && lastWorkbenchSize == form.ClientSize && lastWorkbenchScale == scale) return;
+            lastWorkbenchSize = form.ClientSize; lastWorkbenchScale = scale;
             workbenchLayoutBusy = true; form.SuspendLayout();
             try
             {
@@ -683,14 +726,14 @@ internal static partial class LiveHub
                 int shellHeight = Math.Max(Px(160), height - chromeHeight);
                 workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight);
                 workbenchContent.SetBounds(sidebar, chromeHeight, Math.Max(Px(300), width - sidebar), shellHeight);
-                int dot = Px(18), dotGap = Px(10);
+                int dot = Px(30), dotGap = Px(4);
                 int dotY = Math.Max(0, (chromeHeight - dot) / 2);
-                workbenchChromeClose.SetBounds(Px(14), dotY, dot, dot);
-                workbenchChromeMin.SetBounds(Px(14) + dot + dotGap, dotY, dot, dot);
-                workbenchChromeMax.SetBounds(Px(14) + (dot + dotGap) * 2, dotY, dot, dot);
-                workbenchChromeIcon.SetBounds(Px(14) + (dot + dotGap) * 3 + Px(8), Math.Max(0, (chromeHeight - Px(18)) / 2), Px(18), Px(18));
+                workbenchChromeClose.SetBounds(width - Px(8) - dot, dotY, dot, dot);
+                workbenchChromeMax.SetBounds(workbenchChromeClose.Left - dotGap - dot, dotY, dot, dot);
+                workbenchChromeMin.SetBounds(workbenchChromeMax.Left - dotGap - dot, dotY, dot, dot);
+                workbenchChromeIcon.SetBounds(Px(14), Math.Max(0, (chromeHeight - Px(18)) / 2), Px(18), Px(18));
                 workbenchChromeBrand.SetBounds(workbenchChromeIcon.Right + Px(8), 0, Px(80), chromeHeight);
-                workbenchChromeHint.SetBounds(Math.Max(Px(60), width - Px(260)), 0, Px(240), chromeHeight);
+                workbenchChromeHint.SetBounds(Math.Max(Px(150), workbenchChromeMin.Left - Px(252)), 0, Px(240), chromeHeight);
                 int sidebarWidth = workbenchSidebar.ClientSize.Width;
                 // 侧栏也压扁一档：品牌区从 26→22，导航从 121→100 起排，底部提示贴底。
                 workbenchBrandMark.SetBounds(Px(12), Px(22), Px(30), Px(30));

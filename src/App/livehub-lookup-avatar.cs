@@ -26,14 +26,79 @@ internal static partial class LiveHub
         internal Bitmap Load(string url, CancellationToken token)
         {
             if (!Allowed(url)) return null;
-            byte[] bytes = Download(url, token); token.ThrowIfCancellationRequested();
-            if (bytes == null || bytes.Length > 262144) return null;
-            using (var stream = new MemoryStream(bytes))
-            using (Image image = Image.FromStream(stream, true, true))
+            byte[] bytes = Download(ThumbnailUrl(url), token); token.ThrowIfCancellationRequested();
+            return Decode(bytes);
+        }
+        internal static string Normalize(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            string value = url.Trim();
+            if (value.StartsWith("//", StringComparison.Ordinal)) value = "https:" + value;
+            else if (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) value = "https://" + value.Substring(7);
+            return value;
+        }
+        // Reject oversized or undecodable platform images before they reach GDI+.
+        internal static Bitmap Decode(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0 || bytes.Length > 262144) return null;
+            try
             {
-                if (image.Width > 2048 || image.Height > 2048) return null;
-                return new Bitmap(image, 48, 48);
+                using (var stream = new MemoryStream(bytes))
+                using (Image image = Image.FromStream(stream, true, true))
+                {
+                    if (image.Width > 2048 || image.Height > 2048) return null;
+                    return new Bitmap(image, 48, 48);
+                }
             }
+            catch (Exception) { return null; }
+        }
+        internal bool Contains(string url)
+        {
+            lock (images) return !disposed && url != null && images.ContainsKey(url);
+        }
+        /// <summary>
+        /// Seed the draw cache from a persisted image so a restart paints avatars
+        /// without any network request. Replacement only happens after the caller
+        /// resolved a different account image.
+        /// </summary>
+        internal bool Put(string url, byte[] bytes)
+        {
+            if (url == null || !Allowed(url)) return false;
+            Bitmap bitmap = Decode(bytes);
+            if (bitmap == null) return false;
+            lock (images)
+            {
+                if (disposed) { bitmap.Dispose(); return false; }
+                Bitmap existing;
+                if (images.TryGetValue(url, out existing))
+                {
+                    if (existing != null) existing.Dispose();
+                    images[url] = bitmap; recency.Remove(url); recency.AddLast(url);
+                    return true;
+                }
+                while (images.Count >= 32 && recency.First != null)
+                {
+                    string oldest = recency.First.Value; recency.RemoveFirst();
+                    Bitmap stale;
+                    if (images.TryGetValue(oldest, out stale)) { if (stale != null) stale.Dispose(); images.Remove(oldest); }
+                }
+                images[url] = bitmap; recency.AddLast(url);
+            }
+            return true;
+        }
+        internal static string ThumbnailUrl(string url)
+        {
+            Uri uri;
+            if (!Allowed(url) || !Uri.TryCreate(url, UriKind.Absolute, out uri)) return url;
+            if (uri.Host == "hdslb.com" || uri.Host.EndsWith(".hdslb.com", StringComparison.OrdinalIgnoreCase))
+            {
+                // Request a bounded PNG from the platform CDN rather than decoding
+                // a potentially multi-megabyte original or an unsupported WebP.
+                var thumbnail = new UriBuilder(uri);
+                thumbnail.Path = uri.AbsolutePath.Split('@')[0] + "@96w_96h_1c.png";
+                return thumbnail.Uri.AbsoluteUri;
+            }
+            return url;
         }
         internal void Preload(IEnumerable<LookupCandidate> candidates, Control owner, CancellationToken token)
         {

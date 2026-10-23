@@ -42,6 +42,11 @@ internal static class WorkbenchDanmakuUi
         private readonly List<FlowLayoutPanel> grids = new List<FlowLayoutPanel>();
         private bool loading, arranging;
         private DanmakuConfig loadedConfig;
+        // Signature of the config last applied to the controls. Re-entering the
+        // page (VisibleChanged + SelectWorkbenchPage) must not rewrite every
+        // control when nothing changed; that churn is what makes settings blink.
+        private string loadedSignature;
+        internal int ReloadedCount;
         private DanmakuConfig moreWorking, moreBaseline;
         private Action moreApply;
         private Action<DanmakuConfig> moreReload;
@@ -383,7 +388,10 @@ internal static class WorkbenchDanmakuUi
         internal void RefreshFromConfig(bool force)
         {
             if (IsDisposed) return;
-            DanmakuConfig config = DanmakuHost.LoadOrCreateConfig(); loadedConfig = config; loading = true;
+            DanmakuConfig config = DanmakuHost.LoadOrCreateConfig();
+            string signature = ConfigSignature(config);
+            if (!force && loadedConfig != null && signature != null && signature == loadedSignature) return;
+            loadedSignature = signature; loadedConfig = config; ReloadedCount++; loading = true;
             try
             {
                 foreach (Binding item in bindings)
@@ -392,6 +400,12 @@ internal static class WorkbenchDanmakuUi
             finally { loading = false; }
             RefreshMore(config, force);
             Arrange();
+        }
+
+        private static string ConfigSignature(DanmakuConfig config)
+        {
+            try { return new JavaScriptSerializer().Serialize(config); }
+            catch (Exception) { return null; }
         }
 
         private void ApplyPending(DanmakuConfig config)
