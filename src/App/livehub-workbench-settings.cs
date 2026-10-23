@@ -251,19 +251,24 @@ internal static class WorkbenchDanmakuUi
                 Margin = Padding.Empty, Padding = Padding.Empty };
             card.Controls.Add(heading); card.Controls.Add(grid);
             grids.Add(grid);
+            int lastCardWidth = -1;
             Action layout = delegate
             {
                 int pad = DpiLayout.S(this, 16);
                 heading.Location = new Point(pad, DpiLayout.S(this, 12));
+                lastCardWidth = card.ClientSize.Width;
                 int width = Math.Max(DpiLayout.S(this, 160), card.ClientSize.Width - pad * 2);
                 grid.MaximumSize = new Size(width, 0);
                 grid.Width = width;
+                grid.PerformLayout();   // AutoSize 的 FlowLayoutPanel 先排好子控件，高度才算得准（否则 card 曾按 0 高记）
                 grid.Location = new Point(pad, heading.Bottom + DpiLayout.S(this, 10));
                 card.Height = grid.Bottom + DpiLayout.S(this, 14);
                 scroll.AutoScrollMinSize = new Size(0, card.Height + DpiLayout.S(this, 12));
             };
             scroll.HandleCreated += delegate { ModernTheme.ApplyScrollbarTheme(scroll); };
             scroll.SizeChanged += delegate { Arrange(); layout(); };
+            // 竖向滚动条异步挤压 card 时，card 自己的宽度才会更新；不监听就按旧宽算 grid（横向溢出 2~16px）。
+            card.SizeChanged += delegate { if (card.ClientSize.Width != lastCardWidth) layout(); };
             grid.SizeChanged += delegate { layout(); };
             heading.SizeChanged += delegate { layout(); };
             layout();

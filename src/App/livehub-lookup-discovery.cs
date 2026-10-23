@@ -202,10 +202,12 @@ internal static partial class LiveHub
             var avatar = new Rectangle(e.Bounds.X + pad, e.Bounds.Y + DpiLayout.S(this, 12), DpiLayout.S(this, 40), DpiLayout.S(this, 40));
             if (!Avatars.Draw(e.Graphics, candidate.avatar_url, avatar))
             {
-                using (var brush = new SolidBrush(ModernTheme.Selection)) e.Graphics.FillEllipse(brush, avatar);
+                // 占位头像：浅琥珀底 + 深棕首字母。原来借用 Selection（软紫底）+ Accent（紫字），
+                // Selection 变亮橙后紫字会读不清；也不该让每张占位头像都变成「选中色」。
+                using (var brush = new SolidBrush(ModernTheme.SelectionSoft)) e.Graphics.FillEllipse(brush, avatar);
                 string name = string.IsNullOrWhiteSpace(candidate.display_name) ? (candidate.account_handle ?? "主") : candidate.display_name;
                 string letter = string.IsNullOrEmpty(name) ? "主" : name.Substring(0, 1);
-                TextRenderer.DrawText(e.Graphics, letter, Font, avatar, ModernTheme.Accent, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                TextRenderer.DrawText(e.Graphics, letter, Font, avatar, ModernTheme.SelectionText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             }
             var first = new Rectangle(avatar.Right + pad, e.Bounds.Y + DpiLayout.S(this, 4), Math.Max(0, e.Bounds.Width - DpiLayout.S(this, 40) - pad * 3), line);
             var second = new Rectangle(first.X, first.Bottom, first.Width, line);
@@ -214,10 +216,14 @@ internal static partial class LiveHub
             string title = (candidate.display_name ?? candidate.account_handle ?? candidate.account_id ?? "待确认账号") + " 〔" + Platforms.Name(candidate.platform) + "〕";
             if (ReferenceEquals(candidate, Recommendation)) title = "AI 优先 · " + title;
             if (Grouped && (e.Index == 0 || ((LookupCandidate)Items[e.Index - 1]).platform != candidate.platform)) title = "▸ " + title;
-            TextRenderer.DrawText(e.Graphics, title, Font, first, selected ? ModernTheme.Accent : ModernTheme.Text, flags);
-            TextRenderer.DrawText(e.Graphics, LookupDiscovery.Summary(candidate), Font, second, ModernTheme.TextSecondary, flags);
+            // 选中行底是亮橙：标题/次要文字都换深棕系（紫字/灰字压亮橙对比不足）。
+            TextRenderer.DrawText(e.Graphics, title, Font, first, selected ? ModernTheme.SelectionText : ModernTheme.Text, flags);
+            TextRenderer.DrawText(e.Graphics, LookupDiscovery.Summary(candidate), Font, second,
+                selected ? ModernTheme.SelectionTextSecondary : ModernTheme.TextSecondary, flags);
             TextRenderer.DrawText(e.Graphics, LookupDiscovery.RelevanceName(candidate.relevance) + " · " + LookupData.State(candidate.verification), Font, third,
-                candidate.relevance == "conflict" ? Color.IndianRed : ModernTheme.TextSecondary, flags);
+                candidate.relevance == "conflict"
+                    ? (selected ? Color.FromArgb(0x8B, 0x1A, 0x1A) : Color.IndianRed)
+                    : (selected ? ModernTheme.SelectionTextSecondary : ModernTheme.TextSecondary), flags);
             using (var pen = new Pen(ModernTheme.Border)) e.Graphics.DrawLine(pen, e.Bounds.Left + pad, e.Bounds.Bottom - 1, e.Bounds.Right - pad, e.Bounds.Bottom - 1);
             if ((e.State & DrawItemState.Focus) != 0) e.DrawFocusRectangle();
         }

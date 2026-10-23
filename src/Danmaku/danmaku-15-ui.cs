@@ -42,7 +42,18 @@ internal static class ModernTheme
     private static readonly Color LTextSecondary = Color.FromArgb(0x66, 0x66, 0x66);
     private static readonly Color LTextDisabled = Color.FromArgb(0xA0, 0xA0, 0xA0);
     private static readonly Color LHover = Color.FromArgb(0xF0, 0xF0, 0xF0);
-    private static readonly Color LSelection = Color.FromArgb(0xEE, 0xEB, 0xFB);
+    // 选中态 = 亮眼橙黄（2026-10-22 用户反馈：原来的淡紫 #EEEBFB 像阴影、不显眼）。
+    // ⚠️ 亮橙底**必须**配深棕前景（SelectionText）：实测白字压 #FFC53D 只有 1.58:1，
+    //    深棕 #3A2A00 是 8.81:1；次要文字用 #6B4A00（5.11:1）。数值见任务 notes。
+    private static readonly Color LSelection = Color.FromArgb(0xFF, 0xC5, 0x3D);
+    private static readonly Color LSelectionHover = Color.FromArgb(0xFF, 0xD6, 0x66);
+    private static readonly Color LSelectionPressed = Color.FromArgb(0xF0, 0xA8, 0x00);
+    private static readonly Color LSelectionText = Color.FromArgb(0x3A, 0x2A, 0x00);
+    private static readonly Color LSelectionTextSecondary = Color.FromArgb(0x6B, 0x4A, 0x00);
+    private static readonly Color LSelectionBorder = Color.FromArgb(0xD9, 0x77, 0x06);
+    // 卡片/整行选中的浅琥珀底：亮橙铺满整张卡会把封面渐变和正文压糊，
+    // 所以卡片走「浅琥珀底 + 2px 橙边 + 角标」，选中橙色仍由描边/角标/选择丸表达。
+    private static readonly Color LSelectionSoft = Color.FromArgb(0xFF, 0xE2, 0x9A);
     private static readonly Color LDisabledFill = Color.FromArgb(0xC8, 0xD6, 0xE6);
     private static readonly Color LSuccess = Color.FromArgb(0x10, 0x7C, 0x10);
     private static readonly Color LDanger = Color.FromArgb(0xC4, 0x2B, 0x1C);
@@ -60,7 +71,15 @@ internal static class ModernTheme
     private static readonly Color DTextSecondary = Color.FromArgb(0xA8, 0xB0, 0xC4);
     private static readonly Color DTextDisabled = Color.FromArgb(0x66, 0x66, 0x66);
     private static readonly Color DHover = Color.FromArgb(0x24, 0x28, 0x35);
-    private static readonly Color DSelection = Color.FromArgb(0x30, 0x2A, 0x48);
+    // 深色模式同样用亮橙铺满 + 深棕字：亮橙对深底本身 11.87:1，非常醒目；
+    // 但白字压亮橙读不了（1.58:1），所以深浅两套都用 SelectionText 深棕前景。
+    private static readonly Color DSelection = Color.FromArgb(0xFF, 0xC5, 0x3D);
+    private static readonly Color DSelectionHover = Color.FromArgb(0xFF, 0xD6, 0x66);
+    private static readonly Color DSelectionPressed = Color.FromArgb(0xF7, 0xB4, 0x0A);
+    private static readonly Color DSelectionText = Color.FromArgb(0x2A, 0x1C, 0x00);
+    private static readonly Color DSelectionTextSecondary = Color.FromArgb(0x4A, 0x36, 0x00);
+    private static readonly Color DSelectionBorder = Color.FromArgb(0xFF, 0xD9, 0x7A);
+    private static readonly Color DSelectionSoft = Color.FromArgb(0x52, 0x3C, 0x00);
     private static readonly Color DDisabledFill = Color.FromArgb(0x3A, 0x3A, 0x3A);
     // 语义色也要分深浅两套：SeaGreen / Firebrick 这种在深底上根本读不清
     private static readonly Color DSuccess = Color.FromArgb(0x6C, 0xCB, 0x5F);
@@ -82,6 +101,18 @@ internal static class ModernTheme
     public static Color TextDisabled { get { return _dark ? DTextDisabled : LTextDisabled; } }
     public static Color Hover { get { return _dark ? DHover : LHover; } }
     public static Color Selection { get { return _dark ? DSelection : LSelection; } }
+    /// 选中态的悬停档（同色系提亮）—— 选中后悬停不能闪回紫色。
+    public static Color SelectionHover { get { return _dark ? DSelectionHover : LSelectionHover; } }
+    /// 选中态的按下档（同色系压深）。
+    public static Color SelectionPressed { get { return _dark ? DSelectionPressed : LSelectionPressed; } }
+    /// 压在选中橙底上的前景色（文字/图标/对勾）。**不要用 Text / OnAccent** —— 白字压亮橙 1.58:1。
+    public static Color SelectionText { get { return _dark ? DSelectionText : LSelectionText; } }
+    /// 压在选中橙底上的次要文字（实测 浅 5.11:1 / 深 7.32:1，仍高于 4.5）。
+    public static Color SelectionTextSecondary { get { return _dark ? DSelectionTextSecondary : LSelectionTextSecondary; } }
+    /// 选中态描边：画在卡片/页面底上（浅 #D97706 对白卡 3.19:1，深亮橙对深卡 12.25:1）。
+    public static Color SelectionBorder { get { return _dark ? DSelectionBorder : LSelectionBorder; } }
+    /// 整卡/整行选中用的浅琥珀底（配 SelectionBorder 用，正文与次要文字都保持可读）。
+    public static Color SelectionSoft { get { return _dark ? DSelectionSoft : LSelectionSoft; } }
     public static Color DisabledFill { get { return _dark ? DDisabledFill : LDisabledFill; } }
     /// 成功提示（登录成功 / 打开成功）。**不要用 Color.SeaGreen** —— 深底上读不清。
     public static Color Success { get { return _dark ? DSuccess : LSuccess; } }
@@ -449,8 +480,9 @@ internal sealed class ModernComboBox : ComboBox, IDpiScaled
         {
             Rectangle text = new Rectangle(e.Bounds.X + 7, e.Bounds.Y,
                 e.Bounds.Width - 12, e.Bounds.Height);
+            // 橙底配深棕字（沿用正文色在深色模式是白字，压亮橙读不清）。
             TextRenderer.DrawText(g, Convert.ToString(Items[e.Index]), Font, text,
-                ModernTheme.Text,
+                selected ? ModernTheme.SelectionText : ModernTheme.Text,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
     }
@@ -492,9 +524,10 @@ internal sealed class ModernCheckBox : CheckBox, IDpiScaled
         if (Checked)
         {
             using (GraphicsPath path = ModernTheme.RoundRect(box, 4))
-            using (SolidBrush fill = new SolidBrush(Enabled ? ModernTheme.Accent : ModernTheme.TextDisabled))
+            // 勾选 = 「选中」语义，跟着新的选中色走（原来用紫色 Accent）。
+            using (SolidBrush fill = new SolidBrush(Enabled ? ModernTheme.Selection : ModernTheme.TextDisabled))
                 g.FillPath(fill, path);
-            ModernTheme.DrawCheck(g, box, ModernTheme.OnAccent);
+            ModernTheme.DrawCheck(g, box, ModernTheme.SelectionText);
         }
         else
         {
@@ -601,16 +634,18 @@ internal sealed class ModernButton : Button
             }
             else if (_tab)
             {
-                fill = _selected || _hover ? ModernTheme.Hover : Color.Transparent;
+                // 分类/平台筛选 tab：选中 = 亮橙底 + 深棕字；未选中的悬停仍是中性灰。
+                fill = _selected ? (_pressed ? ModernTheme.SelectionPressed : _hover ? ModernTheme.SelectionHover : ModernTheme.Selection)
+                    : (_hover ? ModernTheme.Hover : Color.Transparent);
                 border = Color.Transparent;
-                fore = _selected || _hover ? ModernTheme.Text : ModernTheme.TextSecondary;
+                fore = _selected ? ModernTheme.SelectionText : (_hover ? ModernTheme.Text : ModernTheme.TextSecondary);
             }
             else if (_selected)
             {
-                // 选中平台要有明显轮廓：软紫底 + 强调色描边 + 白字。
-                fill = _pressed ? ModernTheme.AccentPressed : (_hover ? ModernTheme.AccentHover : ModernTheme.Selection);
-                border = ModernTheme.Accent;
-                fore = _pressed || _hover ? ModernTheme.OnAccent : ModernTheme.Text;
+                // 选中平台/分类：亮橙底 + 同色系描边 + 深棕字（原来淡紫底 + 紫边 + 墨字）。
+                fill = _pressed ? ModernTheme.SelectionPressed : (_hover ? ModernTheme.SelectionHover : ModernTheme.Selection);
+                border = ModernTheme.SelectionBorder;
+                fore = ModernTheme.SelectionText;
             }
             else if (_kind == Kind.Primary)
             {
@@ -902,8 +937,8 @@ internal sealed class ModernListBox : ListBox, IDpiScaled
         bool selected = (e.State & DrawItemState.Selected) != 0;
         using (SolidBrush back = new SolidBrush(selected ? ModernTheme.Selection : ModernTheme.Card))
             g.FillRectangle(back, e.Bounds);
-        // 选中时用强调色文字 —— 浅底选中块上再压深色字会糊
-        Color fore = selected ? ModernTheme.Accent : ModernTheme.Text;
+        // 选中时用深棕字 —— 亮橙选中块上压紫字/白字都会糊（对比不足）。
+        Color fore = selected ? ModernTheme.SelectionText : ModernTheme.Text;
         Rectangle text = new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height);
         TextRenderer.DrawText(g, Convert.ToString(Items[e.Index]), Font, text, fore,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
@@ -1083,7 +1118,8 @@ internal sealed class ModernListView : ListView
         using (SolidBrush back = new SolidBrush(RowBack(e.Item.Selected)))
             e.Graphics.FillRectangle(back, e.Bounds);
         if (View != View.Details)
-            TextRenderer.DrawText(e.Graphics, e.Item.Text, Font, e.Bounds, ModernTheme.Text,
+            TextRenderer.DrawText(e.Graphics, e.Item.Text, Font, e.Bounds,
+                e.Item.Selected ? ModernTheme.SelectionText : ModernTheme.Text,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
@@ -1095,9 +1131,13 @@ internal sealed class ModernListView : ListView
         using (SolidBrush back = new SolidBrush(RowBack(e.Item.Selected)))
             g.FillRectangle(back, bounds);
         bool first = e.ColumnIndex == 0;
+        // 选中行是亮橙底：文字改深棕（正文 8.81:1 / 次要 5.11:1），不能沿用白字/灰字。
+        bool selectedRow = e.Item.Selected;
         Rectangle text = new Rectangle(bounds.X + 8, bounds.Y, bounds.Width - 12, bounds.Height);
-        TextRenderer.DrawText(g, e.SubItem.Text, Font, text,
-            first ? ModernTheme.Text : ModernTheme.TextSecondary,
+        Color fore = selectedRow
+            ? (first ? ModernTheme.SelectionText : ModernTheme.SelectionTextSecondary)
+            : (first ? ModernTheme.Text : ModernTheme.TextSecondary);
+        TextRenderer.DrawText(g, e.SubItem.Text, Font, text, fore,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         if (GridLines)
         {

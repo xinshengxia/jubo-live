@@ -130,7 +130,12 @@ if ($LASTEXITCODE -ne 0) { throw "启动器编译失败：$LASTEXITCODE" }
 Write-Output ('编译完成：' + $exe)
 
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($testExe)) | Out-Null
-Copy-Item -LiteralPath (Join-Path $root 'app.config') -Destination ($testExe + '.config') -Force
+# 2026-10-22：测试宿主单独用 tests\HardeningTests.config（构建时拷成 exe.config，含 loadFromRemoteSources），
+# 不用发布版 app.config —— 本机 .NET Framework 对「刚编译的本地程序集」做 LoadFrom 时会
+# 报 0x80131515 并拒绝加载（与代码无关，官方开关即可消除）；发布版 exe.config 保持原样。
+$testConfig = Join-Path $root 'tests\HardeningTests.config'
+if (-not (Test-Path -LiteralPath $testConfig -PathType Leaf)) { throw "缺少测试宿主配置：$testConfig" }
+Copy-Item -LiteralPath $testConfig -Destination ($testExe + '.config') -Force
 & $compiler /nologo /target:exe /optimize+ "/win32manifest:$root\app.manifest" "/out:$testExe" @testSource
 if ($LASTEXITCODE -ne 0) { throw "测试程序编译失败：$LASTEXITCODE" }
 
@@ -145,7 +150,9 @@ $testArgs = @('--exe', $exe, '--src', $root)
 if ($Headless) { $testArgs += '--headless' }
 if ($Report) { $testArgs += @('--report', $Report) }
 . (Join-Path $root 'tools/Invoke-BoundedProcess.ps1')
-Invoke-BoundedProcess -FilePath $testExe -Arguments ($testArgs + @('--verbose')) -Log $logPath -TimeoutSeconds 240
+# 2026-10-22：离线回归新增「布局/首页会话」用例后，交互式桌面 UI 用例的完整套件耗时接近旧上限。
+# 240s 会在末尾把测试宿主 kill 掉（没有 tests.json），因此放宽到 480s；超时仍是硬失败，不掩盖卡死。
+Invoke-BoundedProcess -FilePath $testExe -Arguments ($testArgs + @('--verbose')) -Log $logPath -TimeoutSeconds 480
 $testOut = @(Get-Content -LiteralPath $logPath -Encoding utf8)
 $testOut | ForEach-Object { Write-Output $_ }
 Write-Output ('离线测试日志： ' + $logPath)

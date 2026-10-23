@@ -19,6 +19,9 @@ internal static partial class HardeningTests
         TestRunner.Add("工作台", "侧栏逐页切换且播放栏只属于收藏", TestWorkbenchNavigation);
         TestRunner.Add("工作台", "完整快捷选项与最近双播放器入口", TestWorkbenchControls);
         TestRunner.Add("工作台", "账号与本地数据职责分离且构建信息可见", TestWorkbenchDataOwnership);
+        TestRunner.Add("工作台", "最近打开取最新会话且同房间旧会话不重复", TestWorkbenchLatestSessionCard);
+        TestRunner.Add("布局", "默认窗口宽扁且常用尺寸下收藏页无纵向长滚", TestWorkbenchDefaultWindowShape);
+        TestRunner.Add("工作台", "收藏两排完整显示且右栏多条记录可独立滚动", TestWorkbenchFavoritesDensity);
     }
 
     private static string WorkbenchProbePathArguments(string directory)
@@ -167,8 +170,17 @@ internal static partial class HardeningTests
         if (failure != null) throw failure;
     }
 
+    // 把布局强制跑到底：自定义分页容器（DanmakuSettingsPages）里的滚动区/卡片要等一次
+    // 深层 PerformLayout 才有尺寸，未落座的容器 ClientSize=0 会被误判成越界。
+    private static void WorkbenchForceLayout(Control control)
+    {
+        control.PerformLayout();
+        foreach (Control child in control.Controls) WorkbenchForceLayout(child);
+    }
+
     private static void WorkbenchCheckViewport(Control root, int dpi)
     {
+        if (root is Form) WorkbenchForceLayout(root);   // 每次顶层检查先把整棵树排到稳定
         ScrollableControl scroll = root as ScrollableControl;
         if (scroll != null && scroll.AutoScroll) scroll.AutoScrollPosition = Point.Empty;
         foreach (Control child in root.Controls)
@@ -303,6 +315,169 @@ internal static partial class HardeningTests
             }
             Check(WorkbenchIsButton(WorkbenchFind(accounts, "workbenchCheckAllCookies")),
                 "工作台：账号页保留全部平台检测入口");
+        });
+    }
+
+    private static object NewWorkbenchSession(Type sessionType, object target, string player, bool ended)
+    {
+        object session = Activator.CreateInstance(sessionType, true);
+        sessionType.GetField("Target").SetValue(session, target);
+        sessionType.GetField("Player").SetValue(session, player);
+        sessionType.GetField("Ended").SetValue(session, ended);
+        return session;
+    }
+
+    /// <summary>
+    /// 首页「正在观看 / 最近打开」必须显示**最近一次**会话（sessions[0]），并且同一
+    /// 房间先后用不同播放器打开时不能一直堆旧行：已结束的旧会话行在新会话出现后清掉，
+    /// 旧播放器还在跑的会话保留。用合成会话对象离线断言，不启动任何播放器。
+    /// </summary>
+    private static void TestWorkbenchLatestSessionCard()
+    {
+        WithWorkbenchForm(-1, delegate(Form form)
+        {
+            Type launcherUi = form.Tag.GetType();
+            IList sessions = (IList)launcherUi.GetField("sessions", ReviewInstance).GetValue(form.Tag);
+            Type sessionType = hub.GetNestedType("PlaybackSession", BindingFlags.Public | BindingFlags.NonPublic);
+            Check(sessionType != null, "工作台：会话行类型可用反射构造合成夹具");
+            object bili700001 = Call("Parse", "bili:700001", "bili");
+            object bili700002 = Call("Parse", "bili:700002", "bili");
+            object bili700003 = Call("Parse", "bili:700003", "bili");
+            Check(bili700001 != null && bili700002 != null && bili700003 != null, "工作台：合成会话目标可解析");
+            MethodInfo refresh = launcherUi.GetMethod("RefreshWorkbenchHomeSession", ReviewInstance);
+            Check(refresh != null, "工作台：首页会话卡片有可重复刷新入口");
+            Control title = (Control)launcherUi.GetField("workbenchHomeTitle", ReviewInstance).GetValue(form.Tag);
+            Control meta = (Control)launcherUi.GetField("workbenchHomeMeta", ReviewInstance).GetValue(form.Tag);
+
+            // 合成夹具：同一房间先用 mpv、再用 PotPlayer 打开，应显示最新会话。
+            sessions.Clear();
+            sessions.Add(NewWorkbenchSession(sessionType, bili700001, "mpv", true));
+            sessions.Insert(0, NewWorkbenchSession(sessionType, bili700001, "potplayer", false));
+            refresh.Invoke(form.Tag, null);
+            Check(title.Text == "B站 700001", "工作台：首页显示最近一次会话（" + title.Text + "）");
+            Check(meta.Text.StartsWith("PotPlayer", StringComparison.Ordinal),
+                "工作台：首页显示最近一次会话的播放器（" + meta.Text + "）");
+
+            MethodInfo prune = hub.GetMethod("PruneEndedDuplicateSessions", Flags);
+            Check(prune != null, "工作台：同房间旧会话清理是可单独断言的纯函数");
+            sessions.Clear();
+            sessions.Add(NewWorkbenchSession(sessionType, bili700001, "potplayer", false));   // 活跃，保留
+            sessions.Add(NewWorkbenchSession(sessionType, bili700001, "mpv", true));          // 旧的已结束，清掉
+            sessions.Add(NewWorkbenchSession(sessionType, bili700002, "mpv", false));        // 活跃，保留
+            sessions.Add(NewWorkbenchSession(sessionType, bili700002, "mpv", true));         // 旧的已结束，清掉
+            sessions.Add(NewWorkbenchSession(sessionType, bili700003, "mpv", true));         // 唯一一条，保留
+            int removed = (int)prune.Invoke(null, new object[] { sessions });
+            Check(removed == 2 && sessions.Count == 3, "工作台：同房间已结束的旧会话行被清理（移除 " + removed + " 条）");
+            Check((string)sessionType.GetField("Player").GetValue(sessions[0]) == "potplayer"
+                && (string)sessionType.GetField("Player").GetValue(sessions[2]) == "mpv",
+                "工作台：清理后保留活跃会话与没有更新记录的结束会话");
+            refresh.Invoke(form.Tag, null);
+            Check(title.Text == "B站 700001", "工作台：清理后首页仍指向最近一次会话");
+            sessions.Clear();
+        });
+    }
+
+    /// <summary>
+    /// 两排收藏与右栏使用合成数据、隐藏窗口验证，不触碰个人数据或前台。
+    /// </summary>
+    private static void TestWorkbenchFavoritesDensity()
+    {
+        WithWorkbenchForm(1, delegate(Form form)
+        {
+            Type ui = form.Tag.GetType();
+            Control browser = WorkbenchFind(form, "favoritesBrowser");
+            IList items = (IList)browser.GetType().GetProperty("Items").GetValue(browser, null);
+            Type roomType = hub.Assembly.GetType("WorkbenchRoomItem");
+            items.Clear();
+            for (int i = 0; i < 6; i++)
+            {
+                object item = Activator.CreateInstance(roomType, true);
+                roomType.GetField("Name", ReviewInstance).SetValue(item, "合成主播 " + (i + 1));
+                roomType.GetField("Meta", ReviewInstance).SetValue(item, "B站 · " + (100001 + i));
+                roomType.GetField("State", ReviewInstance).SetValue(item, "直播中");
+                roomType.GetField("Live", ReviewInstance).SetValue(item, true);
+                items.Add(item);
+            }
+            IList sessions = (IList)ui.GetField("sessions", ReviewInstance).GetValue(form.Tag);
+            Type sessionType = hub.GetNestedType("PlaybackSession", ReviewStatic);
+            for (int i = 0; i < 8; i++)
+                sessions.Add(NewWorkbenchSession(sessionType, Call("Parse", "bili:" + (200001 + i), "bili"), i % 2 == 0 ? "mpv" : "potplayer", i > 1));
+            ui.GetMethod("RefreshWorkbenchHomeSession", ReviewInstance).Invoke(form.Tag, null);
+            foreach (int dpi in new[] { 96, 144, 192 })
+            {
+                form.GetType().GetMethod("SetTestDpi", ReviewInstance).Invoke(form, new object[] { dpi });
+                form.ClientSize = new Size(1240 * dpi / 96, 720 * dpi / 96);
+                WorkbenchShowPage(form, "favorites"); WorkbenchForceLayout(form);
+                ScrollableControl cards = (ScrollableControl)browser;
+                Control hint = WorkbenchFind(form, "workbenchFavoritesHint");
+                Control page = WorkbenchFind(form, "workbenchPage_favorites");
+                Check(cards.AutoScrollMinSize.Height <= cards.ClientSize.Height,
+                    "收藏六张卡片不裁切且无内部滚动 DPI=" + dpi + " content=" + cards.AutoScrollMinSize + " viewport=" + cards.ClientSize + " page=" + page.ClientSize + " top=" + cards.Top);
+                Check(hint.Top >= cards.Bottom && hint.Bottom <= page.ClientSize.Height,
+                    "收藏下方操作说明完整可见 DPI=" + dpi);
+                ScrollableControl list = (ScrollableControl)WorkbenchFind(form, "workbenchHomeList");
+                Check(list.Left > cards.Left && list.Height >= cards.Height - 30 * dpi / 96,
+                    "右栏使用收藏区整列高度 DPI=" + dpi);
+                Check(list.AutoScrollMinSize.Height > list.ClientSize.Height && list.Controls.Count >= 8,
+                    "多条会话在右栏独立滚动 DPI=" + dpi);
+                Control first = WorkbenchFind(form, "workbenchHomeSession");
+                Control second = WorkbenchFind(form, "workbenchHomeSession1");
+                Check(second.Top >= first.Bottom && WorkbenchFind(form, "workbenchHomeReopen1").Enabled,
+                    "右栏会话不重叠且各自可重开 DPI=" + dpi);
+                string preview = Environment.GetEnvironmentVariable("LIVEHUB_LAYOUT_PREVIEW");
+                if (!string.IsNullOrEmpty(preview) && dpi == 96)
+                {
+                    using (Bitmap bitmap = new Bitmap(form.Width, form.Height))
+                    {
+                        form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                        bitmap.Save(preview);
+                    }
+                }
+            }
+            sessions.Clear();
+            ui.GetMethod("RefreshWorkbenchHomeSession", ReviewInstance).Invoke(form.Tag, null);
+            Check(WorkbenchFind(form, "workbenchHomeTitle").Text == "合成主播"
+                && WorkbenchFind(form, "workbenchHomeReopen").Enabled,
+                "重启后无会话时右栏仍显示持久化最近播放");
+        });
+    }
+
+    /// <summary>默认宽窗口和窄窗口均保持内容可达。</summary>
+    private static void TestWorkbenchDefaultWindowShape()
+    {
+        Size design = (Size)Call("WorkbenchDesignSize", 1280, 752);
+        Check(design.Width == 1240 && design.Height == 720,
+            "布局：1280×752 工作区得到 1240×720 的宽扁默认尺寸（" + design.Width + "×" + design.Height + "）");
+        Check(design.Width * 100 >= design.Height * 150,
+            "布局：默认窗口至少 3:2，不再回到 4:3 竖长（" + design.Width + "×" + design.Height + "）");
+        Size small = (Size)Call("WorkbenchDesignSize", 1024, 560);
+        Check(small.Width <= 1024 && small.Height <= 560 && small.Height >= 520,
+            "布局：小工作区默认窗口装得下（" + small.Width + "×" + small.Height + "）");
+        Size big = (Size)Call("WorkbenchDesignSize", 2560, 1400);
+        Check(big.Width == 1400 && big.Height <= 880,
+            "布局：大工作区默认窗口有上限（" + big.Width + "×" + big.Height + "）");
+
+        WithWorkbenchForm(-1, delegate(Form form)
+        {
+            Check(form.ClientSize.Width > form.ClientSize.Height,
+                "布局：默认客户区是宽扁的（" + form.ClientSize + "）");
+            Check(form.MinimumSize.Width <= form.ClientSize.Width && form.MinimumSize.Height <= form.ClientSize.Height,
+                "布局：最小尺寸不超过默认尺寸");
+            foreach (Size logical in new Size[] { new Size(1240, 720), new Size(1024, 800) })
+            {
+                form.ClientSize = logical; form.PerformLayout();
+                foreach (string key in WorkbenchPageKeys)
+                {
+                    WorkbenchShowPage(form, key);
+                    WorkbenchCheckViewport(form, 96);
+                }
+                WorkbenchShowPage(form, "favorites");
+                ScrollableControl page = WorkbenchFind(form, "workbenchPage_favorites") as ScrollableControl;
+                Check(page != null && page.AutoScrollMinSize.Height <= page.ClientSize.Height,
+                    "布局：收藏页在 " + logical.Width + "×" + logical.Height + " 下不用纵向长滚（min="
+                    + (page == null ? "null" : page.AutoScrollMinSize.ToString())
+                    + " client=" + (page == null ? "null" : page.ClientSize.ToString()) + "）");
+            }
         });
     }
 }

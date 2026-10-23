@@ -348,7 +348,9 @@ internal static partial class LiveHub
             AButton localTab = AntdButton("本地数据", "workbenchLocalTab", null);
             AButton diagnosticTab = AntdButton("平台运行状态", "workbenchDiagnosticTab", null);
             diagnosticTab.Ghost = true;
-            tabs.Dock = DockStyle.None; tabs.AutoSize = false; tabs.Height = DpiLayout.S(owner, 36);
+            tabs.Dock = DockStyle.None; tabs.AutoSize = false; // 2026-10-22：AntdUI 按钮实际高 40（AutoSize 后），容器 36 会裁掉按钮底边 4px；
+            // 与下方 contentTop=44 对齐，既装得下按钮又不挤压缩略号。
+            tabs.Height = DpiLayout.S(owner, 44);
             tabs.Controls.Add(localTab); tabs.Controls.Add(diagnosticTab); body.Controls.Add(tabs);
 
             TableLayoutPanel localBody = Stack();
@@ -503,7 +505,7 @@ internal static partial class LiveHub
             {
                 int width = Math.Max(DpiLayout.S(owner, 320), body.ClientSize.Width);
                 int contentTop = DpiLayout.S(owner, 44);
-                tabs.SetBounds(0, 0, width, DpiLayout.S(owner, 36));
+                tabs.SetBounds(0, 0, width, DpiLayout.S(owner, 44));
                 localCard.SetBounds(0, contentTop, width, DpiLayout.S(owner, 640));
                 diagnosticCard.SetBounds(0, contentTop, width, DpiLayout.S(owner, 360));
                 body.Height = contentTop + (diagnosticCard.Visible ? DpiLayout.S(owner, 360) : DpiLayout.S(owner, 640));

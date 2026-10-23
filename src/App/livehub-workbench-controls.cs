@@ -209,11 +209,14 @@ internal sealed class WorkbenchNavigationButton : Button
         if (Width < 2 || Height < 2) return;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        // Draft (workbench-v4): the selected row keeps the ink text colour and
-        // only the glyph turns accent; the row itself is the soft accent fill.
-        Color textColor = Enabled ? ModernTheme.Text : ModernTheme.TextDisabled;
-        Color iconColor = Enabled ? (selected ? ModernTheme.Accent : ModernTheme.Text) : ModernTheme.TextDisabled;
-        Color fill = selected ? ModernTheme.Selection : pressed ? ModernTheme.Selection : hover ? ModernTheme.Hover : Color.Transparent;
+        // 选中行 = 亮橙底 + 深棕文字/图标（2026-10-22：原来淡紫底 + 紫色图标 + 墨字，
+        // 用户反馈像阴影；亮橙底上沿用 Text/Accent 会一个发灰一个发紫，必须走 SelectionText）。
+        // 未选中的文字/图标仍是正文色，悬停/按下仍是中性灰，Primary 紫色按钮不受影响。
+        Color textColor = !Enabled ? ModernTheme.TextDisabled : selected ? ModernTheme.SelectionText : ModernTheme.Text;
+        Color iconColor = !Enabled ? ModernTheme.TextDisabled : selected ? ModernTheme.SelectionText : ModernTheme.Text;
+        Color fill = selected
+            ? (pressed ? ModernTheme.SelectionPressed : hover ? ModernTheme.SelectionHover : ModernTheme.Selection)
+            : (pressed || hover ? ModernTheme.Hover : Color.Transparent);
         using (GraphicsPath path = ModernTheme.RoundRect(rect, DpiLayout.S(this, 7)))
         {
             if (fill.A != 0) using (SolidBrush brush = new SolidBrush(fill)) g.FillPath(brush, path);
@@ -322,8 +325,8 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
     private int selectedIndex = -1, columns = 1, hoverItem = -1, hoverAction, pressedItem = -1, pressedAction;
     private Font boldFont, smallFont;
     private string fontKey;
-    // Draft metrics: 3 columns of room cards, 92px cover, 198px card height.
-    private const int CardHeight = 198, CardCover = 92;
+    // Compact covers leave room for two rows and the keyboard hint.
+    private const int CardHeight = 160, CardCover = 64;
 
     public WorkbenchRoomBrowser()
     {
@@ -355,6 +358,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
 
     /// <summary>Height a single row of room cards needs, including the 2px inset.</summary>
     internal int CardsRowHeight { get { return Px(2) * 2 + Px(CardHeight); } }
+    internal int CardsTwoRowsHeight { get { return Px(2) * 2 + Px(CardHeight) * 2 + Px(12); } }
     public event Action<int> SelectionChanged;
     public event Action<int, string> OpenRequested;
     public event Action<int> ChooseRequested;
@@ -430,10 +434,9 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
                         int top = layout.Bounds.Bottom - inner - Px(30);
                         layout.Mpv = new Rectangle(layout.Bounds.Left + inner, top, buttonWidth, Px(30));
                         layout.PotPlayer = new Rectangle(layout.Mpv.Right + buttonGap, top, buttonWidth, Px(30));
-                        // The select pill sits at the bottom-right of the cover,
-                        // 12px in from both edges (draft .wb-cover).
+                        // Keep the select pill below the live badge in the compact cover.
                         layout.Select = new Rectangle(layout.Bounds.Right - inner - Px(52),
-                            layout.Bounds.Top + Px(CardCover) - Px(12) - Px(26), Px(52), Px(26));
+                            layout.Bounds.Top + Px(CardCover) - Px(6) - Px(24), Px(52), Px(24));
                     }
                     else if (narrow)
                     {
@@ -511,10 +514,13 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
         WorkbenchRoomItem item = items[index];
         bool chosen = selectedIndex == index;
         Rectangle cardBox = new Rectangle(box.Left, box.Top, Math.Max(1, box.Width - 1), Math.Max(1, box.Height - 1));
+        // 选中卡片/行：浅琥珀底 + 2px 亮橙描边（整块铺亮橙会把封面渐变和正文压糊；
+        // 描边用 SelectionBorder —— 浅色对白卡 3.19:1、深色对深卡 12.25:1）。
+        float borderWidth = Math.Max(1f, DpiLayout.For(this)) * (chosen ? 2f : 1f);
         using (GraphicsPath path = ModernTheme.RoundRect(cardBox, Px(11)))
-        using (SolidBrush fill = new SolidBrush(ModernTheme.Card))
-        using (Pen border = new Pen(chosen ? ModernTheme.Accent : hoverItem == index ? ModernTheme.BorderHover : ModernTheme.Border,
-            Math.Max(1f, DpiLayout.For(this))))
+        using (SolidBrush fill = new SolidBrush(chosen ? ModernTheme.SelectionSoft : ModernTheme.Card))
+        using (Pen border = new Pen(chosen ? ModernTheme.SelectionBorder : hoverItem == index ? ModernTheme.BorderHover : ModernTheme.Border,
+            borderWidth))
         {
             g.FillPath(fill, path);
             g.DrawPath(border, path);
@@ -525,6 +531,8 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
         if (cards)
         {
             Color accent = item.Accent.A == 0 ? ModernTheme.Accent : item.Accent;
+            // 选中卡的封面渐变也垫到浅琥珀底上，避免顶部亮块和卡片底色突然断层。
+            Color cardTone = chosen ? ModernTheme.SelectionSoft : ModernTheme.Card;
             int coverHeight = Px(CardCover);
             Rectangle cover = new Rectangle(box.Left + Px(1), box.Top + Px(1), Math.Max(0, box.Width - Px(2)), coverHeight);
             using (GraphicsPath clip = ModernTheme.RoundRect(cardBox, Px(11)))
@@ -534,8 +542,8 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
                 {
                     g.SetClip(clip, CombineMode.Intersect);
                     using (LinearGradientBrush gradient = new LinearGradientBrush(cover,
-                        WorkbenchPalette.Blend(accent, ModernTheme.Card, .55f),
-                        WorkbenchPalette.Blend(accent, ModernTheme.Card, .88f), 22f))
+                        WorkbenchPalette.Blend(accent, cardTone, .55f),
+                        WorkbenchPalette.Blend(accent, cardTone, .88f), 22f))
                         g.FillRectangle(gradient, cover);
                 }
                 finally { g.Restore(saved); }
@@ -543,18 +551,20 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
             DrawGamepad(g, new Rectangle(box.Left + Px(15), box.Top + coverHeight - Px(13) - Px(20), Px(26), Px(20)),
                 Color.FromArgb(205, ModernTheme.TextSecondary));
             DrawStatePill(g, item, box, inner);
+            if (chosen) DrawChosenBadge(g, box, inner);
             Rectangle choose = layout.Select; choose.Offset(scroll);
             using (GraphicsPath path = ModernTheme.RoundRect(new Rectangle(choose.Left, choose.Top, Math.Max(1, choose.Width - 1), Math.Max(1, choose.Height - 1)), Px(6)))
-            using (SolidBrush fill = new SolidBrush(ModernTheme.Card))
-            using (Pen border = new Pen(ModernTheme.Border, Math.Max(1f, DpiLayout.For(this))))
+            using (SolidBrush fill = new SolidBrush(chosen ? ModernTheme.Selection : ModernTheme.Card))
+            using (Pen border = new Pen(chosen ? ModernTheme.SelectionBorder : ModernTheme.Border, Math.Max(1f, DpiLayout.For(this))))
             {
                 g.FillPath(fill, path); g.DrawPath(border, path);
             }
-            TextRenderer.DrawText(g, "选择", smallFont, choose, ModernTheme.Text,
+            // 选中时「选择」丸也换成亮橙底 + 深棕字，和卡片描边/角标同色系。
+            TextRenderer.DrawText(g, "选择", smallFont, choose, chosen ? ModernTheme.SelectionText : ModernTheme.Text,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             int bodyTop = box.Top + coverHeight;
-            DrawText(g, item.Name, boldFont, new Rectangle(box.Left + inner, bodyTop + Px(11), Math.Max(0, box.Width - inner * 2), Px(20)), ModernTheme.Text);
-            DrawText(g, item.Meta, smallFont, new Rectangle(box.Left + inner, bodyTop + Px(32), Math.Max(0, box.Width - inner * 2), Px(17)), ModernTheme.TextSecondary);
+            DrawText(g, item.Name, boldFont, new Rectangle(box.Left + inner, bodyTop + Px(8), Math.Max(0, box.Width - inner * 2), Px(20)), ModernTheme.Text);
+            DrawText(g, item.Meta, smallFont, new Rectangle(box.Left + inner, bodyTop + Px(29), Math.Max(0, box.Width - inner * 2), Px(17)), ModernTheme.TextSecondary);
         }
         else
         {
@@ -609,6 +619,22 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
         DrawText(g, item.State, smallFont, new Rectangle(pill.Left + Px(16), pill.Top, pill.Width - Px(18), pill.Height), color);
     }
 
+    /// 选中卡片的左上角角标：亮橙 pill + 深棕勾/字。纯绘制，不新增控件，
+    /// 也不改任何控件的 Text / AccessibleName（避免动到 UI 测试的控件树断言）。
+    private void DrawChosenBadge(Graphics g, Rectangle box, int inner)
+    {
+        const string mark = "✓ 已选";
+        TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter
+            | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix;
+        int text = TextRenderer.MeasureText(g, mark, smallFont, Size.Empty, flags).Width;
+        int width = text + Px(16), height = Px(22);
+        Rectangle badge = new Rectangle(box.Left + inner - Px(3), box.Top + Px(9), width, height);
+        using (GraphicsPath path = ModernTheme.RoundRect(badge, Px(5)))
+        using (SolidBrush fill = new SolidBrush(ModernTheme.Selection))
+            g.FillPath(fill, path);
+        TextRenderer.DrawText(g, mark, smallFont, badge, ModernTheme.SelectionText, flags);
+    }
+
     private void DrawScreen(Graphics g, Rectangle rect, Color color)
     {
         using (Pen pen = new Pen(color, Math.Max(1f, 1.25f * DpiLayout.For(this))))
@@ -644,8 +670,10 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
         if (rect.Width < 1 || rect.Height < 1) return;
         bool hover = hoverItem == index && hoverAction == action;
         bool pressed = pressedItem == index && pressedAction == action;
+        // 按下反馈走中性灰（原来借用了 Selection —— 现在 Selection 是亮橙，
+        // 按一下「用 mpv 打开」就闪成选中色会让人误以为卡片被选中了）。
         using (GraphicsPath path = ModernTheme.RoundRect(new Rectangle(rect.Left, rect.Top, Math.Max(1, rect.Width - 1), Math.Max(1, rect.Height - 1)), Px(6)))
-        using (SolidBrush fill = new SolidBrush(pressed ? ModernTheme.Selection : hover ? ModernTheme.Hover : ModernTheme.Card))
+        using (SolidBrush fill = new SolidBrush(pressed ? ModernTheme.Border : hover ? ModernTheme.Hover : ModernTheme.Card))
         using (Pen border = new Pen(hover ? ModernTheme.BorderHover : ModernTheme.Border, Math.Max(1f, DpiLayout.For(this))))
         {
             g.FillPath(fill, path); g.DrawPath(border, path);

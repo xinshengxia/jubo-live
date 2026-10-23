@@ -37,6 +37,18 @@ internal static partial class LiveHub
         private WorkbenchPanel workbenchHomeCard;
         private Label workbenchHomeHeader, workbenchHomeTitle, workbenchHomeMeta, workbenchHomeState;
         private AntdUI.Button workbenchHomeReopen;
+        private Panel workbenchHomeList;
+        private sealed class HomeSessionRow
+        {
+            internal WorkbenchPanel Card;
+            internal WorkbenchGlyph Avatar;
+            internal Label Title, Meta, State;
+            internal AntdUI.Button Reopen;
+            internal PlaybackSession Session;
+            internal Target Target;
+            internal bool Active = true;
+        }
+        private readonly List<HomeSessionRow> workbenchHomeRows = new List<HomeSessionRow>();
         private WorkbenchPanel workbenchPlayerCard, workbenchPlayerPreferences;
         private ComboBox workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance;
         private readonly List<Label> workbenchPlayerCaptions = new List<Label>();
@@ -96,8 +108,13 @@ internal static partial class LiveHub
             try
             {
                 form.Controls.Clear(); form.Tag = this; form.AutoScroll = false; form.AutoScrollMinSize = Size.Empty;
-                form.ClientSize = new Size(Px(1024), Px(866));
-                form.MinimumSize = new Size(740, 540);
+                // ⚠️ 原来是 Px(1024) × Px(866)：1.18 的竖长比例，正是用户说的「上下太长、
+                //    左右宽度不够」的结构性根因（200% 下 = 2048×1732，比 2560×1504 的工作区
+                //    还高，底部被任务栏裁掉）。现在用宽扁的设计基准 1240×720；真实启动时
+                //    Load 里再按当前显示器工作区自适应一次（ApplyWorkbenchDefaultBounds）。
+                form.ClientSize = new Size(Px(1240), Px(720));
+                form.MinimumSize = new Size(Px(760), Px(520));
+                form.Load += delegate { ApplyWorkbenchDefaultBounds(); };
                 // Draft shell: a 34px chrome strip across the top, then the flat
                 // sidebar (own surface tone, hairline right border) and content.
                 workbenchChrome = new WorkbenchStrip { Name = "workbenchChrome", Edge = WorkbenchStrip.EdgeKind.Bottom };
@@ -271,23 +288,51 @@ internal static partial class LiveHub
             workbenchHomeSessions.Style = ModernButton.Kind.Subtle;
             WorkbenchFont(workbenchHomeSessions, 12, FontStyle.Regular);
             page.Controls.Add(workbenchHomeSessions);
-            workbenchHomeCard = new WorkbenchPanel { Name = "workbenchHomeSession", IsCard = true };
-            workbenchHomeAvatar = new WorkbenchGlyph { Name = "workbenchHomeAvatar", Tiled = true, IconSize = 15, Glyph = "monitor-play" };
-            workbenchHomeTitle = WorkbenchLabel("workbenchHomeTitle", "暂无播放会话", false);
-            WorkbenchFont(workbenchHomeTitle, 13, FontStyle.Bold);
-            workbenchHomeMeta = WorkbenchLabel("workbenchHomeMeta", "打开一个房间后，这里显示最近一次播放。", true);
-            WorkbenchFont(workbenchHomeMeta, 11, FontStyle.Regular);
-            workbenchHomeState = WorkbenchLabel("workbenchHomeState", "", true);
-            WorkbenchFont(workbenchHomeState, 11, FontStyle.Regular);
-            workbenchHomeReopen = WorkbenchAntdButton("workbenchHomeReopen", "重新打开", delegate
+            workbenchHomeList = new Panel { Name = "workbenchHomeList", AutoScroll = true };
+            workbenchHomeList.HandleCreated += delegate { ModernTheme.ApplyScrollbarTheme(workbenchHomeList); };
+            page.Controls.Add(workbenchHomeList);
+            HomeSessionRow first = CreateHomeSessionRow();
+            workbenchHomeCard = first.Card;
+            workbenchHomeAvatar = first.Avatar;
+            workbenchHomeTitle = first.Title;
+            workbenchHomeMeta = first.Meta;
+            workbenchHomeState = first.State;
+            workbenchHomeReopen = first.Reopen;
+            // DpiForm captures the control tree once. Reserve every row before
+            // that capture so sessions opened later inherit the same scaling.
+            while (workbenchHomeRows.Count < 24) CreateHomeSessionRow();
+        }
+
+        private HomeSessionRow CreateHomeSessionRow()
+        {
+            int index = workbenchHomeRows.Count;
+            string suffix = index == 0 ? "" : index.ToString();
+            HomeSessionRow row = new HomeSessionRow();
+            row.Active = index == 0;
+            row.Card = new WorkbenchPanel { Name = "workbenchHomeSession" + suffix, IsCard = true, Visible = row.Active };
+            row.Avatar = new WorkbenchGlyph { Name = "workbenchHomeAvatar" + suffix, Tiled = true, IconSize = 15, Glyph = "monitor-play" };
+            row.Title = WorkbenchLabel("workbenchHomeTitle" + suffix, "暂无播放记录", false);
+            WorkbenchFont(row.Title, 13, FontStyle.Bold);
+            row.Meta = WorkbenchLabel("workbenchHomeMeta" + suffix, "打开房间后，这里保留最近播放。", true);
+            WorkbenchFont(row.Meta, 11, FontStyle.Regular);
+            row.State = WorkbenchLabel("workbenchHomeState" + suffix, "", true);
+            WorkbenchFont(row.State, 11, FontStyle.Regular);
+            row.Reopen = WorkbenchAntdButton("workbenchHomeReopen" + suffix, "重新打开", delegate
             {
-                if (sessions.Count > 0) { sessionsList.SelectedItems.Clear(); sessionsList.Items[sessions.Count - 1].Selected = true; }
-                SelectWorkbenchPage("sessions");
-                reopen.PerformClick();
+                if (row.Target == null || currentLaunch != null) return;
+                input.Text = row.Target.Platform + ":" + row.Target.Room;
+                if (row.Session != null)
+                {
+                    qualityBox.SelectedIndex = row.Target.Quality == "smooth" ? 2 : row.Target.Quality == "high" ? 1 : 0;
+                    bufferBox.SelectedIndex = row.Target.BufferMode == "low" ? 1 : 0;
+                    danmakuBox.SelectedIndex = row.Target.DanmakuMode == "on" ? 1 : row.Target.DanmakuMode == "off" ? 2 : 0;
+                }
+                Launch(row.Session == null ? "mpv" : row.Session.Player);
             });
-            workbenchHomeCard.Controls.AddRange(new Control[] { workbenchHomeAvatar, workbenchHomeTitle,
-                workbenchHomeMeta, workbenchHomeState, workbenchHomeReopen });
-            page.Controls.Add(workbenchHomeCard);
+            row.Card.Controls.AddRange(new Control[] { row.Avatar, row.Title, row.Meta, row.State, row.Reopen });
+            workbenchHomeRows.Add(row);
+            workbenchHomeList.Controls.Add(row.Card);
+            return row;
         }
 
         private void BuildWorkbenchRecent()
@@ -472,6 +517,7 @@ internal static partial class LiveHub
             workbenchStatusCancel.Enabled = cancelLaunch.Enabled;
             recentOpenMpv.Enabled = recentOpenPot.Enabled = !launching && recentList.SelectedIndex >= 0;
             favoritesBrowser.Enabled = recentBrowser.Enabled = !launching;
+            foreach (HomeSessionRow row in workbenchHomeRows) row.Reopen.Enabled = !launching && row.Target != null;
             foreach (KeyValuePair<string, ModernButton> pair in recentPlatformButtons) pair.Value.Selected = pair.Key == platform;
         }
 
@@ -490,26 +536,89 @@ internal static partial class LiveHub
             finally { syncingWorkbench = previous; }
         }
 
+        /// <summary>
+        /// 最新会话在前，并补充跨平台历史；每个房间只显示一条快捷入口。
+        /// </summary>
         private void RefreshWorkbenchHomeSession()
         {
             if (!workbenchReady) return;
-            if (sessions == null || sessions.Count == 0)
+            List<PlaybackSession> recentSessions = new List<PlaybackSession>();
+            List<KeyValuePair<string, HistoryEntry>> recentHistory = new List<KeyValuePair<string, HistoryEntry>>();
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (PlaybackSession session in sessions)
             {
-                workbenchHomeTitle.Text = "暂无播放会话";
-                workbenchHomeMeta.Text = "打开一个房间后，这里显示最近一次播放。";
-                workbenchHomeState.Text = "";
-                workbenchHomeReopen.Enabled = false;
-                return;
+                if (session.Target != null && seen.Add(session.Target.Platform + ":" + session.Target.Room)) recentSessions.Add(session);
             }
-            PlaybackSession session = sessions[sessions.Count - 1];
-            workbenchHomeTitle.Text = PlatformName(session.Target.Platform) + " " + session.Target.Room;
-            workbenchHomeMeta.Text = (session.Player == "potplayer" ? "PotPlayer" : "mpv") + " · "
-                + (session.Target.Quality == "smooth" ? "流畅" : session.Target.Quality == "high" ? "高清" : "原画")
-                + " · " + (session.Player == "potplayer" ? "播放器默认" : session.Target.BufferMode == "low" ? "延迟更低" : "播放更稳定");
-            workbenchHomeState.Text = "● " + (session.Ended ? "播放器已退出" : RoomStateLabel(session.Target.Platform, session.LiveState));
-            workbenchHomeState.ForeColor = session.Ended ? ModernTheme.TextSecondary
-                : session.LiveState == RoomStateKind.Live ? ModernTheme.Success : ModernTheme.TextSecondary;
-            workbenchHomeReopen.Enabled = true;
+            foreach (var pair in history)
+                foreach (HistoryEntry entry in pair.Value)
+                    recentHistory.Add(new KeyValuePair<string, HistoryEntry>(pair.Key, entry));
+            recentHistory.Sort(delegate(KeyValuePair<string, HistoryEntry> a, KeyValuePair<string, HistoryEntry> b)
+                { return string.Compare(b.Value.At, a.Value.At, StringComparison.Ordinal); });
+            recentHistory.RemoveAll(delegate(KeyValuePair<string, HistoryEntry> entry)
+                { return !seen.Add(entry.Key + ":" + entry.Value.Room); });
+            int count = Math.Min(24, recentSessions.Count + recentHistory.Count);
+            while (workbenchHomeRows.Count < Math.Max(1, count)) CreateHomeSessionRow();
+            for (int i = 0; i < workbenchHomeRows.Count; i++)
+            {
+                HomeSessionRow row = workbenchHomeRows[i];
+                row.Active = i < Math.Max(1, count);
+                row.Card.Visible = row.Active;
+                row.Session = i < recentSessions.Count ? recentSessions[i] : null;
+                row.Target = row.Session == null ? null : row.Session.Target;
+                row.State.ForeColor = ModernTheme.TextSecondary;
+                if (count == 0)
+                {
+                    row.Title.Text = "暂无播放记录";
+                    row.Meta.Text = "打开房间后，这里保留最近播放。";
+                    row.State.Text = "";
+                }
+                else if (row.Session != null)
+                {
+                    PlaybackSession session = row.Session;
+                    row.Title.Text = PlatformName(session.Target.Platform) + " " + session.Target.Room;
+                    row.Meta.Text = (session.Player == "potplayer" ? "PotPlayer" : "mpv") + " · "
+                        + (session.Target.Quality == "smooth" ? "流畅" : session.Target.Quality == "high" ? "高清" : "原画")
+                        + " · " + (session.Player == "potplayer" ? "播放器默认" : session.Target.BufferMode == "low" ? "延迟更低" : "播放更稳定");
+                    row.State.Text = "● " + (session.Ended ? "播放器已退出" : RoomStateLabel(session.Target.Platform, session.LiveState));
+                    if (!session.Ended && session.LiveState == RoomStateKind.Live) row.State.ForeColor = ModernTheme.Success;
+                }
+                else if (i < count)
+                {
+                    var entry = recentHistory[i - recentSessions.Count];
+                    row.Target = Parse(entry.Key + ":" + entry.Value.Room, entry.Key);
+                    row.Title.Text = string.IsNullOrEmpty(entry.Value.Name) ? PlatformName(entry.Key) + " " + entry.Value.Room : entry.Value.Name;
+                    row.Meta.Text = PlatformName(entry.Key) + " · " + entry.Value.Room;
+                    row.State.Text = "最近 · " + (entry.Value.At ?? "");
+                }
+                row.Reopen.Enabled = row.Target != null && currentLaunch == null;
+            }
+            if (!workbenchLayoutBusy) LayoutWorkbenchFavorites();
+        }
+
+        /// <summary>
+        /// 启动时按当前显示器工作区把窗口调成宽扁比例（第一次显示前执行，不会闪）。
+        /// 尺寸规则在 <see cref="LiveHub.WorkbenchDesignSize"/>；这里只负责换算物理像素、
+        /// 居中，并夹在工作区内（DpiForm 的 FitWorkingArea 仍是兜底）。
+        /// 这个 Load 处理器在 DpiForm.OnLoad → InitializeDpi 之后才跑（base.OnLoad 才触发
+        /// Load 事件），所以 RenderScale 已经是当前显示器的真实倍率。
+        /// </summary>
+        private void ApplyWorkbenchDefaultBounds()
+        {
+            if (form == null || form.IsDisposed) return;
+            DpiForm dpiForm = form as DpiForm;
+            float scale = dpiForm != null && dpiForm.RenderScale > 0.01f ? dpiForm.RenderScale : 1f;
+            Rectangle work;
+            try { work = Screen.FromControl(form).WorkingArea; }
+            catch (Exception) { work = Screen.PrimaryScreen.WorkingArea; }
+            Size design = LiveHub.WorkbenchDesignSize(
+                (int)Math.Round(work.Width / scale), (int)Math.Round(work.Height / scale));
+            form.ClientSize = new Size(DpiForm.Scale(design.Width, scale), DpiForm.Scale(design.Height, scale));
+            int windowWidth = form.Width, windowHeight = form.Height;
+            int left = work.Left + Math.Max(0, (work.Width - windowWidth) / 2);
+            int top = work.Top + Math.Max(0, (work.Height - windowHeight) / 2);
+            form.Location = new Point(
+                Math.Max(work.Left, Math.Min(left, Math.Max(work.Left, work.Right - windowWidth))),
+                Math.Max(work.Top, Math.Min(top, Math.Max(work.Top, work.Bottom - windowHeight))));
         }
 
         private void RefreshWorkbenchRooms()
@@ -567,8 +676,9 @@ internal static partial class LiveHub
             {
                 int width = form.ClientSize.Width, height = form.ClientSize.Height;
                 int chromeHeight = Px(34); // custom title strip (the native title bar is hidden)
-                int sidebar = Px(width < Px(900) ? 132 : 166), pad = Px(width < Px(900) ? 26 : 25);
-                // Custom 34px chrome + flat 166px sidebar; content left edge at 191.
+                // 侧栏按宽度三档收窄：窄窗把像素让给内容，宽窗保留可读的导航文字。
+                int sidebar = Px(width < Px(760) ? 124 : width < Px(1000) ? 144 : 164);
+                int pad = Px(width < Px(900) ? 20 : 24);
                 workbenchChrome.SetBounds(0, 0, width, chromeHeight);
                 int shellHeight = Math.Max(Px(160), height - chromeHeight);
                 workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight);
@@ -582,35 +692,42 @@ internal static partial class LiveHub
                 workbenchChromeBrand.SetBounds(workbenchChromeIcon.Right + Px(8), 0, Px(80), chromeHeight);
                 workbenchChromeHint.SetBounds(Math.Max(Px(60), width - Px(260)), 0, Px(240), chromeHeight);
                 int sidebarWidth = workbenchSidebar.ClientSize.Width;
-                workbenchBrandMark.SetBounds(Px(13), Px(26), Px(31), Px(31));
-                workbenchBrand.SetBounds(Px(53), Px(29), Math.Max(Px(60), sidebarWidth - Px(63)), Px(28));
-                workbenchWatchGroup.SetBounds(Px(14), Px(88), Math.Max(Px(60), sidebarWidth - Px(26)), Px(16));
-                int navY = Px(121), index = 0;
+                // 侧栏也压扁一档：品牌区从 26→22，导航从 121→100 起排，底部提示贴底。
+                workbenchBrandMark.SetBounds(Px(12), Px(22), Px(30), Px(30));
+                workbenchBrand.SetBounds(Px(50), Px(24), Math.Max(Px(52), sidebarWidth - Px(58)), Px(26));
+                workbenchWatchGroup.SetBounds(Px(12), Px(76), Math.Max(Px(56), sidebarWidth - Px(24)), Px(16));
+                int navY = Px(100), index = 0;
                 foreach (string key in new[] { "favorites", "recent", "lookup", "sessions", "players", "danmaku", "accounts", "data" })
                 {
-                    if (index == 4) { workbenchSettingsGroup.SetBounds(Px(14), navY + Px(13), Math.Max(Px(60), sidebarWidth - Px(26)), Px(16)); navY += Px(34); }
-                    int navHeight = key == "data" ? Px(57) : Px(39);
-                    workbenchNavigation[key].SetBounds(Px(10), navY, Math.Max(Px(80), sidebarWidth - Px(20)), navHeight);
-                    navY += navHeight + Px(5); index++;
+                    if (index == 4) { workbenchSettingsGroup.SetBounds(Px(12), navY + Px(10), Math.Max(Px(56), sidebarWidth - Px(24)), Px(16)); navY += Px(29); }
+                    int navHeight = key == "data" ? Px(52) : Px(36);
+                    workbenchNavigation[key].SetBounds(Px(8), navY, Math.Max(Px(80), sidebarWidth - Px(16)), navHeight);
+                    navY += navHeight + Px(4); index++;
                 }
-                int footerTop = Math.Max(navY + Px(18), shellHeight - Px(68));
-                workbenchFooterIcon.SetBounds(Px(14), footerTop + Px(3), Px(16), Px(16));
-                workbenchFooterHint.SetBounds(Px(36), footerTop, Math.Max(Px(60), sidebarWidth - Px(48)), Px(22));
+                int footerTop = Math.Max(navY + Px(14), shellHeight - Px(56));
+                workbenchFooterIcon.SetBounds(Px(12), footerTop + Px(3), Px(16), Px(16));
+                workbenchFooterHint.SetBounds(Px(34), footerTop, Math.Max(Px(54), sidebarWidth - Px(42)), Px(20));
                 workbenchSidebar.AutoScrollMinSize = new Size(0,
-                    Math.Max(workbenchFooterHint.Bottom, workbenchFooterIcon.Bottom) + Px(12));
-                int inner = Math.Max(Px(260), workbenchContent.ClientSize.Width - pad * 2);
-                workbenchTitle.SetBounds(pad, Px(25), inner, Px(30));
-                workbenchSubtitle.SetBounds(pad, Px(59), inner, Px(19));
+                    Math.Max(workbenchFooterHint.Bottom, workbenchFooterIcon.Bottom) + Px(10));
+                int inner = Math.Max(Px(240), workbenchContent.ClientSize.Width - pad * 2);
                 int contentHeight = workbenchContent.ClientSize.Height;
+                // 标题与副标题原来是竖排（host 从 y=99 起）；改成同一行横排后页面从 50 起，
+                // 纵向多出约 50px 给页面内容 —— 这是「上下太长」的又一处来源。
+                int titleWidth = TextRenderer.MeasureText(workbenchTitle.Text, workbenchTitle.Font,
+                    Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + Px(6);
+                titleWidth = Math.Max(Px(90), Math.Min(inner, titleWidth));
+                workbenchTitle.SetBounds(pad, Px(8), titleWidth, Px(32));
+                int subtitleLeft = pad + titleWidth + Px(14);
+                workbenchSubtitle.SetBounds(subtitleLeft, Px(15), Math.Max(Px(60), pad + inner - subtitleLeft), Px(18));
                 int statusWidth = inner - (workbenchStatusCancel.Visible ? Px(126) : 0);
                 int statusText = TextRenderer.MeasureText(status.Text, status.Font,
                     new Size(Math.Max(Px(100), statusWidth), int.MaxValue), TextFormatFlags.WordBreak).Height;
-                int footerHeight = Math.Max(Px(40), Math.Min(Px(64), statusText + Px(12)));
-                workbenchFooter.SetBounds(pad, Math.Max(Px(200), contentHeight - footerHeight - Px(10)), inner, footerHeight);
-                status.SetBounds(Px(18), 0, statusWidth - Px(18), footerHeight);
-                workbenchStatusCancel.SetBounds(inner - Px(118), Math.Max(0, (footerHeight - Px(30)) / 2), Px(118), Px(30));
-                int hostTop = Px(99);
-                workbenchHost.SetBounds(pad, hostTop, inner, Math.Max(Px(120), workbenchFooter.Top - hostTop - Px(12)));
+                int footerHeight = Math.Max(Px(32), Math.Min(Px(54), statusText + Px(8)));
+                workbenchFooter.SetBounds(pad, Math.Max(Px(180), contentHeight - footerHeight - Px(8)), inner, footerHeight);
+                status.SetBounds(Px(16), 0, statusWidth - Px(16), footerHeight);
+                workbenchStatusCancel.SetBounds(inner - Px(118), Math.Max(0, (footerHeight - Px(29)) / 2), Px(118), Px(29));
+                int hostTop = Px(50);
+                workbenchHost.SetBounds(pad, hostTop, inner, Math.Max(Px(120), workbenchFooter.Top - hostTop - Px(10)));
                 foreach (Panel page in workbenchPages.Values) page.SetBounds(0, 0, workbenchHost.ClientSize.Width, workbenchHost.ClientSize.Height);
                 LayoutWorkbenchFavorites(); LayoutWorkbenchRecent(); LayoutWorkbenchSessions(); LayoutWorkbenchPlayers();
                 foreach (Panel page in workbenchPages.Values) page.PerformLayout();
@@ -628,8 +745,11 @@ internal static partial class LiveHub
         private void LayoutWorkbenchFavorites()
         {
             Panel page = workbenchPages["favorites"];
-            int width = Math.Max(Px(260), page.ClientSize.Width), pad = Px(16), gap = Px(8);
-            int inner = width - pad * 2, y = Px(14), x = pad;
+            int width = Math.Max(Px(260), page.ClientSize.Width);
+            int pageHeight = Math.Max(Px(220), page.ClientSize.Height);
+            int pad = Px(16), gap = Px(8);
+            int inner = width - pad * 2;
+            int y = Px(8), x = pad;
             // Platform bar inside the launch card (draft: 30px pills, quiet help link).
             int tabGap = Px(6);
             int tabWidth = Math.Min(Px(72), Math.Max(Px(46), (inner - Px(120)) / 4));
@@ -640,35 +760,35 @@ internal static partial class LiveHub
             inputHelp.SetBounds(width - pad - Px(88), y, Px(88), Px(30));
             workbenchPlatformStrip.SetBounds(pad - Px(3), y - Px(3),
                 4 * tabWidth + 3 * tabGap + Px(6), Px(36));
-            y += Px(30) + Px(10);
+            y += Px(30) + Px(8);
             bool compact = inner < Px(700);
             if (!compact)
             {
                 int cancelWidth = Px(72), potWidth = Px(160), mpvWidth = Px(155);
-                input.SetBounds(pad, y, Math.Max(Px(120), inner - mpvWidth - potWidth - cancelWidth - gap * 3), Px(40));
-                openMpv.SetBounds(input.Right + gap, y, mpvWidth, Px(40));
-                openPot.SetBounds(openMpv.Right + gap, y, potWidth, Px(40));
-                cancelLaunch.SetBounds(openPot.Right + gap, y, Math.Max(Px(56), width - pad - openPot.Right - gap), Px(40));
-                y += Px(40) + Px(12);
+                input.SetBounds(pad, y, Math.Max(Px(120), inner - mpvWidth - potWidth - cancelWidth - gap * 3), Px(38));
+                openMpv.SetBounds(input.Right + gap, y, mpvWidth, Px(38));
+                openPot.SetBounds(openMpv.Right + gap, y, potWidth, Px(38));
+                cancelLaunch.SetBounds(openPot.Right + gap, y, Math.Max(Px(56), width - pad - openPot.Right - gap), Px(38));
+                y += Px(38) + Px(10);
             }
             else
             {
-                input.SetBounds(pad, y, inner, Px(38)); y += Px(38) + Px(8);
+                input.SetBounds(pad, y, inner, Px(36)); y += Px(36) + Px(6);
                 int cancelWidth = Px(56);
                 int playWidth = Math.Max(Px(110), (inner - gap * 2 - cancelWidth) / 2);
-                openMpv.SetBounds(pad, y, playWidth, Px(34)); openPot.SetBounds(openMpv.Right + gap, y, playWidth, Px(34));
-                cancelLaunch.SetBounds(openPot.Right + gap, y, cancelWidth, Px(34));
-                y += Px(34) + Px(12);
+                openMpv.SetBounds(pad, y, playWidth, Px(32)); openPot.SetBounds(openMpv.Right + gap, y, playWidth, Px(32));
+                cancelLaunch.SetBounds(openPot.Right + gap, y, Math.Max(Px(48), width - pad - openPot.Right - gap), Px(32));
+                y += Px(32) + Px(10);
             }
             Control[] labels = { qualityLabel, bufferLabel, danmakuLabel, scLabel, enhanceLabel };
             ComboBox[] boxes = { qualityBox, bufferBox, danmakuBox, scBox, enhanceBox };
             int columns = inner >= Px(680) ? 5 : inner >= Px(420) ? 3 : 2;
             int columnGap = Px(10), cell = (inner - columnGap * (columns - 1)) / columns;
-            int labelHeight = Px(15), comboHeight = Px(28);
+            int labelHeight = Px(14), comboHeight = Px(27);
             for (int i = 0; i < boxes.Length; i++)
             {
                 int left = pad + (i % columns) * (cell + columnGap);
-                int top = y + (i / columns) * (labelHeight + Px(4) + comboHeight + Px(10));
+                int top = y + (i / columns) * (labelHeight + Px(3) + comboHeight + Px(8));
                 ((Label)labels[i]).TextAlign = ContentAlignment.MiddleLeft;
                 int scopeWidth = 0;
                 if (i < workbenchScopeLabels.Count)
@@ -678,70 +798,146 @@ internal static partial class LiveHub
                     scope.SetBounds(left + cell - scopeWidth, top, scopeWidth, labelHeight);
                 }
                 labels[i].SetBounds(left, top, Math.Max(Px(40), cell - scopeWidth - Px(4)), labelHeight);
-                boxes[i].SetBounds(left, top + labelHeight + Px(4), cell, comboHeight);
+                boxes[i].SetBounds(left, top + labelHeight + Px(3), cell, comboHeight);
             }
             int rows = (boxes.Length + columns - 1) / columns;
-            y += rows * (labelHeight + Px(4) + comboHeight) + (rows - 1) * Px(10) + Px(8);
+            y += rows * (labelHeight + Px(3) + comboHeight) + (rows - 1) * Px(8) + Px(6);
             int hintWidth = Math.Max(Px(100), inner - Px(140));
-            int hintHeight = Math.Max(Px(20), Math.Min(Px(36), TextRenderer.MeasureText(workbenchLaunchHint.Text,
-                workbenchLaunchHint.Font, new Size(hintWidth, int.MaxValue), TextFormatFlags.WordBreak).Height + Px(2)));
+            int hintHeight = Math.Max(Px(18), Math.Min(Px(34), TextRenderer.MeasureText(workbenchLaunchHint.Text,
+                workbenchLaunchHint.Font, new Size(hintWidth, int.MaxValue), TextFormatFlags.WordBreak).Height + Px(1)));
             workbenchLaunchHint.SetBounds(pad, y, hintWidth, hintHeight);
-            int noteHeight = Math.Max(hintHeight, Px(26));
-            danmakuSettings.SetBounds(width - pad - Px(104), y + Math.Max(0, (noteHeight - Px(26)) / 2), Px(104), Px(26));
-            workbenchLaunch.SetBounds(0, 0, width, y + noteHeight + Px(13));
-            y = workbenchLaunch.Bottom + Px(14);
-            // Section head: 14px title, 32px outlined add/delete actions.
-            favLabel.SetBounds(0, y + Px(6), Math.Max(Px(80), width - Px(228)), Px(20));
-            addFav.SetBounds(width - Px(216), y, Px(104), Px(32));
-            delFav.SetBounds(width - Px(104), y, Px(104), Px(32));
-            y += Px(32) + Px(9);
-            favoritesBrowser.SetBounds(0, y, width, favoritesBrowser.CardsRowHeight);
-            y = favoritesBrowser.Bottom + Px(6);
-            workbenchFavoritesHint.SetBounds(0, y, width, Px(20));
-            int homeTop = y + Px(20) + Px(12);
-            workbenchHomeIcon.SetBounds(0, homeTop + Px(3), Px(16), Px(16));
-            workbenchHomeHeader.SetBounds(Px(22), homeTop, Math.Max(Px(120), width - Px(160)), Px(22));
-            workbenchHomeSessions.SetBounds(width - Px(104), homeTop - Px(2), Px(104), Px(26));
-            int homeCardTop = homeTop + Px(22) + Px(7);
-            workbenchHomeCard.SetBounds(0, homeCardTop, width, Px(66));
-            int cardPad = Px(13), avatarSize = Px(34);
-            workbenchHomeAvatar.SetBounds(cardPad, (Px(66) - avatarSize) / 2, avatarSize, avatarSize);
-            int textLeft = cardPad + avatarSize + Px(12);
-            int reopenWidth = Px(92), stateWidth = Px(150);
-            workbenchHomeTitle.SetBounds(textLeft, Px(10),
-                Math.Max(Px(80), width - textLeft - reopenWidth - stateWidth - Px(30)), Px(20));
-            workbenchHomeMeta.SetBounds(textLeft, Px(31), Math.Max(Px(80), width - textLeft - reopenWidth - stateWidth - Px(30)), Px(18));
-            workbenchHomeState.SetBounds(width - cardPad - reopenWidth - Px(10) - stateWidth, Px(22), stateWidth, Px(22));
-            workbenchHomeReopen.SetBounds(width - cardPad - reopenWidth, Px(18), reopenWidth, Px(30));
-            page.AutoScrollMinSize = new Size(0, workbenchHomeCard.Bottom + Px(2));
+            int noteHeight = Math.Max(hintHeight, Px(24));
+            danmakuSettings.SetBounds(width - pad - Px(104), y + Math.Max(0, (noteHeight - Px(24)) / 2), Px(104), Px(24));
+            int launchBottom = y + noteHeight + Px(8);
+            workbenchLaunch.SetBounds(0, 0, width, launchBottom);
+            y = launchBottom + Px(12);
+            // 收藏区标题 + 增删按钮（按钮 32→30，行距收紧）。
+            favLabel.SetBounds(0, y + Px(5), Math.Max(Px(80), width - Px(228)), Px(20));
+            addFav.SetBounds(width - Px(216), y, Px(104), Px(30));
+            delFav.SetBounds(width - Px(104), y, Px(104), Px(30));
+            y += Px(30) + Px(6);
+            // 宽窗口把「正在观看 / 最近打开」放到收藏卡右侧：横向用满宽度、纵向省掉一整段
+            // （用户原话「上下太长、左右宽度不够」）。窄窗口保持原来的上下堆叠。
+            bool wideTail = inner >= Px(960);
+            int homeWidth = wideTail ? Math.Min(Px(320), Math.Max(Px(280), inner / 4)) : width;
+            int browserWidth = wideTail ? width - homeWidth - Px(16) : width;
+            int hintLine = Px(18);
+            int browserHeight = favoritesBrowser.CardsRowHeight;
+            int availableHeight = pageHeight - y - Px(4) - hintLine - Px(4) - (wideTail ? 0 : Px(200));
+            if (availableHeight >= favoritesBrowser.CardsTwoRowsHeight)
+                browserHeight = availableHeight;
+            favoritesBrowser.SetBounds(0, y, browserWidth, browserHeight);
+            workbenchFavoritesHint.SetBounds(0, favoritesBrowser.Bottom + Px(4), browserWidth, hintLine);
+            int homeBottom;
+            if (wideTail) homeBottom = LayoutWorkbenchHomeBand(width - homeWidth, y, homeWidth, browserHeight);
+            else homeBottom = LayoutWorkbenchHomeBand(0, workbenchFavoritesHint.Bottom + Px(10), width, Px(190));
+            page.AutoScrollMinSize = new Size(0, Math.Max(workbenchFavoritesHint.Bottom, homeBottom) + Px(4));
+        }
+
+        /// <summary>「正在观看 / 最近打开」小节：标题行 + 会话卡片；返回卡片底边。窄宽度时卡片内部改成两行排布。</summary>
+        private int LayoutWorkbenchHomeBand(int left, int top, int width, int height)
+        {
+            int sessionsWidth = Math.Min(Px(100), Math.Max(Px(76), width / 3));
+            workbenchHomeIcon.SetBounds(left, top + Px(3), Px(16), Px(16));
+            workbenchHomeHeader.SetBounds(left + Px(22), top, Math.Max(Px(80), width - sessionsWidth - Px(26)), Px(20));
+            workbenchHomeSessions.SetBounds(left + width - sessionsWidth, top - Px(2), sessionsWidth, Px(24));
+            int cardTop = top + Px(20) + Px(5);
+            bool compactCard = width < Px(420);
+            int cardHeight = compactCard ? Px(94) : Px(64);
+            workbenchHomeList.SetBounds(left, cardTop, width, Math.Max(cardHeight, height - Px(25)));
+            int visibleCount = 0;
+            foreach (HomeSessionRow row in workbenchHomeRows) if (row.Active) visibleCount++;
+            int contentHeight = visibleCount * (cardHeight + Px(8)) - Px(8);
+            workbenchHomeList.AutoScrollMinSize = new Size(0, contentHeight);
+            int rowWidth = workbenchHomeList.ClientSize.Width;
+            int rowIndex = 0;
+            foreach (HomeSessionRow row in workbenchHomeRows)
+            {
+                if (!row.Active) continue;
+                width = rowWidth;
+                row.Card.SetBounds(workbenchHomeList.AutoScrollPosition.X,
+                    workbenchHomeList.AutoScrollPosition.Y + rowIndex++ * (cardHeight + Px(8)), width, cardHeight);
+                int cardPad = Px(12), avatarSize = Px(32);
+                int textLeft = cardPad + avatarSize + Px(10);
+                int titleHeight = Px(19), metaHeight = Px(17);
+                int reopenWidth = compactCard ? Math.Min(Px(84), width / 3) : Math.Min(Px(92), width / 4);
+                if (compactCard)
+                {
+                    row.Avatar.SetBounds(cardPad, Px(8), avatarSize, avatarSize);
+                    row.Title.SetBounds(textLeft, Px(7), Math.Max(Px(60), width - textLeft - Px(10)), titleHeight);
+                    row.Meta.SetBounds(textLeft, Px(26), Math.Max(Px(60), width - textLeft - Px(10)), metaHeight);
+                    row.State.SetBounds(cardPad, Px(46), Math.Max(Px(70), width - cardPad * 2), Px(18));
+                    row.Reopen.SetBounds(width - cardPad - reopenWidth, Px(66), reopenWidth, Px(24));
+                }
+                else
+                {
+                    int stateWidth = Math.Min(Px(150), Math.Max(Px(96), width / 4));
+                    int textWidth = Math.Max(Px(80), width - textLeft - reopenWidth - stateWidth - Px(26));
+                    row.Avatar.SetBounds(cardPad, (cardHeight - avatarSize) / 2, avatarSize, avatarSize);
+                    row.Title.SetBounds(textLeft, Px(9), textWidth, titleHeight);
+                    row.Meta.SetBounds(textLeft, Px(29), textWidth, metaHeight);
+                    row.State.SetBounds(width - cardPad - reopenWidth - Px(10) - stateWidth, Px(21), stateWidth, Px(20));
+                    row.Reopen.SetBounds(width - cardPad - reopenWidth, Px(17), reopenWidth, Px(28));
+                }
+            }
+            return workbenchHomeList.Bottom;
         }
 
         private void LayoutWorkbenchRecent()
         {
-            Panel page = workbenchPages["recent"]; int width = page.ClientSize.Width, x = Px(3);
-            foreach (string p in platforms) { recentPlatformButtons[p].SetBounds(x, Px(3), Px(72), Px(34)); x += Px(80); }
-            recentPlatformStrip.SetBounds(0, 0, Px(318), Px(40));
-            int y = Px(48);
-            recentLabel.SetBounds(0, y, width, Px(26)); y += Px(33);
+            Panel page = workbenchPages["recent"];
+            int width = Math.Max(Px(240), page.ClientSize.Width);
+            int height = Math.Max(Px(140), page.ClientSize.Height);
+            int y = Px(6);
+            int tabGap = Px(8), tabWidth = Math.Min(Px(76), Math.Max(Px(58), width / 6));
+            int tabsWidth = platforms.Length * tabWidth + (platforms.Length - 1) * tabGap;
             int actionWidth = Math.Max(Px(120), Math.Min(Px(210), (width - Px(10)) / 2));
-            recentOpenMpv.SetBounds(0, y, actionWidth, Px(35)); recentOpenPot.SetBounds(actionWidth + Px(10), y, actionWidth, Px(35));
-            y += Px(46);
-            workbenchRecentHint.SetBounds(0, y, width, Px(24)); y += Px(32);
+            bool singleRow = width >= tabsWidth + Px(24) + actionWidth * 2 + Px(10);
+            int x = 0;
+            foreach (string p in platforms) { recentPlatformButtons[p].SetBounds(x, y, tabWidth, Px(32)); x += tabWidth + tabGap; }
+            recentPlatformStrip.SetBounds(-Px(2), y - Px(2), tabsWidth + Px(4), Px(36));
+            if (singleRow)
+            {
+                recentOpenMpv.SetBounds(width - actionWidth * 2 - Px(10), y, actionWidth, Px(32));
+                recentOpenPot.SetBounds(width - actionWidth, y, actionWidth, Px(32));
+                y += Px(32) + Px(8);
+            }
+            else
+            {
+                y += Px(32) + Px(8);
+                recentOpenMpv.SetBounds(0, y, actionWidth, Px(32));
+                recentOpenPot.SetBounds(actionWidth + Px(10), y, actionWidth, Px(32));
+                y += Px(32) + Px(8);
+            }
+            // 标题行与说明并排，省掉一整行；窄窗自动省略后半句（AutoEllipsis）。
+            int labelWidth = Math.Min(Px(430), Math.Max(Px(160), width / 2));
+            recentLabel.SetBounds(0, y, labelWidth, Px(24));
+            workbenchRecentHint.SetBounds(labelWidth + Px(12), y, Math.Max(Px(80), width - labelWidth - Px(12)), Px(24));
+            y += Px(24) + Px(8);
             // The record list owns its own scrollbar; the page itself must not
             // also grow, otherwise wheel input at the list end scrolls the whole
             // page down into empty space.
             page.AutoScroll = false;
             page.AutoScrollMinSize = Size.Empty;
-            recentBrowser.SetBounds(0, y, width, Math.Max(Px(150), page.ClientSize.Height - y - Px(4)));
+            recentBrowser.SetBounds(0, y, width, Math.Max(Px(150), height - y - Px(2)));
         }
 
         private void LayoutWorkbenchSessions()
         {
-            Panel page = workbenchPages["sessions"]; int width = page.ClientSize.Width;
-            sessionsLabel.SetBounds(0, 0, Math.Max(Px(90), width - Px(200)), Px(34));
-            reopen.SetBounds(width - Px(190), 0, Px(190), Px(34));
-            workbenchSessionHint.SetBounds(0, Px(43), width, Px(32));
-            sessionsList.SetBounds(0, Px(85), width, Math.Max(Px(150), page.ClientSize.Height - Px(90)));
+            Panel page = workbenchPages["sessions"];
+            int width = Math.Max(Px(240), page.ClientSize.Width);
+            int height = Math.Max(Px(140), page.ClientSize.Height);
+            int y = Px(2);
+            int reopenWidth = Math.Min(Px(190), Math.Max(Px(130), width / 4));
+            sessionsLabel.SetBounds(0, y, Math.Max(Px(90), width - reopenWidth - Px(12)), Px(30));
+            reopen.SetBounds(width - reopenWidth, y, reopenWidth, Px(30));
+            y += Px(30) + Px(4);
+            int hintWidth = Math.Max(Px(80), width - Px(12));
+            int hintHeight = Math.Max(Px(18), Math.Min(Px(44), TextRenderer.MeasureText(workbenchSessionHint.Text,
+                workbenchSessionHint.Font, new Size(hintWidth, int.MaxValue), TextFormatFlags.WordBreak).Height + Px(2)));
+            workbenchSessionHint.SetBounds(0, y, hintWidth, hintHeight);
+            y += hintHeight + Px(8);
+            sessionsList.SetBounds(0, y, width, Math.Max(Px(150), height - y - Px(2)));
             if (sessionsList.Width > 2 && sessionsList.Height > 2)
             {
                 using (System.Drawing.Drawing2D.GraphicsPath path = ModernTheme.RoundRect(
@@ -763,27 +959,55 @@ internal static partial class LiveHub
 
         private void LayoutWorkbenchPlayers()
         {
-            Panel page = workbenchPages["players"]; int width = page.ClientSize.Width, pad = Px(16), inner = width - pad * 2;
-            playerLabel.SetBounds(pad, Px(14), inner, Px(28));
-            playerBox.SetBounds(pad, Px(55), Px(120), Px(30));
-            pickPlayer.SetBounds(playerBox.Right + Px(12), Px(53), Px(140), Px(34));
-            int pathHeight = Math.Max(Px(44), TextRenderer.MeasureText(playerHint.Text, playerHint.Font,
+            Panel page = workbenchPages["players"];
+            int width = Math.Max(Px(240), page.ClientSize.Width);
+            int pad = Px(16);
+            int inner = Math.Max(Px(200), width - pad * 2);
+            playerLabel.SetBounds(pad, Px(12), inner, Px(26));
+            playerBox.SetBounds(pad, Px(46), Math.Min(Px(120), Math.Max(Px(90), inner / 3)), Px(28));
+            pickPlayer.SetBounds(playerBox.Right + Px(10), Px(44), Math.Min(Px(140), Math.Max(Px(90), inner / 3)), Px(32));
+            int pathHeight = Math.Max(Px(40), TextRenderer.MeasureText(playerHint.Text, playerHint.Font,
                 new Size(Math.Max(Px(100), inner), int.MaxValue), TextFormatFlags.WordBreak).Height + Px(8));
-            pathHeight = Math.Min(Px(96), pathHeight);
-            playerHint.SetBounds(pad, Px(99), inner, pathHeight);
-            workbenchPlayerHelp.SetBounds(pad, playerHint.Bottom + Px(10), inner, Px(42));
-            workbenchPlayerCard.SetBounds(0, 0, width, workbenchPlayerHelp.Bottom + Px(16));
-            int columns = inner >= Px(600) ? 3 : 2, gap = Px(18), cell = (inner - gap * (columns - 1)) / columns;
+            pathHeight = Math.Min(Px(88), pathHeight);
+            playerHint.SetBounds(pad, Px(84), inner, pathHeight);
+            int helpHeight = Math.Max(Px(26), Math.Min(Px(46), TextRenderer.MeasureText(workbenchPlayerHelp.Text,
+                workbenchPlayerHelp.Font, new Size(Math.Max(Px(100), inner), int.MaxValue), TextFormatFlags.WordBreak).Height + Px(4)));
+            workbenchPlayerHelp.SetBounds(pad, playerHint.Bottom + Px(8), inner, helpHeight);
+            workbenchPlayerCard.SetBounds(0, 0, width, workbenchPlayerHelp.Bottom + Px(12));
+            int columns = inner >= Px(760) ? 4 : inner >= Px(600) ? 3 : 2;
+            int gap = Px(16), cell = (inner - gap * (columns - 1)) / columns;
             ComboBox[] boxes = { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance };
+            int prefTop = workbenchPlayerCard.Bottom + Px(14);
+            int prefHeight = Px(16) + ((boxes.Length + columns - 1) / columns) * Px(76);
+            workbenchPlayerPreferences.SetBounds(0, prefTop, width, prefHeight);
             for (int i = 0; i < boxes.Length; i++)
             {
-                int left = pad + (i % columns) * (cell + gap), top = Px(18) + (i / columns) * Px(80);
-                workbenchPlayerCaptions[i].SetBounds(left, top, cell, Px(24));
-                boxes[i].SetBounds(left, top + Px(30), cell, Px(31));
+                // 说明和下拉都是 workbenchPlayerPreferences 的子控件，坐标相对它（不是页面）。
+                int left = pad + (i % columns) * (cell + gap);
+                int top = Px(12) + (i / columns) * Px(76);
+                workbenchPlayerCaptions[i].SetBounds(left, top, cell, Px(22));
+                boxes[i].SetBounds(left, top + Px(26), cell, Px(30));
             }
-            workbenchPlayerPreferences.SetBounds(0, workbenchPlayerCard.Bottom + Px(18), width,
-                Px(20) + ((boxes.Length + columns - 1) / columns) * Px(80));
-            page.AutoScrollMinSize = new Size(0, workbenchPlayerPreferences.Bottom + Px(10));
+            page.AutoScrollMinSize = new Size(0, workbenchPlayerPreferences.Bottom + Px(8));
         }
+    }
+
+    /// <summary>
+    /// 工作台默认窗口尺寸（96 DPI 逻辑单位）的纯函数：按可用工作区取「宽扁」，
+    /// 左右各留 20、上下各留 16，宽上限 1400、高上限 880，且高不超过宽的 72%。
+    /// 这样 1280×752 的逻辑工作区 → 1240×720（1.72），不会再出现 1024×866（1.18）
+    /// 那种底部压到任务栏下面的竖长窗口。真实启动时由 ApplyWorkbenchDefaultBounds
+    /// 乘 RenderScale 落成物理尺寸；测试用合成工作区直接断言规则。
+    /// </summary>
+    internal static Size WorkbenchDesignSize(int workWidth, int workHeight)
+    {
+        const int minWidth = 760, minHeight = 520, maxWidth = 1400, maxHeight = 880;
+        int width = Math.Min(maxWidth, workWidth - 40);
+        int height = Math.Min(maxHeight, workHeight - 32);
+        if (width < minWidth) width = Math.Min(workWidth, minWidth);
+        if (height < minHeight) height = Math.Min(workHeight, minHeight);
+        int ratioCap = width * 72 / 100;
+        if (height > ratioCap) height = Math.Max(Math.Min(workHeight, minHeight), ratioCap);
+        return new Size(Math.Max(320, width), Math.Max(240, height));
     }
 }

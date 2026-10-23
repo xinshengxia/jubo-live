@@ -1369,6 +1369,7 @@ internal static partial class LiveHub
                         var session = new PlaybackSession { Target = target, Player = player, Process = process,
                             LastPoll = DateTime.MinValue };
                         sessions.Insert(0, session);
+                        PruneEndedDuplicateSessions(sessions);
                         if (sessions.Count > 20)
                         {
                             PlaybackSession oldest = sessions[sessions.Count - 1];
@@ -1406,6 +1407,36 @@ internal static partial class LiveHub
             Build();
             Application.Run(form);
         }
+    }
+
+    /// <summary>
+    /// 「正在观看 / 最近打开」每个房间只留最新一行：新会话插到最前（0 = 最新）后，
+    /// 把更早的**已结束**同房间会话移除 —— 原来同一房间先后用 mpv / PotPlayer 打开
+    /// 会留下两行旧记录。
+    /// 旧播放器仍在运行的会话保留（确实同时开了两个播放器）；历史仍完整留在「最近播放」里。
+    /// 纯函数：离线回归用合成会话直接断言顺序与清理结果。
+    /// </summary>
+    private static int PruneEndedDuplicateSessions(List<PlaybackSession> sessions)
+    {
+        if (sessions == null || sessions.Count < 2) return 0;
+        int removed = 0;
+        HashSet<string> seenRooms = new HashSet<string>();
+        for (int index = 0; index < sessions.Count; index++)
+        {
+            PlaybackSession session = sessions[index];
+            if (session == null || session.Target == null) continue;
+            string key = session.Target.Platform + ":" + session.Target.Room;
+            if (seenRooms.Contains(key))
+            {
+                if (!session.Ended) continue;   // 两个播放器同时在跑：两行都是真的
+                sessions.RemoveAt(index--);
+                if (session.Process != null) session.Process.Dispose();
+                removed++;
+                continue;
+            }
+            seenRooms.Add(key);
+        }
+        return removed;
     }
 
     /// 把窗体控件树导成 JSON（`--ui-probe` 用）。
