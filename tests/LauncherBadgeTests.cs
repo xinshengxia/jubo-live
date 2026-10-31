@@ -56,6 +56,21 @@ internal static partial class HardeningTests
             batch = (List<string>)CallStatic(t, "Pick", keys, pending, times, now, 4);
             Check(batch.Contains("douyin:room0"), "开播标记：3 分钟前查过的可以重查");
 
+            // 查询失败（Unknown）只压 20 秒：平台限流过去后要能尽快自愈
+            Dictionary<string, DateTime> retryTimes = new Dictionary<string, DateTime>();
+            List<string> one = new List<string> { "douyin:room0" };
+            CallStatic(t, "RecordResult", retryTimes, "douyin:room0", now, true);
+            batch = (List<string>)CallStatic(t, "Pick", one, new HashSet<string>(), retryTimes, now.AddSeconds(19), 4);
+            Check(batch.Count == 0, "开播标记：Unknown 结果 19 秒内不重查");
+            batch = (List<string>)CallStatic(t, "Pick", one, new HashSet<string>(), retryTimes, now.AddSeconds(21), 4);
+            Check(batch.Count == 1, "开播标记：Unknown 结果约 20 秒后重查（限流自愈）");
+            retryTimes.Clear();
+            CallStatic(t, "RecordResult", retryTimes, "douyin:room0", now, false);
+            batch = (List<string>)CallStatic(t, "Pick", one, new HashSet<string>(), retryTimes, now.AddMinutes(1), 4);
+            Check(batch.Count == 0, "开播标记：成功结果仍按 2 分钟新鲜度");
+            batch = (List<string>)CallStatic(t, "Pick", one, new HashSet<string>(), retryTimes, now.AddMinutes(3), 4);
+            Check(batch.Count == 1, "开播标记：成功结果 3 分钟后可重查");
+
             // 重复键不能占两个名额
             List<string> dup = new List<string> { "a:1", "a:1", "a:2" };
             batch = (List<string>)CallStatic(t, "Pick", dup, new HashSet<string>(),

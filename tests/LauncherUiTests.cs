@@ -91,7 +91,7 @@ internal static partial class HardeningTests
             Check(controls.Count >= 25, "启动器界面：真实控件树规模正常，非空转");
             string[] required = {
                 "B站", "虎牙", "斗鱼", "抖音", "画质：", "mpv 缓冲：", "弹幕：", "SC：",
-                "取消启动", "最近播放", "收藏", "正在观看", "用 mpv 打开", "用 PotPlayer 打开",
+                "取消启动", "最近播放", "收藏", "导入收藏", "导出收藏", "正在观看", "用 mpv 打开", "用 PotPlayer 打开",
                 "重新打开选中房间", "弹幕设置…", "查找主播", "格式说明", "本地数据", "播放器路径", "选择程序…"
             };
             var missing = new List<string>();

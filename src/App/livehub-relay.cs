@@ -467,6 +467,7 @@ internal static partial class LiveHub
         // 以真正转发的音视频 tag 为进展；只有 FLV 头、元数据或重叠片段不能冒充恢复。
         Stopwatch mediaProgress = Stopwatch.StartNew();
         int stalled = 0;                // 连续「一个字节都没转发出去」的上游尝试次数
+        int resolveFailures = 0;        // 连续「解析不到上游地址」次数：用于逐步放缓重试
         // 走到循环外时的收尾状态：null = 什么都不写（下播等待超时那条路，保留已写好的 OFFLINE）
         string finalState = "RECONNECTING";
         while (reconnects < 500)
@@ -513,9 +514,13 @@ internal static partial class LiveHub
                 }
                 RelayLog("上游地址解析失败，稍后重试");
                 reconnects++;
-                Thread.Sleep(2000);
+                // 解析失败多半是平台限流/风控：固定 2 秒重试只会把限制拖长。逐次放缓（2/4/8/16 秒），
+                // 解析成功立刻复位；抖音侧另有自己的冷却，这里再兜一层。
+                resolveFailures = Math.Min(resolveFailures + 1, 4);
+                Thread.Sleep(Math.Min(16000, 2000 << (resolveFailures - 1)));
                 continue;
             }
+            resolveFailures = 0;
             // 「ONLINE」只表示**真的在转发**（下面拿到上游数据后才发布）：
             // 解析成功、连上但一个字节都取不到（2026-10-16 虎牙下播后的 403/挂起）不算在线，
             // 否则状态文件会一直骗播放器和界面说「正常」。

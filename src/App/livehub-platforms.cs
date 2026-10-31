@@ -356,7 +356,7 @@ internal static partial class LiveHub
         {
             note = null;
             DouyinRoom info = FetchDouyinRoom(room);
-            if (info == null) { note = "抓不到房间页（网络或页面改版）"; return RoomStateKind.Unknown; }
+            if (info == null) { note = DouyinFailureNote(); return RoomStateKind.Unknown; }
             if (info.Status == 2) return RoomStateKind.Live;
             if (info.Status == 4) return RoomStateKind.Offline;   // 4=未开播
             // 非 2/4 一律当「查不到」：解析器在字段缺失时把 Status 置 0，若在这里 return false，

@@ -182,6 +182,37 @@ internal static partial class LiveHub
         return null;
     }
 
+    // 抖音在风控/限流时会返回「空壳页」：RSC 框架和 roomStore 都在，但 roomStore.roomInfo 里没有 room
+    // （和「房间不存在」页同模板）。ParseDouyinRoom 对这两种情况都只能返回 null ——
+    // 这里单独判一次「是不是空壳页」，好把「临时限流」和「页面改版」区分开（2026-10-26 新增）。
+    internal static bool DouyinPageMissingRoom(string html)
+    {
+        var serializer = new JavaScriptSerializer();
+        foreach (string literal in ExtractPacePayloads(html))
+        {
+            string payload;
+            try { payload = serializer.Deserialize(literal, typeof(string)) as string; }
+            catch (Exception) { continue; }
+            if (payload == null || payload.IndexOf("roomStore", StringComparison.Ordinal) < 0) continue;
+            string json = Regex.Replace(payload, @"^\w+:", "");
+            object parsed;
+            try { parsed = serializer.DeserializeObject(json); }
+            catch (Exception) { continue; }
+            var single = parsed as Dictionary<string, object>;
+            object[] items = single != null ? new object[] { single } : AsArray(parsed);
+            if (items == null) continue;
+            foreach (object item in items)
+            {
+                var entry = item as Dictionary<string, object>;
+                if (entry == null) continue;
+                var roomInfo = NestedDict(NestedDict(NestedDict(entry, "state"), "roomStore"), "roomInfo");
+                if (roomInfo == null) continue;
+                if (NestedDict(roomInfo, "room") == null) return true;
+            }
+        }
+        return false;
+    }
+
     // 画质优先级：FULL_HD1（原画）→ HD1 → SD1 → SD2
     private static string PickDouyinFlvUrl(Dictionary<string, string> urls)
     {

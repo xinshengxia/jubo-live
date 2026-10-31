@@ -16,6 +16,8 @@ internal static partial class LiveHub
         private readonly Dictionary<string, ModernButton> recentPlatformButtons = new Dictionary<string, ModernButton>();
         private readonly List<Font> workbenchFonts = new List<Font>();
         private bool workbenchReady, workbenchLayoutBusy, syncingWorkbench;
+        // 导入/导出进行中：两个批量按钮防重入，完成后由 SyncWorkbenchActions 恢复。
+        private bool favoritesTransferBusy;
         internal string workbenchPage = "favorites";
         private string workbenchIdleHint;
         private WorkbenchPanel workbenchContent, workbenchLaunch, workbenchFooter;
@@ -214,6 +216,8 @@ internal static partial class LiveHub
                 WorkbenchFont(cancelLaunch, 13, FontStyle.Regular);
                 WorkbenchFont(addFav, 12, FontStyle.Regular);
                 WorkbenchFont(delFav, 12, FontStyle.Regular);
+                WorkbenchFont(importFav, 12, FontStyle.Regular);
+                WorkbenchFont(exportFav, 12, FontStyle.Regular);
                 WorkbenchFont(danmakuSettings, 11, FontStyle.Regular);
                 WorkbenchFont(workbenchStatusCancel, 12, FontStyle.Regular);
                 WorkbenchFont(qualityBox, 12, FontStyle.Regular);
@@ -281,7 +285,11 @@ internal static partial class LiveHub
             };
             favoritesBrowser.DeleteRequested += delegate { delFav.PerformClick(); };
             page.Controls.Add(favoritesBrowser);
+            // 批量导入/导出与加入/删除同排；文案与按钮状态随收藏数量在布局/同步里维护。
+            importFav.Name = "importFav"; importFav.Text = "导入收藏";
+            exportFav.Name = "exportFav"; exportFav.Text = "导出收藏";
             favLabel.Parent = page; addFav.Parent = page; delFav.Parent = page;
+            importFav.Parent = page; exportFav.Parent = page;
             // Draft section head: 14px semibold ink title, quiet secondary count.
             ModernLabel favoritesHeading = favLabel as ModernLabel;
             if (favoritesHeading != null) favoritesHeading.Role = ModernLabel.RoleKind.Normal;
@@ -536,6 +544,9 @@ internal static partial class LiveHub
             workbenchStatusCancel.Enabled = cancelLaunch.Enabled;
             recentOpenMpv.Enabled = recentOpenPot.Enabled = !launching && recentList.SelectedIndex >= 0;
             favoritesBrowser.Enabled = recentBrowser.Enabled = !launching;
+            // 批量导入/导出：进行中两个按钮都禁用（防重入）；收藏为空时导出禁用。
+            importFav.Enabled = !favoritesTransferBusy;
+            exportFav.Enabled = !favoritesTransferBusy && favorites.Count > 0;
             foreach (HomeSessionRow row in workbenchHomeRows) row.Reopen.Enabled = !launching && row.Target != null;
             foreach (KeyValuePair<string, ModernButton> pair in recentPlatformButtons) pair.Value.Selected = pair.Key == platform;
         }
@@ -854,10 +865,19 @@ internal static partial class LiveHub
             int launchBottom = y + noteHeight + Px(8);
             workbenchLaunch.SetBounds(0, 0, width, launchBottom);
             y = launchBottom + Px(12);
-            // 收藏区标题 + 增删按钮（按钮 32→30，行距收紧）。
-            favLabel.SetBounds(0, y + Px(5), Math.Max(Px(80), width - Px(228)), Px(20));
-            addFav.SetBounds(width - Px(216), y, Px(104), Px(30));
-            delFav.SetBounds(width - Px(104), y, Px(104), Px(30));
+            // 收藏区标题 + 四个操作按钮：导入 / 导出 / 加入 / 删除（右对齐）。
+            // 窄窗口（页面宽 < 760）按 Rust 版收窄按钮并换短文案，保证不重叠、不被裁切。
+            bool tight = width < Px(760);
+            int actionWidth = tight ? Px(80) : Px(104);
+            int actionGap = Px(6);
+            int actionSpan = actionWidth * 4 + actionGap * 3;
+            importFav.Text = tight ? "导入" : "导入收藏";
+            exportFav.Text = tight ? "导出" : "导出收藏";
+            favLabel.SetBounds(0, y + Px(5), Math.Max(Px(80), width - actionSpan - Px(10)), Px(20));
+            importFav.SetBounds(width - actionSpan, y, actionWidth, Px(30));
+            exportFav.SetBounds(importFav.Right + actionGap, y, actionWidth, Px(30));
+            addFav.SetBounds(exportFav.Right + actionGap, y, actionWidth, Px(30));
+            delFav.SetBounds(addFav.Right + actionGap, y, actionWidth, Px(30));
             y += Px(30) + Px(6);
             // 宽窗口把「正在观看 / 最近打开」放到收藏卡右侧：横向用满宽度、纵向省掉一整段
             // （用户原话「上下太长、左右宽度不够」）。窄窗口保持原来的上下堆叠。

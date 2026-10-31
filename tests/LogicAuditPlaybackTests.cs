@@ -65,7 +65,7 @@ internal static partial class HardeningTests
     private static void TestLogicDouyinUnknownState()
     {
         string dir = ReviewDirectory();
-        string[] fields = { "RuntimeDir", "ScopedGetTransportForTest", "DouyinIpv4Cache", "DouyinIpv4CacheAt", "DouyinNeedsProxy", "DouyinCaptchaBlocked", "RelayQuality" };
+        string[] fields = { "RuntimeDir", "ScopedGetTransportForTest", "DouyinIpv4Cache", "DouyinIpv4CacheAt", "DouyinNeedsProxy", "DouyinCaptchaBlocked", "DouyinRoomCacheSeconds", "RelayQuality" };
         var saved = new Dictionary<string, object>();
         foreach (string field in fields) saved[field] = hub.GetField(field, ReviewStatic).GetValue(null);
         const string flv = "\"FULL_HD1\":\"https://pull-flv.example/synthetic.flv\"";
@@ -79,6 +79,7 @@ internal static partial class HardeningTests
             hub.GetField("DouyinIpv4CacheAt", ReviewStatic).SetValue(null, DateTime.UtcNow);
             hub.GetField("DouyinNeedsProxy", ReviewStatic).SetValue(null, false);
             hub.GetField("DouyinCaptchaBlocked", ReviewStatic).SetValue(null, false);
+            hub.GetField("DouyinRoomCacheSeconds", ReviewStatic).SetValue(null, 0);   // 同一房间连续换合成状态，缓存必须关掉
             hub.GetField("RelayQuality", ReviewStatic).SetValue(null, "best");
             hub.GetField("ScopedGetTransportForTest", ReviewStatic).SetValue(null,
                 new Func<Uri, Action<HttpWebRequest>, HttpWebResponse>(delegate(Uri logical, Action<HttpWebRequest> configure)

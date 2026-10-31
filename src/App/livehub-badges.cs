@@ -29,6 +29,18 @@ internal static class BadgeScheduler
     /// <summary>同一个房间多久之后允许重查（原来写死在调用处的 2 分钟）。</summary>
     internal const int FreshMinutes = 2;
 
+    /// <summary>查询失败（Unknown）后多久允许重查 —— 比 FreshMinutes 短得多，
+    /// 平台限流/风控过去后能尽快自愈，不用让用户盯着「待查询」等 2 分钟。</summary>
+    internal const int UnknownRetrySeconds = 20;
+
+    /// <summary>把一次查询结果写进 times（Pick 的输入）。Unknown 把「上次时间」往前记，
+    /// 让它 UnknownRetrySeconds 后重新满足 FreshMinutes，而不是死等 2 分钟。</summary>
+    internal static void RecordResult(IDictionary<string, DateTime> times, string key, DateTime now, bool unknown)
+    {
+        if (times == null || string.IsNullOrEmpty(key)) return;
+        times[key] = unknown ? now.AddMinutes(-FreshMinutes).AddSeconds(UnknownRetrySeconds) : now;
+    }
+
     /// <summary>
     /// 从 <paramref name="orderedKeys"/>（收藏在前、最近播放在后）里挑出**这一轮该发出去**的键。
     ///

@@ -146,6 +146,9 @@ internal static partial class LiveHub
         internal ModernListBox favList = new ModernListBox();
         internal Button addFav = new ModernButton();
         internal Button delFav = new ModernButton();
+        // 收藏页批量导出/导入（1.1.4）：文案与位置在 BuildWorkbenchFavorites/LayoutWorkbenchFavorites 里维护。
+        internal Button importFav = new ModernButton();
+        internal Button exportFav = new ModernButton();
         internal Button lookup = new ModernButton();
         internal Button localData = new ModernButton();
         internal Dictionary<string, Label> loginLabels = new Dictionary<string, Label>();
@@ -888,6 +891,9 @@ internal static partial class LiveHub
             }
         };
 
+        importFav.Click += delegate { ImportFavoritesFromFile(); };
+        exportFav.Click += delegate { ExportFavoritesToFile(); };
+
         form.FormClosing += delegate
         {
             watchTimer.Stop();
@@ -897,6 +903,105 @@ internal static partial class LiveHub
 
         form.AcceptButton = openMpv;
         form.Shown += delegate { input.Focus(); if (Application.MessageLoop) foreach (string p in platforms) LoginHealth.RequestCheck(p, false); };
+        }
+
+        // ---------------- 收藏批量导入 / 导出（1.1.4） ----------------
+
+        private const string FavoritesJsonFilter = "收藏 JSON (*.json)|*.json|所有文件 (*.*)|*.*";
+
+        /// <summary>收藏页「导入收藏」：选 JSON → 解析合并 → 原子写回 → 刷新列表与状态行。</summary>
+        private void ImportFavoritesFromFile()
+        {
+            if (favoritesTransferBusy) return;
+            favoritesTransferBusy = true;
+            SyncWorkbenchActions();
+            try
+            {
+                string path;
+                using (OpenFileDialog picker = new OpenFileDialog())
+                {
+                    picker.Title = "导入收藏";
+                    picker.Filter = FavoritesJsonFilter;
+                    picker.CheckFileExists = true;
+                    picker.RestoreDirectory = true;
+                    if (picker.ShowDialog(form) != DialogResult.OK)
+                    {
+                        status.ForeColor = ModernTheme.TextSecondary;
+                        status.Text = "已取消导入。";
+                        return;
+                    }
+                    path = picker.FileName;
+                }
+                FavoritesImportResult result;
+                try { result = ImportFavoritesFile(path, favorites); }
+                catch (Exception ex) { FavoritesTransferFailed("导入收藏", ex); return; }
+                List<KeyValuePair<string, string>> next = new List<KeyValuePair<string, string>>(result.Favorites);
+                try { SaveFavorites(next); }
+                catch (Exception ex) { FavoritesTransferFailed("导入收藏", ex); return; }
+                favorites.Clear(); favorites.AddRange(next);
+                RefreshLists();
+                status.ForeColor = ModernTheme.Success;
+                status.Text = "已导入 " + (result.Added + result.Updated) + " 条收藏（新增 " + result.Added
+                    + "，更新 " + result.Updated + "，跳过 " + result.Skipped + "）。";
+            }
+            finally
+            {
+                favoritesTransferBusy = false;
+                SyncWorkbenchActions();
+            }
+        }
+
+        /// <summary>收藏页「导出收藏」：序列化全部收藏 → 选保存路径 → 写 UTF-8（无 BOM）→ 状态行。</summary>
+        private void ExportFavoritesToFile()
+        {
+            if (favoritesTransferBusy) return;
+            if (favorites.Count == 0)
+            {
+                status.ForeColor = ModernTheme.Danger;
+                status.Text = "没有可导出的收藏。";
+                return;
+            }
+            string json;
+            try { json = ExportFavoritesJson(favorites); }
+            catch (Exception ex) { FavoritesTransferFailed("导出收藏", ex); return; }
+            favoritesTransferBusy = true;
+            SyncWorkbenchActions();
+            try
+            {
+                using (SaveFileDialog dialog = new SaveFileDialog())
+                {
+                    dialog.Title = "导出收藏";
+                    dialog.Filter = FavoritesJsonFilter;
+                    dialog.FileName = FavoritesExportFileName(DateTime.Now);
+                    dialog.DefaultExt = "json";
+                    dialog.AddExtension = true;
+                    dialog.OverwritePrompt = true;
+                    dialog.RestoreDirectory = true;
+                    if (dialog.ShowDialog(form) != DialogResult.OK)
+                    {
+                        status.ForeColor = ModernTheme.TextSecondary;
+                        status.Text = "已取消导出。";
+                        return;
+                    }
+                    try { File.WriteAllText(dialog.FileName, json, new UTF8Encoding(false)); }
+                    catch (Exception ex) { FavoritesTransferFailed("导出收藏", ex); return; }
+                    status.ForeColor = ModernTheme.Success;
+                    status.Text = "已导出 " + favorites.Count + " 条收藏到 " + dialog.FileName + "。";
+                }
+            }
+            finally
+            {
+                favoritesTransferBusy = false;
+                SyncWorkbenchActions();
+            }
+        }
+
+        /// <summary>批量导入/导出失败：状态行红字 + 弹窗（取消走上面的「已取消」分支，不算失败）。</summary>
+        private void FavoritesTransferFailed(string action, Exception error)
+        {
+            status.ForeColor = ModernTheme.Danger;
+            status.Text = action + "失败：" + error.Message;
+            MessageBox.Show(action + "失败：\n" + error.Message, "看直播", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         private void RefreshLoginSummaries()
@@ -1113,7 +1218,7 @@ internal static partial class LiveHub
             if (target == null) return;
             string key = target.Platform + ":" + target.Room;
             roomBadges[key] = live;
-            badgeTimes[key] = DateTime.UtcNow;
+            BadgeScheduler.RecordResult(badgeTimes, key, DateTime.UtcNow, live == RoomStateKind.Unknown);
             if (target.Platform != platform) return;
             RefreshLists();
         }

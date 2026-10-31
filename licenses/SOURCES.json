@@ -1,6 +1,6 @@
 {
   "schema": "livehub-third-party-sources/1",
-  "reviewedOn": "2026-10-21",
+  "reviewedOn": "2026-10-29",
   "scope": "License verification snapshots, not assertions of the original adoption revisions",
   "protocolReferences": [
     {
@@ -189,6 +189,23 @@
       "upstreamCommit": "e08d95a155583b852f7cc119e7d0b9b8bba9ae76",
       "upstreamPath": "LICENSE",
       "url": "https://github.com/AntdUI/AntdUI/blob/e08d95a155583b852f7cc119e7d0b9b8bba9ae76/LICENSE"
+    }
+  ],
+  "runtimeBuildVerifications": [
+    {
+      "component": "mpv",
+      "version": "v0.41.0-1227-ge471496c5",
+      "distribution": "shinchiro x86_64",
+      "releaseUrl": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261021",
+      "upstreamCommit": "e471496c56f0f49c133bd88b50aed62b845f1909",
+      "archiveSha256": "4a355f3e89c83fabc730d33fb4e759dfec747806ed2287b61a90d1681b83e8d3",
+      "executableSha256": "8c2e4d24eb961723cc5e2f1f4401982836e82c96e0e0a944c0576090fc48993f",
+      "licenseEvidence": "Retained mpv Copyright/GPL/LGPL originals match the exact upstream commit byte-for-byte.",
+      "licensePaths": [
+        "licenses/mpv-Copyright.txt",
+        "licenses/mpv-LICENSE.GPL.txt",
+        "licenses/mpv-LICENSE.LGPL.txt"
+      ]
     }
   ]
 }

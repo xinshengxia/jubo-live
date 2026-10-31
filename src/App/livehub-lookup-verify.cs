@@ -164,6 +164,9 @@ internal static partial class LiveHub
             }
             if (new Uri(url).Host == "live.douyin.com") cookie = string.IsNullOrEmpty(cookie) ? "__ac_nonce=" + DouyinNonce() : cookie + "; __ac_nonce=" + DouyinNonce();
             if (!string.IsNullOrEmpty(cookie)) request.Headers["Cookie"] = cookie;
+            // 头像/查询也会抓 live.douyin.com 房间页：走启动器同一个限流闸门，别绕过节奏控制。
+            bool douyinPage = new Uri(url).Host == "live.douyin.com";
+            if (douyinPage) LiveHub.DouyinEnterFetch();
             using (token.Register(delegate { request.Abort(); }))
             try
             {
@@ -192,6 +195,7 @@ internal static partial class LiveHub
                 }
                 throw new LookupFailure(ex.Status == WebExceptionStatus.Timeout ? "timeout" : "network", "平台连接超时或网络受阻，未判定主播不存在。");
             }
+            finally { if (douyinPage) LiveHub.DouyinLeaveFetch(); }
         }
         internal LookupCandidate Verify(LookupCandidate input, CancellationToken token)
         {

@@ -58,7 +58,13 @@ internal static partial class HardeningTests
             string config = Path.Combine(dir, "合成 config.json");
             string favorites = Path.Combine(dir, "合成 favorites.json");
             File.WriteAllText(config, "{}", Encoding.UTF8);
-            string[] original = { launcher, "--self-test", "--runtime=" + runtime,
+            // 测试用 --config 覆盖了开发机的 live-hub.json，真实 mpv 路径随之失效；
+            // 给一份只有 MZ 头的合成 mpv.exe，避免自检因为「找不到 mpv」失败（与播放器布局解耦）。
+            string syntheticMpv = Path.Combine(dir, "mpv.exe");
+            byte[] fakeExe = new byte[2048];
+            fakeExe[0] = (byte)'M'; fakeExe[1] = (byte)'Z';
+            File.WriteAllBytes(syntheticMpv, fakeExe);
+            string[] original = { launcher, "--self-test", "--mpv=" + syntheticMpv, "--runtime=" + runtime,
                 "--config=" + config, "--favorites=" + favorites,
                 "--cookie=" + Path.Combine(dir, "synthetic-cookie.txt"),
                 "--history=" + Path.Combine(dir, "synthetic-history.json") };

@@ -27,7 +27,7 @@ internal static class PlatformHealth
     internal static void Record(string platform, string stage, string state)
     {
         if (LiveHub.Platforms.Get(platform) == null || (stage != "room" && stage != "playback" && stage != "danmaku" && stage != "login")) return;
-        if (Array.IndexOf(new string[] { "live", "replay", "unknown", "ready", "connecting", "retrying", "offline", "parse-error", "timeout", "network-error", "auth-required", "saved-unverified", "save-failed", "logged-out", "cleanup-failed", "stopped", "error" }, state) < 0) return;
+        if (Array.IndexOf(new string[] { "live", "replay", "unknown", "ready", "connecting", "retrying", "offline", "parse-error", "rate-limited", "timeout", "network-error", "auth-required", "saved-unverified", "save-failed", "logged-out", "cleanup-failed", "stopped", "error" }, state) < 0) return;
         lock (Gate)
         {
             string key = Path.Combine(LiveHub.RuntimeDir ?? ".", "health-" + platform + "-" + stage + ".state.txt");
@@ -134,6 +134,7 @@ internal static class PlatformHealth
             case "timeout": return "请求超时";
             case "network-error": return "网络异常";
             case "parse-error": return "响应解析失败";
+            case "rate-limited": return "平台限流（风控），稍后自动重试";
             default: return "其他异常";
         }
     }
