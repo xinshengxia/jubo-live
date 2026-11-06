@@ -30,7 +30,9 @@ using System.Windows.Forms;
 //  协议实现与连接策略见下面的说明。
 //
 //  这条路是**实测**出来的，几个关键点别改错：
-//   · 压缩用 protover=2（zlib）：net48 没有 BrotliStream；zlib 要跳 2 字节头再喂 DeflateStream。
+//   · 压缩主路径用 protover=2（zlib）：net48 没有 BrotliStream；zlib 要跳 2 字节头再喂 DeflateStream。
+//   · ver=3（brotli）是防御性兼容分支：认证包仍请求 2；真收到 ver=3 时用 src\Brotli 里 vendored 的
+//     BrotliSharpLib 解码子集解（单帧展开上限/嵌套深度与 zlib 路径共用 DanmakuMessageLimits）。
 //   · getDanmuInfo **强制 wbi 签名**（不签名稳定 code=-352）。
 //   · 认证包必须带 buvid；带了 uid 就必须配有效登录态，否则会被服务端强制断开
 //     → 所以先问一次 nav 的 data.isLogin，没登录就退回 uid=0。

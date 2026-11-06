@@ -167,6 +167,22 @@ internal static partial class LiveHub
             : " --cache=yes --cache-secs=15 --demuxer-readahead-secs=10");
     }
 
+    /// 同步相关的 mpv 参数（只读展示，给工作台「观看会话」页用）。
+    /// 展示只描述本程序**显式**传了什么：autosync/audio-delay 我们没有传，
+    /// 用户全局 mpv.conf 仍可能覆盖，因此不能写成「保证同步」。
+    private static string PlaybackSyncSummary(string player, Target target)
+    {
+        if (player == "potplayer")
+            return "PotPlayer 自身同步（本程序不传 video-sync/framedrop/autosync/audio-delay）· 缓冲档="
+                + (target != null && target.BufferMode == "low" ? "低延迟" : "稳定");
+        return "video-sync=audio · framedrop=vo · autosync=未显式设置（mpv 默认 0）"
+            + " · audio-delay=未显式设置（mpv 默认 0） · 缓存="
+            + (target != null && target.BufferMode == "low"
+                ? "低延迟（cache-secs=3 / demuxer-readahead-secs=2）"
+                : "稳定（cache-secs=15 / demuxer-readahead-secs=10）")
+            + " · hwdec=auto-safe";
+    }
+
     // B站 直播流的 format_id 前缀就是画质档位（实测 7777 的 JSON：quality 字段
     // ultra_high_res=2 < blue_ray=3 < source=4），所以**按前缀挑画质**。
     //

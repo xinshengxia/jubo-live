@@ -31,7 +31,8 @@ $exe = Join-Path $output '看直播.exe'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app.config') -Destination ($exe + '.config')
 $antdDll = Join-Path $root 'lib/antdui/AntdUI.dll'
 if (-not (Test-Path -LiteralPath $antdDll -PathType Leaf)) { throw "缺少 AntdUI.dll：$antdDll（安装包应带 lib/antdui 副本）" }
-$arguments = @('/nologo','/target:winexe','/optimize+',('/out:' + $exe),('/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')),('/win32icon:' + (Join-Path $PSScriptRoot 'app.ico')),
+# 2026-11-07：src/Brotli 的 B站 protover=3 brotli 解码子集含 unsafe/stackalloc，legacy csc 必须带 /unsafe。
+$arguments = @('/nologo','/target:winexe','/optimize+','/unsafe',('/out:' + $exe),('/win32manifest:' + (Join-Path $PSScriptRoot 'app.manifest')),('/win32icon:' + (Join-Path $PSScriptRoot 'app.ico')),
     '/r:System.Windows.Forms.dll','/r:System.Security.dll','/r:System.Drawing.dll','/r:System.Web.Extensions.dll','/r:Microsoft.VisualBasic.dll',
     ('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.Core.dll')),('/r:' + (Join-Path $root 'lib/webview2/Microsoft.Web.WebView2.WinForms.dll')),('/r:' + $antdDll)) + $source
 Copy-Item -LiteralPath $antdDll -Destination (Join-Path $output 'AntdUI.dll') -Force

@@ -52,6 +52,9 @@ internal static partial class LiveHub
         public Target Target;
         public string Player;
         public Process Process;
+        public string PlayerExecutable;
+        public int PlayerProcessId;
+        public DateTime PlayerStartedUtc;
         public RoomStateKind LiveState = RoomStateKind.Unknown;
         public bool Polling;
         public DateTime LastPoll;

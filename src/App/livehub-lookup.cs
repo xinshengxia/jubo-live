@@ -185,6 +185,7 @@ internal static partial class LiveHub
     {
         internal Func<string, string, bool, CancellationToken, Action<string>, LookupResult> Ai;
         internal Func<string, string, CancellationToken, LookupResult> PlatformSearch;
+        internal Func<string, string, int, CancellationToken, LookupResult> PlatformPageSearch = LookupVerifier.SearchPlatformPage;
         internal Func<string, string, List<LookupCandidate>, CancellationToken, Action<string>, LookupResult> Optimize;
         internal Func<string, CancellationToken, LookupCandidate> Share;
         private readonly Dictionary<string, Tuple<DateTime, string>> cache = new Dictionary<string, Tuple<DateTime, string>>();

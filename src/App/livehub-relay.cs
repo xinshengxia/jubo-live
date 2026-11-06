@@ -454,14 +454,15 @@ internal static partial class LiveHub
         long reportBytes = 0;
         DateTime lastReport = DateTime.UtcNow;
         int reconnects = 0;
-        // 跨重连的时间戳续接状态（**每条播放器连接独立**，不能跨连接共享）：
-        //   lastForwardedTs = 已经转发给播放器的最大时间戳
-        //   timestampShift  = 当前上游时钟到输出时间线的偏移；0 = 尚未发生归零
-        // 音视频各一条时间线（合并成一条会互相误伤，见下面去重处的说明）
-        long[] lastForwardedTs = new long[] { -1, -1 };
-        bool[] catchingUp = new bool[] { false, false };
-        long timestampShift = 0;
+        // One shared affine clock, with per-track epoch confirmation. An old
+        // audio tail must never inherit the new video's clock offset.
+        RelayTimeline timeline = new RelayTimeline();
+        // 连续「没有有效媒体进展」预算：CDN 正常分段续接后有效音视频 tag 会复位，
+        // 只有反复连上却拿不到可播放音视频才累计失败（替代旧的累计 500 次重连上限）。
+        RelayProgressBudget budget = new RelayProgressBudget();
         int droppedTags = 0;
+        bool exhausted = false;
+        bool forwardedMedia = false;
         string publishedState = null;   // 只在状态变化时写文件，别每轮都写盘
         // CDN 正常切断短连接后通常数百毫秒内续上，不为这些无感续接反复闪重连提示。
         // 以真正转发的音视频 tag 为进展；只有 FLV 头、元数据或重叠片段不能冒充恢复。
@@ -470,7 +471,7 @@ internal static partial class LiveHub
         int resolveFailures = 0;        // 连续「解析不到上游地址」次数：用于逐步放缓重试
         // 走到循环外时的收尾状态：null = 什么都不写（下播等待超时那条路，保留已写好的 OFFLINE）
         string finalState = "RECONNECTING";
-        while (reconnects < 500)
+        while (!budget.Exhausted)
         {
             if (ClientGone(client)) { RelayLog("播放器断开，结束"); return; }
             bool offline;
@@ -483,16 +484,18 @@ internal static partial class LiveHub
                 {
                     publishedState = "OFFLINE";
                     PublishRelayState(platform, room, "OFFLINE");
+                    if (forwardedMedia)
+                        PublishRelayDiag(platform, room, "OFFLINE", timeline, reconnects, droppedTags,
+                            totalBytes, false);
                     RelayLog("主播已下播，挂起等待重新开播（播放器已提示）");
                 }
-                for (int wait = 0; wait < 180; wait++)          // 最多等 60 分钟
+                while (upstream == null && offline)
                 {
                     if (ClientGone(client)) { RelayLog("播放器断开，结束"); return; }
                     Thread.Sleep(Math.Max(200, RelayRetrySeconds * 1000));
                     upstream = resolveUpstream(out offline);
-                    if (upstream != null || ClientGone(client)) break;
                 }
-                if (upstream == null) { RelayLog("等待重新开播超时，结束"); finalState = null; break; }
+                if (upstream == null) continue;
                 RelayLog("主播重新开播，继续接流");
             }
             else if (upstream == null)
@@ -503,7 +506,6 @@ internal static partial class LiveHub
                     publishedState = "REPLAY-UNAVAILABLE";
                     string reason = resolverState.Substring("REPLAY-UNAVAILABLE|".Length);
                     RelayLog(ReplayUnavailableMessage(reason) + "，" + RelayRetrySeconds + " 秒后再试");
-                    reconnects++;
                     Thread.Sleep(Math.Max(2000, RelayRetrySeconds * 1000));
                     continue;
                 }
@@ -514,6 +516,7 @@ internal static partial class LiveHub
                 }
                 RelayLog("上游地址解析失败，稍后重试");
                 reconnects++;
+                budget.FailedAttempt();
                 // 解析失败多半是平台限流/风控：固定 2 秒重试只会把限制拖长。逐次放缓（2/4/8/16 秒），
                 // 解析成功立刻复位；抖音侧另有自己的冷却，这里再兜一层。
                 resolveFailures = Math.Min(resolveFailures + 1, 4);
@@ -525,12 +528,14 @@ internal static partial class LiveHub
             // 解析成功、连上但一个字节都取不到（2026-10-16 虎牙下播后的 403/挂起）不算在线，
             // 否则状态文件会一直骗播放器和界面说「正常」。
             long attemptStart = totalBytes;
+            RelayMediaProgress segmentProgress = new RelayMediaProgress();
             try
             {
                 using (HttpWebResponse response = OpenRelayUpstream(upstream, platform))
                 using (Stream input = response.GetResponseStream())
                 {
-                    RelayLog((firstUpstream ? "上游 " : "重连 ") + (int)response.StatusCode + " " + response.ContentType);
+                    RelayLog((firstUpstream ? "上游 " : "重连 ") + (int)response.StatusCode + " " + response.ContentType
+                        + " 主机=" + RelayHostForLog(upstream));
                     byte[] firstTagHeader = null;
                     if (!firstUpstream)
                     {
@@ -552,11 +557,7 @@ internal static partial class LiveHub
                         totalBytes += flvHeader.Length;
                     }
                     firstUpstream = false;
-                    // 每接上一条新的上游流，音视频都重新进入「追赶」状态：
-                    // 丢掉与上一段重叠的部分，追上之后立刻恢复正常转发。
-                    catchingUp[0] = true;
-                    catchingUp[1] = true;
-                    bool clockRebased = false;
+                    timeline.BeginReconnect();
                     while (true)
                     {
                         // 整个 FLV tag 收齐并校验 PreviousTagSize 后才发给播放器。
@@ -564,82 +565,36 @@ internal static partial class LiveHub
                         byte[] tag = ReadCompleteFlvTag(input, firstTagHeader);
                         firstTagHeader = null;
                         if (tag == null) break;
-                        // ★ 跨重连去重（修「虎牙开播头十几秒同一段重复三四次」）。
-                        //
-                        // 实测虎牙 CDN 的行为：**无论什么请求头**，都是狂吐约 1.5 MB
-                        // 然后 0.1 秒内 EOF（见 notes\五种请求头对照）。所以中转必须不断重连，
-                        // 而**重连后的内容与上一段重叠** —— 原来把每个字节原样转发，
-                        // 播放器就反复收到同一段画面。
-                        //
-                        // ⚠️ 前两版都写错了，都记下来：
-                        //   第一版：把新流时间戳**平移**到上次位置之后 —— 等于给重复内容
-                        //           「改名」成新内容，一个 tag 都没少（实测只降 12%）。
-                        //   第二版：改成「**任何**时间戳不前进的 tag 都丢」—— 更糟：
-                        //           连续流里音频和视频 tag 的时间戳**经常落在同一毫秒**
-                        //           （AAC 帧约 21ms、视频约 33ms），于是**正常数据也被丢**，
-                        //           直接把流削坏 —— PotPlayer 一直转圈、mpv 不出窗口。
-                        //
-                        // 正确做法：**只在重连之后**进入「追赶」状态，丢掉重叠段；
-                        // **一旦某个 tag 追上了就立刻退出追赶**，之后照单全发。
-                        // 这样连续流里一个 tag 都不会被误丢。
-                        // 音视频分开记（各一条时间线），否则一方的重叠会误伤另一方。
-                        int tagTs = FlvTagTimestamp(tag);
-                        int slot = tag.Length > 0 ? (tag[0] == 8 ? 0 : (tag[0] == 9 ? 1 : -1)) : -1;
-                        if (FlvTagIsCodecHeader(tag))
+                        int slot = tag[0] == 8 ? 0 : (tag[0] == 9 ? 1 : -1);
+                        long correctionsBefore = timeline.Corrections;
+                        long epochTailsBefore = timeline.EpochTailEpisodes;
+                        if (!timeline.Accept(tag))
                         {
-                            // AAC/AVC 初始化包常固定为 0；它不是媒体时钟归零的证据。
-                            // 重连时仍交给解码器，但不参与音视频追赶和时钟判定。
-                            long boundary = Math.Max(lastForwardedTs[0], lastForwardedTs[1]);
-                            if (boundary >= 0) SetFlvTagTimestamp(tag, boundary);
-                            slot = -1;
+                            if (timeline.Exhausted) { exhausted = true; break; }
+                            if (timeline.EpochTailEpisodes != epochTailsBefore)
+                                RelayLog("时间线代际[" + RelayHostForLog(upstream) + "] 丢弃旧代际尾包（累计已丢 "
+                                    + timeline.DiscardedEpochTail + " 个，代际次数 " + timeline.EpochTailEpisodes + "）");
+                            droppedTags++;
+                            continue;
                         }
-                        if (slot >= 0 && tagTs >= 0)
-                        {
-                            int rawTs = tagTs;
-                            if (timestampShift != 0)
-                            {
-                                // 已经判定过「这条流时钟从 0 重来」，整体平移
-                                long shifted = tagTs + timestampShift;
-                                SetFlvTagTimestamp(tag, shifted);
-                                tagTs = (int)shifted;
-                            }
-                            if (catchingUp[slot])
-                            {
-                                if (tagTs > lastForwardedTs[slot])
-                                {
-                                    catchingUp[slot] = false;      // 追上了，之后照发
-                                }
-                                else if (!clockRebased && rawTs < 1000
-                                    && lastForwardedTs[slot] - timestampShift > 5000)
-                                {
-                                    // 用原始时钟判归零；旧 shift 不能遮住第二次归零。
-                                    // 同一上游只重建一次，音视频共用偏移，仍各自去重。
-                                    timestampShift = Math.Max(lastForwardedTs[0], lastForwardedTs[1]) + 1 - rawTs;
-                                    clockRebased = true;
-                                    RelayLog("上游时间戳疑似从 0 重来，改用平移（shift="
-                                        + timestampShift + "）");
-                                    tagTs = (int)(rawTs + timestampShift);
-                                    SetFlvTagTimestamp(tag, tagTs);
-                                    catchingUp[slot] = false;
-                                }
-                                else
-                                {
-                                    droppedTags++;             // 重连后的重叠段，丢掉
-                                    continue;
-                                }
-                            }
-                            if (tagTs > lastForwardedTs[slot]) lastForwardedTs[slot] = tagTs;
-                        }
+                        if (timeline.Corrections != correctionsBefore)
+                            RelayLog("时间线修正[" + RelayHostForLog(upstream) + "] 原因=" + timeline.LastReason
+                                + " 原始跳变=" + timeline.LastJumpMs + "ms 累计修正=" + timeline.Corrections
+                                + " 跨代际跳变=" + timeline.Jumps);
+                        if (segmentProgress.Observe(tag)) budget.Recover();
                         try { output.Write(tag, 0, tag.Length); }
                         catch (Exception) { RelayLog("播放器断开，结束"); return; }
                         totalBytes += tag.Length;
                         if (slot >= 0)
                         {
+                            forwardedMedia = true;
                             mediaProgress.Restart();
                             if (publishedState != "ONLINE")
                             {
                                 publishedState = "ONLINE";
                                 PublishRelayState(platform, room, "ONLINE");
+                                PublishRelayDiag(platform, room, "ONLINE", timeline, reconnects, droppedTags,
+                                    totalBytes, segmentProgress.Stable);
                             }
                         }
                         if ((DateTime.UtcNow - lastReport).TotalSeconds >= 30)
@@ -649,13 +604,24 @@ internal static partial class LiveHub
                                 + "｜丢弃重连重叠 " + droppedTags + " 个 tag");
                             lastReport = DateTime.UtcNow;
                             reportBytes = totalBytes;
+                            if (forwardedMedia)
+                                PublishRelayDiag(platform, room, publishedState == null ? "UNKNOWN" : publishedState,
+                                    timeline, reconnects, droppedTags, totalBytes, segmentProgress.Stable);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                RelayLog("上游异常: " + ex.GetType().Name + " " + ex.Message);
+                RelayLog("上游异常: " + ex.GetType().Name + " HResult=0x" + ex.HResult.ToString("x")
+                    + " 主机=" + RelayHostForLog(upstream));
+            }
+            if (exhausted)
+            {
+                // 4 位时间戳能表示的上限到了：继续重连也只会反复超界，明确结束让用户重开会话。
+                finalState = "RECONNECTING";
+                RelayLog("时间线已超出 FLV 可表示范围，中转结束（需要重新打开会话）");
+                break;
             }
             // 连着几次一个字节都没取到 → 直链多半已经作废（CDN 掐流、签名过期），
             // 清掉 20 秒复用窗口，下一轮强制重新解析。
@@ -676,15 +642,23 @@ internal static partial class LiveHub
             {
                 publishedState = "RECONNECTING";
                 PublishRelayState(platform, room, "RECONNECTING");
+                if (forwardedMedia)
+                    PublishRelayDiag(platform, room, "RECONNECTING", timeline, reconnects, droppedTags,
+                        totalBytes, segmentProgress.Stable);
             }
             reconnects++;
+            if (segmentProgress.Stable) budget.Recover(); else budget.FailedAttempt();
             RelayLog("准备重连 #" + reconnects + "（已转发 " + (totalBytes / 1024 / 1024) + " MB）");
-            Thread.Sleep(300);
+            Thread.Sleep(segmentProgress.Stable ? 150 : 1000);
         }
         // 以前这里无条件写空串（= 一切正常）。但能走到这一行，要么重连次数打满、要么重开等待超时，
         // 都是「中转要结束了」——写空串等于骗播放器说一切正常：画面停住却没有任何提示。
         // 正常收尾（播放器断开）走的是上面的 return，不会到这里。
         if (finalState != null) PublishRelayState(platform, room, finalState);
+        if (forwardedMedia && finalState != null)
+            PublishRelayDiag(platform, room, finalState, timeline, reconnects, droppedTags, totalBytes, false);
+        if (budget.Exhausted)
+            RelayLog("连续 " + RelayProgressBudget.Limit + " 次没有有效媒体进展，中转结束");
         RelayLog("中转结束，共转发 " + (totalBytes / 1024 / 1024) + " MB");
     }
 
@@ -751,7 +725,11 @@ internal static partial class LiveHub
             // 初始地址已经在各平台解析器里校验；离线中转测试会故意给回环地址。
             // 重定向是新的远端输入，必须逐跳复核，不能 302 回本机/私网。
             if (redirect > 0 && !IsSafeRemoteHttpUrl(current))
+            {
+                // 拒绝也留脱敏原因：只记主机名，不记完整签名 URL/查询参数。
+                RelayLog("上游重定向被拒绝[" + RelayHostForLog(current) + "] 原因=目标不是安全公网地址");
                 throw new InvalidDataException("上游返回了不安全的地址，已拒绝连接");
+            }
             // 连接目标钉在已校验的公网地址上，Host 头/SNI/证书名校验仍是原域名（TOCTOU 封口）。
             // 初始地址（redirect==0）已由产品出口 GuardRelayUpstream 校验；离线中转测试用注入的
             // RelayResolver 直接给本地服务器地址，所以这里信任字面地址。
@@ -783,10 +761,194 @@ internal static partial class LiveHub
             response.Close();
             Uri next;
             if (location == null || !Uri.TryCreate(new Uri(current), location, out next))
+            {
+                RelayLog("上游重定向被拒绝[" + RelayHostForLog(current) + "] 原因=无效重定向地址");
                 throw new InvalidDataException("上游返回了无效重定向");
+            }
             current = next.AbsoluteUri;
         }
+        RelayLog("上游重定向被拒绝[" + RelayHostForLog(current) + "] 原因=重定向次数过多");
         throw new InvalidDataException("上游重定向次数过多");
+    }
+
+    /// Continuous output time with one shared offset and a cross-track epoch
+    /// guard. Only four timestamp bytes are changed; encoded payload/CTS stays.
+    ///
+    /// 与 Rust src/flv.rs 的 ClockEpoch 等价：一次时钟代际切换只改一次共享偏移；
+    /// 两轨都确认新代际之前，另一轨的旧尾部按原始时间戳窗口识别并丢弃，
+    /// 避免旧音频套上新偏移后冒充「已追上」，把音画相对时间改坏。
+    private sealed class RelayTimeline
+    {
+        private const long JumpLimit = 2000;
+        private readonly long[] last = { -1, -1 };
+        private readonly long[] rawLast = { -1, -1 };
+        private readonly bool[] catching = { false, false };
+        private long shift;
+        private bool epoch;
+        private long epochOrigin, epochLatest;
+        private long epochStarted;
+        private static readonly long EpochGuardTicks = Stopwatch.Frequency * 5;
+        private readonly bool[] confirmed = { false, false };
+        private bool epochTailDropping;
+        public bool Exhausted;
+        public long Jumps;                 // 非传输层归零的跳变修正次数（与 Rust jumps 同义）
+        public long Corrections;           // 所有代际切换次数，含重连归零
+        public long LastJumpMs;            // 最近一次修正的原始跳变幅度（毫秒）
+        public string LastReason;          // 最近一次修正的原因分类（只进日志，不含 URL）
+        public long DiscardedEpochTail;    // 丢弃的旧代际尾包数
+        public long EpochTailEpisodes;     // 发生过旧代际尾包丢弃的代际次数
+
+        public void BeginReconnect()
+        {
+            catching[0] = last[0] >= 0; catching[1] = last[1] >= 0;
+            // 未完成的代际保护跨 HTTP 边界保留：旧尾巴不能因为换了连接就套上新偏移。
+        }
+        private void BeginEpoch(int slot, long raw, long target, bool transportReset, long jumpMs, string reason)
+        {
+            // 用原始时钟算偏移，绝不从 clamp 后的中间值反推。
+            shift = target - raw;
+            epoch = true; epochOrigin = epochLatest = raw; epochTailDropping = false;
+            epochStarted = Stopwatch.GetTimestamp();
+            confirmed[0] = last[0] < 0; confirmed[1] = last[1] < 0;
+            confirmed[slot] = true; catching[slot] = false;
+            Corrections++; LastJumpMs = jumpMs; LastReason = reason;
+            if (!transportReset) Jumps++;
+        }
+        public bool Accept(byte[] tag)
+        {
+            long boundary = Math.Max(0, Math.Max(last[0], last[1]));
+            if (FlvTagIsCodecHeader(tag)) { SetFlvTagTimestamp(tag, boundary); return true; }
+            int slot = tag[0] == 8 ? 0 : (tag[0] == 9 ? 1 : -1);
+            if (slot < 0) return true;
+            long raw = (long)(uint)FlvTagTimestamp(tag);
+            // A missing track must not keep the old-generation filter alive forever.
+            // After the same five-second guard as Rust, ordinary jump detection can
+            // rebase a new response instead of discarding its every media tag.
+            if (epoch && Stopwatch.GetTimestamp() - epochStarted >= EpochGuardTicks)
+                epoch = false;
+            if (epoch)
+            {
+                // 允许另一轨首包略早于本轨（正常交错），但拒绝旧代际数秒外的尾部；
+                // 上沿随已确认的最新原始时间戳前移，暂时缺席的轨之后仍能加入新时钟。
+                long lower = Math.Max(0, epochOrigin - JumpLimit), upper = epochLatest + JumpLimit;
+                if (raw < lower || raw > upper)
+                {
+                    if (!epochTailDropping) { epochTailDropping = true; EpochTailEpisodes++; }
+                    DiscardedEpochTail++; return false;
+                }
+                confirmed[slot] = true; epochLatest = Math.Max(epochLatest, raw);
+            }
+            long adjusted = raw + shift;
+            bool wasCatching = catching[slot];
+            if (!epoch && last[slot] >= 0)
+            {
+                long forward = adjusted - boundary, backward = last[slot] - adjusted;
+                bool clockReset = wasCatching && raw < 1000 && rawLast[slot] - raw > JumpLimit;
+                if (clockReset || forward > JumpLimit || (!wasCatching && backward > JumpLimit))
+                {
+                    string reason = clockReset ? "时钟归零" : forward > JumpLimit ? "前向跳变" : "后向跳变";
+                    long jumpMs = forward > JumpLimit ? forward : -backward;
+                    BeginEpoch(slot, raw, boundary + (clockReset ? 1 : 20), clockReset, jumpMs, reason);
+                    adjusted = raw + shift;
+                }
+            }
+            if (wasCatching && !epoch)
+            {
+                if (adjusted <= last[slot]) return false;
+                catching[slot] = false;
+            }
+            else if (epoch)
+            {
+                // 已转发的轨不能因旧代际尾包而倒退，即使它落在代际交错窗口内。
+                if (adjusted < last[slot] || (wasCatching && adjusted == last[slot])) return false;
+                catching[slot] = false;
+            }
+            if (adjusted < 0 || adjusted > uint.MaxValue) { Exhausted = true; return false; }
+            last[slot] = Math.Max(last[slot], adjusted); rawLast[slot] = raw;
+            SetFlvTagTimestamp(tag, adjusted);
+            if (epoch && confirmed[0] && confirmed[1]) epoch = false;
+            return true;
+        }
+    }
+
+    // Header bytes and HTTP 200 are not evidence that playback recovered.
+    // 与 Rust relay.rs 的 MediaProgress 对齐：需要足够 tag 数、足够音视频字节，
+    // 且至少一条轨的时间戳真实推进 ≥1s；FLV 头、初始化包和静止时间戳都不算恢复。
+    private sealed class RelayMediaProgress
+    {
+        private long count, bytes;
+        private readonly long[] first = { -1, -1 };
+        private readonly long[] last = { -1, -1 };
+        public bool Stable;
+        public bool Observe(byte[] tag)
+        {
+            if (Stable || tag == null || tag.Length < 11) return false;
+            if (tag[0] != 8 && tag[0] != 9) return false;
+            int payload = (tag[1] << 16) | (tag[2] << 8) | tag[3];
+            if (payload <= 0 || FlvTagIsCodecHeader(tag)) return false;
+            long timestamp = (long)(uint)FlvTagTimestamp(tag);
+            int slot = tag[0] == 8 ? 0 : 1;
+            if (first[slot] < 0) first[slot] = timestamp;
+            last[slot] = Math.Max(last[slot], timestamp); count++; bytes += tag.Length;
+            // Cross-track offset is not playback progress: at least one track's
+            // own timestamps must advance, even when audio and video start apart.
+            bool advanced = (first[0] >= 0 && last[0] - first[0] >= 1000)
+                || (first[1] >= 0 && last[1] - first[1] >= 1000);
+            Stable = count >= 24 && bytes >= 8192 && advanced;
+            return Stable;
+        }
+    }
+
+    /// 连续无有效媒体进展预算（与 Rust relay.rs 的 consecutive_failures 同义）：
+    /// 有效音视频转发会 Recover()，只有「连上却拿不到可播放音视频」才累计失败。
+    internal sealed class RelayProgressBudget
+    {
+        internal const int Limit = 500;
+        private int failures;
+        internal int ConsecutiveFailures { get { return failures; } }
+        internal bool Exhausted { get { return failures >= Limit; } }
+        internal void Recover() { failures = 0; }
+        internal void FailedAttempt() { if (failures < Limit) failures++; }
+    }
+
+    /// 日志里的上游标识：只留主机名，去掉查询参数/路径/令牌，避免签名直链进日志。
+    internal static string RelayHostForLog(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return "(无上游地址)";
+        Uri uri;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || string.IsNullOrEmpty(uri.Host))
+            return "(无法解析的主机)";
+        return uri.Host;
+    }
+
+    // 给启动器/工作台只读展示的中继计数。不写 URL、Cookie 或请求头。
+    private static string RelayDiagPath(string platform, string room)
+    {
+        return Path.Combine(RuntimeDir, platform + "-" + room + ".relaydiag");
+    }
+
+    private static void PublishRelayDiag(string platform, string room, string state, RelayTimeline timeline,
+        int reconnects, int droppedTags, long bytes, bool stable)
+    {
+        try
+        {
+            if (RuntimeDir == null) return;
+            StringBuilder text = new StringBuilder();
+            text.Append("version=1\n");
+            text.Append("state=").Append(state == null ? "UNKNOWN" : state).Append('\n');
+            text.Append("updated=").Append(DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("reconnects=").Append(reconnects.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("jumps=").Append(timeline == null ? "0" : timeline.Jumps.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("corrections=").Append(timeline == null ? "0" : timeline.Corrections.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("discarded_epoch_tail=").Append(timeline == null ? "0" : timeline.DiscardedEpochTail.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("dropped_tags=").Append(droppedTags.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("bytes=").Append(bytes.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            text.Append("stable=").Append(stable ? "1" : "0").Append('\n');
+            string path = RelaySessionId == null ? RelayDiagPath(platform, room)
+                : Path.Combine(RuntimeDir, "session-" + RelaySessionId + ".relaydiag");
+            AtomicWriteAllText(path, text.ToString());
+        }
+        catch (Exception ex) { Diagnostics.Report("中继诊断写入", ex); }
     }
 
     /// FLV tag 的时间戳（毫秒）。布局：tag 头第 4~6 字节是低 24 位、第 7 字节是高 8 位
@@ -802,7 +964,8 @@ internal static partial class LiveHub
         if (tag == null || tag.Length < 17) return false;
         int payload = (tag[1] << 16) | (tag[2] << 8) | tag[3];
         return (tag[0] == 8 && payload >= 2 && (tag[11] >> 4) == 10 && tag[12] == 0)
-            || (tag[0] == 9 && payload >= 5 && (tag[11] & 15) == 7 && tag[12] == 0);
+            || (tag[0] == 9 && ((payload >= 2 && ((tag[11] & 15) == 7 || (tag[11] & 15) == 12) && tag[12] == 0)
+                || (payload >= 5 && (tag[11] & 0x80) != 0 && (tag[11] & 15) == 0)));
     }
 
     /// 原地改写 FLV tag 的时间戳（低 24 位 + 扩展字节）。只动这 4 个字节，

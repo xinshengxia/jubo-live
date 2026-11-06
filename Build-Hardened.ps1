@@ -61,7 +61,9 @@ $versionFile = Join-Path $root 'obj\legacy\build-info.cs'
 
 $antdDll = Join-Path $root 'lib\antdui\AntdUI.dll'
 if (-not (Test-Path -LiteralPath $antdDll -PathType Leaf)) { throw "缺少 AntdUI.dll：$antdDll" }
-$mainArgs = @('/nologo', '/target:winexe', '/optimize+', "/out:$exe", "/win32manifest:$root\app.manifest",
+# 2026-11-07：src\Brotli 的 B站 protover=3 brotli 解码子集（第三方移植）含 unsafe/stackalloc，
+# legacy csc 必须带 /unsafe；与 live-hub.csproj 的 AllowUnsafeBlocks 对应。只影响本编译单元。
+$mainArgs = @('/nologo', '/target:winexe', '/optimize+', '/unsafe', "/out:$exe", "/win32manifest:$root\app.manifest",
     # 2026-10-16：图标随 exe 走（app.ico 在仓库根）。此前 exe 里**没有任何图标资源**，
     # 图标全靠快捷方式 IconLocation 指向外部 mpv.exe —— 那个文件一被清理，任务栏就
     # 回落成系统空白图标（用户实测踩到）。嵌进来之后就与外部文件无关了。

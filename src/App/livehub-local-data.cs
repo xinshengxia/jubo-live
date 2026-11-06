@@ -77,7 +77,7 @@ internal static class BoundedLog
         int number;
         if (dot >= 0 && int.TryParse(name.Substring(dot + 1), out number) && number >= 1 && number <= ArchiveCount)
             name = name.Substring(0, dot);
-        return name == "danmaku.log" || name == "janitor.log" || name == "relay.log"
+        return name == "danmaku.log" || name == "janitor.log" || name == "relay.log" || name == "avsync-mark.log"
             || name == "bili-parser.log" || name == "huya-parser.log" || name == "douyu-parser.log" || name == "douyin-parser.log"
             || name == "huya-check.log" || System.Text.RegularExpressions.Regex.IsMatch(name,
                 @"^(crash-\d{8}|danmaku-[a-f0-9]{32}|session-[a-f0-9]{32}|offline-tests-\d{8}-\d{6})\.log$");

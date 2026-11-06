@@ -160,6 +160,9 @@ internal static partial class LiveHub
         internal Button openMpv = new ModernButton();
         internal Label sessionsLabel = new ModernLabel();
         internal Button reopen = new ModernButton();
+        internal Button stopSession = new ModernButton();
+        internal Button resyncSession = new ModernButton();
+        private bool closingSession;
         // 播放器路径（2026-10-16 搬到主界面）：绿色包不自带播放器，用户在这里指定自己的 mpv / PotPlayer
         internal Label playerLabel = new ModernLabel();
         internal ComboBox playerBox = new ModernComboBox();
@@ -1402,6 +1405,9 @@ internal static partial class LiveHub
                 signatureText.Append(string.Join("|", row)).Append('\n');
             }
             string signature = signatureText.ToString();
+            // 诊断计数/按钮可用性每 2 秒刷新一次，不受「会话表是否需要重建」影响：
+            // 中继 .relaydiag 是独立进程写的，行内容不变时也要让新计数显示出来。
+            UpdateSessionActions();
             if (signature == lastSessionSignature && sessionsList.Items.Count == rows.Count) return;
             lastSessionSignature = signature;
 
@@ -1420,11 +1426,12 @@ internal static partial class LiveHub
             sessionsList.EndUpdate();
             LayoutSessionColumns();
             RefreshWorkbenchHomeSession();
+            UpdateSessionActions();
         }
 
         internal void Launch(string player)
         {
-            if (currentLaunch != null) return;
+            if (currentLaunch != null || closingSession) return;
             Target target = Parse(input.Text, platform);
             if (target == null)
             {
@@ -1441,6 +1448,8 @@ internal static partial class LiveHub
             currentLaunch = request;
             openMpv.Enabled = openPot.Enabled = false;
             cancelLaunch.Enabled = true;
+            UpdateSessionActions();   // 启动期间禁用停止/重同步，避免对「正在解析」的会话重复操作
+
             status.ForeColor = ModernTheme.TextSecondary;
             status.Text = "正在解析 " + PlatformName(target.Platform) + " " + target.Room + "…";
             Stopwatch elapsed = Stopwatch.StartNew();
@@ -1491,6 +1500,7 @@ internal static partial class LiveHub
                         currentLaunch = null;
                         openMpv.Enabled = openPot.Enabled = true;
                         cancelLaunch.Enabled = false;
+                        UpdateSessionActions();
                         if (process == null)
                         {
                             status.ForeColor = request.IsCancellationRequested ? ModernTheme.TextSecondary : ModernTheme.Danger;
@@ -1499,6 +1509,13 @@ internal static partial class LiveHub
                         }
                         var session = new PlaybackSession { Target = target, Player = player, Process = process,
                             LastPoll = DateTime.MinValue };
+                        try
+                        {
+                            session.PlayerProcessId = process.Id;
+                            session.PlayerExecutable = PlayerProcessExecutable(process);
+                            session.PlayerStartedUtc = process.StartTime.ToUniversalTime();
+                        }
+                        catch (Exception ex) { Diagnostics.Report("会话进程身份记录", ex); }
                         sessions.Insert(0, session);
                         PruneEndedDuplicateSessions(sessions);
                         if (sessions.Count > 20)

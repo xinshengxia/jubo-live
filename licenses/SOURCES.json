@@ -1,6 +1,6 @@
 {
   "schema": "livehub-third-party-sources/1",
-  "reviewedOn": "2026-10-29",
+  "reviewedOn": "2026-11-07",
   "scope": "License verification snapshots, not assertions of the original adoption revisions",
   "protocolReferences": [
     {
@@ -40,6 +40,11 @@
       "name": "blivedm",
       "license": "MIT",
       "usage": "Bilibili DANMU_MSG and SC protocol/model reference; no Python runtime or drawing-engine dependency"
+    },
+    {
+      "name": "BrotliSharpLib",
+      "license": "MIT",
+      "usage": "Decode-only vendored subset (src/Brotli) for Bilibili danmaku protover=3; local patches (#define NET20, flat file layout, bounded local facade) documented in src/Brotli/README.md and THIRD_PARTY_NOTICES.md"
     },
     {
       "name": "mpv",
@@ -115,6 +120,22 @@
       "upstreamCommit": "3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6",
       "upstreamPath": "LICENSE",
       "url": "https://github.com/xfgryujk/blivedm/blob/3bf17fe862b8c2fc6bc04c81c3f0c5db95de93d6/LICENSE"
+    },
+    {
+      "path": "licenses/BrotliSharpLib-LICENSE.txt",
+      "sha256": "722C4D6FDAE39B3174EE25EBEBE04EBAB5FBF827310AEEF54B16E0A6B4F77F0D",
+      "upstreamRepository": "master131/BrotliSharpLib",
+      "upstreamCommit": "f0f587c8d7c96a48df04ce1bb80ff77232061e0d",
+      "upstreamPath": "LICENSE",
+      "url": "https://github.com/master131/BrotliSharpLib/blob/f0f587c8d7c96a48df04ce1bb80ff77232061e0d/LICENSE"
+    },
+    {
+      "path": "licenses/brotli-reference-LICENSE.txt",
+      "sha256": "2A57418D6B10947FE0DFBEC3A600269E2745136C125CBF15B256E5AE18AF23CB",
+      "upstreamRepository": "master131/BrotliSharpLib",
+      "upstreamCommit": "f0f587c8d7c96a48df04ce1bb80ff77232061e0d",
+      "upstreamPath": "BrotliSharpLib/Brotli-LICENSE",
+      "url": "https://github.com/master131/BrotliSharpLib/blob/f0f587c8d7c96a48df04ce1bb80ff77232061e0d/BrotliSharpLib/Brotli-LICENSE"
     },
     {
       "path": "licenses/mpv-Copyright.txt",

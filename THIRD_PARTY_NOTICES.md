@@ -26,6 +26,7 @@
 | 项目 | 参考范围 | 许可 |
 | --- | --- | --- |
 | [blivedm](https://github.com/xfgryujk/blivedm) | B站弹幕、SC、礼物与互动等事件的协议字段与消息模型，包括新版 protobuf 字段编号；未移植 Python 解析代码 | MIT，原文见 `licenses/blivedm-LICENSE.txt` |
+| [BrotliSharpLib](https://github.com/master131/BrotliSharpLib) | B站弹幕 `protover=3`（brotli）的解码子集（`src/Brotli/`，vendored；本地只取解码路径并加有界封层与补丁） | MIT，原文见 `licenses/BrotliSharpLib-LICENSE.txt`、`licenses/brotli-reference-LICENSE.txt` |
 | [douyinLive](https://github.com/jwwsjlm/douyinLive) | 抖音 WebSocket 签名实现（适配为 C#） | MIT，原文见 `licenses/douyinLive-LICENSE.txt` |
 | [libwebp](https://github.com/webmproject/libwebp) | WebP 无损（VP8L）解码与查表 | BSD 三条款及上游专利授权，原文见 `licenses/libwebp-COPYING.txt`、`licenses/libwebp-PATENTS.txt` |
 | [AllLive](https://github.com/xiaoyaocz/AllLive) | 斗鱼弹幕颜色调色表 | MIT，原文见 `licenses/AllLive-LICENSE.txt` |

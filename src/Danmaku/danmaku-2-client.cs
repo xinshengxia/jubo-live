@@ -23,6 +23,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
+using BrotliSharpLib;
 // --------------------------------------------------------------------------------------------
 // B站 弹幕客户端（握手 → WebSocket → 解包 → 解析）
 // --------------------------------------------------------------------------------------------
@@ -387,13 +388,7 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
             Say("连接 " + host + " …");
             ws.ConnectAsync(uri, CancellationToken.None).Wait(10000);
 
-            string auth = "{\"uid\":" + _uid
-                + ",\"roomid\":" + _realRoomId
-                + ",\"protover\":2"
-                + ",\"platform\":\"web\",\"type\":2"
-                + ",\"buvid\":\"" + _buvid + "\""
-                + (_token == null ? "" : ",\"key\":\"" + _token + "\"") + "}";
-            SendPacket(ws, 7, Encoding.UTF8.GetBytes(auth));
+            SendPacket(ws, 7, Encoding.UTF8.GetBytes(AuthPayload()));
 
             // 收包线程
             Thread receiver = new Thread(delegate ()
@@ -436,6 +431,19 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
     }
 
     private int _hostIndex;
+
+    /// 认证包（op=7）的 JSON。**protover 固定 2**：现网主路径保持 zlib 请求，
+    /// 起播/收包不依赖 ver=3 解码；FeedBounded 仍能防御性处理服务端下发的 ver=3 帧。
+    /// 独立成方法是为了让离线测试直接锁住「请求仍是 protover=2」而不必真的联网。
+    internal string AuthPayload()
+    {
+        return "{\"uid\":" + _uid
+            + ",\"roomid\":" + _realRoomId
+            + ",\"protover\":2"
+            + ",\"platform\":\"web\",\"type\":2"
+            + ",\"buvid\":\"" + _buvid + "\""
+            + (_token == null ? "" : ",\"key\":\"" + _token + "\"") + "}";
+    }
 
     private static void SendPacket(ClientWebSocket ws, int operation, byte[] body)
     {
@@ -485,7 +493,10 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
             if (op != 5) continue;
 
             if (ver == 2) FeedBounded(Inflate(body), depth + 1, ref remaining);
-            else if (ver == 3) Say("服务端改用了 brotli（ver=3），本版本解不了 —— 需要给 net48 补 BrotliSharpLib");
+            // 2026-11-07：ver=3 = 原始 brotli 流，解出的同样是嵌套帧（与 ver=2 结构一致）。
+            // 认证包仍请求 protover=2（现网主路径）；这里只是服务端升级/异常时的防御性兼容，
+            // 解码走仓库内 vendored 的 BrotliSharpLib 解码子集（src\Brotli），预算/深度限制沿用上方。
+            else if (ver == 3) FeedBounded(DecompressBrotli(body), depth + 1, ref remaining);
             else if (ver == 0 || ver == 1) Dispatch(Encoding.UTF8.GetString(body));
         }
     }
@@ -496,6 +507,19 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
         using (MemoryStream input = new MemoryStream(zlib, 2, zlib.Length - 2))   // 跳过 2 字节 zlib 头
         using (DeflateStream deflate = new DeflateStream(input, CompressionMode.Decompress))
             return DanmakuMessageLimits.ReadExpanded(deflate);
+    }
+
+    /// B站 ver=3 帧体是**原始 brotli 流**（没有 zlib 那种 2 字节头），解出的字节是同一套
+    /// 嵌套弹幕帧；单帧展开上限与 zlib 路径一致（MaxExpandedBytes），外层共享预算由
+    /// FeedBounded 的 remaining 继续收紧。压缩嵌套深度沿用调用方的 depth 检查。
+    ///
+    /// 解码实现是仓库内 vendored 的 BrotliSharpLib 解码子集（MIT，见 src\Brotli\README.md
+    /// 与 THIRD_PARTY_NOTICES.md）；net48 自身没有 BrotliStream。截断/损坏/超预算统一抛
+    /// InvalidDataException，交给 Run() 的既有断线重连语义处理。
+    internal static byte[] DecompressBrotli(byte[] brotli)
+    {
+        if (brotli == null || brotli.Length == 0) throw new InvalidDataException("brotli 数据不完整");
+        return BiliBrotli.Decompress(brotli, 0, brotli.Length, DanmakuMessageLimits.MaxExpandedBytes);
     }
 
     private void Dispatch(string json)

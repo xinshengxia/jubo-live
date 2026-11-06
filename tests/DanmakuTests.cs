@@ -72,6 +72,8 @@ internal static partial class HardeningTests
     private static void RegisterDanmakuCases(string launcher)
     {
         TestRunner.Add("弹幕-协议", "B站 wbi 签名 / 包头 / zlib 解包 / 配置归一化", delegate { TestDanmakuProtocol(); });
+        // 2026-11-07：B站 protover=3（brotli）防御性解码的合成向量回归（tests/BiliBrotliTests.cs）。
+        RegisterBiliBrotliCases();
         TestRunner.Add("弹幕-配置", "弹幕配置写盘 / 读回 / 缺省", delegate { TestDanmakuConfigRoundTrip(); });
         TestRunner.Add("启动器", "--danmaku 参数校验与 probe 拒绝", delegate { TestDanmakuArgValidation(launcher); });
 
@@ -438,7 +440,7 @@ internal static partial class HardeningTests
             "26" + "0c" + "e6b58be8af95e794a8e688b7" +      // tag2 STRING1(12) 测试用户
             "3c" +                       // tag3 ZERO
             "46" + "0d" + "687474703a2f2f617661746172" +    // tag4 STRING1(13) http://avatar
-            "50" + "03" +                // tag5 INT8 = 3（贵族等级）
+            "50" + "03" +                // tag5 INT8 = 3（虎牙贵族等级 iNobleLevel，非 B站 守护）
             "0b" +                       // STRUCTEND
             "36" + "18" + "e8bf99e698afe4b880e69da1e8998ee78999e5bcb9e5b995" +   // tag3 STRING1(24) 正文
             "5a" +                       // STRUCTBEGIN tag5 = ContentFormat
@@ -455,8 +457,10 @@ internal static partial class HardeningTests
             "虎牙 1400：昵称 = tUserInfo.tag2");
         Check((int)itemType.GetField("Color").GetValue(item) == 0xFF0000,
             "虎牙 1400：颜色 = ContentFormat.tag0 = 0xFF0000");
-        Check((int)itemType.GetField("GuardLevel").GetValue(item) == 3,
-            "虎牙 1400：贵族等级 = tUserInfo.tag5 = 3");
+        // iNobleLevel 是虎牙原生贵族档位，不是 B站 的舰长/提督/总督：不能写进通用
+        // GuardLevel（否则显示成错误头衔），本版降级为无通用头衔。
+        Check((int)itemType.GetField("GuardLevel").GetValue(item) == 0,
+            "虎牙 1400：贵族等级不冒充 B站 守护头衔");
     }
 
     /// 抖音签名回归 —— **决定性验证**。

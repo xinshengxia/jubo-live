@@ -19,11 +19,16 @@ internal static partial class LiveHub
         // No third-party signing code, copied session tokens or device identifiers.
         internal static string Url(string keyword)
         {
+            return UrlPage(keyword, 1);
+        }
+        internal static string UrlPage(string keyword, int page)
+        {
             if (string.IsNullOrWhiteSpace(keyword) || keyword.Length > 600) throw new LookupFailure("input", "请输入主播昵称或抖音号。");
+            if (page < 1 || page > 50) throw new LookupFailure("input", "搜索页码必须在1到50之间。");
             return Endpoint + "?device_platform=webapp&aid=6383&channel=channel_pc_web&search_channel=aweme_user_web"
                 + "&keyword=" + Uri.EscapeDataString(keyword.Trim())
                 + "&search_source=normal_search&query_correct_type=1&is_filter_search=0&from_group_id=&disable_rs=0"
-                + "&offset=0&count=10&need_filter_settings=1&list_type=single&pc_search_top_1_params=" + Uri.EscapeDataString("{\"enable_ai_search_top_1\":1}")
+                + "&offset=" + ((page - 1) * 10).ToString(CultureInfo.InvariantCulture) + "&count=10&need_filter_settings=1&list_type=single&pc_search_top_1_params=" + Uri.EscapeDataString("{\"enable_ai_search_top_1\":1}")
                 + "&update_version_code=170400&pc_client_type=1&pc_libra_divert=Windows&support_h265=1&support_dash=0"
                 + "&cpu_core_num=" + Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture)
                 + "&version_code=170400&version_name=17.4.0&cookie_enabled=true&screen_width=1280&screen_height=800"
@@ -68,10 +73,14 @@ internal static partial class LiveHub
         }
         internal static LookupResult Search(LookupVerifier verifier, string keyword, CancellationToken token)
         {
+            return SearchPage(verifier, keyword, 1, token);
+        }
+        internal static LookupResult SearchPage(LookupVerifier verifier, string keyword, int page, CancellationToken token)
+        {
             token.ThrowIfCancellationRequested();
             // Transport carries cookies only for their original platform/domain/path.
             // Request even without a saved jar: tests and server responses determine the outcome.
-            return Parse(verifier.Get(Url(keyword), token).Body, keyword, "douyin_http");
+            return Parse(verifier.Get(UrlPage(keyword, page), token).Body, keyword, "douyin_http");
         }
         private static string NumericId(Dictionary<string, object> user, string key)
         {

@@ -613,20 +613,29 @@ internal static partial class LiveHub
         {
             return new LookupVerifier().SearchNative(platform, keyword, token);
         }
+        internal static LookupResult SearchPlatformPage(string platform, string keyword, int page, CancellationToken token)
+        {
+            return new LookupVerifier().SearchNativePage(platform, keyword, page, token);
+        }
         internal LookupResult SearchNative(string platform, string keyword, CancellationToken token)
         {
+            return SearchNativePage(platform, keyword, 1, token);
+        }
+        internal LookupResult SearchNativePage(string platform, string keyword, int page, CancellationToken token)
+        {
+            if (page < 1 || page > 50) throw new LookupFailure("input", "搜索页码必须在1到50之间。");
             var result = new LookupResult(); string url; string q = Uri.EscapeDataString(keyword);
             if (platform == "bili") url = null;
-            else if (platform == "huya") url = "https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=" + q + "&uid=0&v=4&typ=-5&livestate=0&rows=10";
-            else if (platform == "douyu") url = "https://www.douyu.com/japi/search/api/searchUser?kw=" + q + "&page=1&pageSize=10";
-            else if (platform == "douyin") return DouyinUserSearch.Search(this, keyword, token);
+            else if (platform == "huya") url = "https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=" + q + "&uid=0&v=4&typ=-5&livestate=0&rows=10&start=" + ((page - 1) * 10).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            else if (platform == "douyu") url = "https://www.douyu.com/japi/search/api/searchUser?kw=" + q + "&page=" + page.ToString(System.Globalization.CultureInfo.InvariantCulture) + "&pageSize=10";
+            else if (platform == "douyin") return DouyinUserSearch.SearchPage(this, keyword, page, token);
             else throw new LookupFailure("input", "不支持的平台。");
             using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
                 deadline.CancelAfter(8000);
                 try
                 {
-                    if (platform == "bili") url = BiliSearchUrl(keyword, deadline.Token);
+                    if (platform == "bili") url = BiliSearchUrlPage(keyword, deadline.Token, page);
                     var data = LookupData.Json(Get(url, deadline.Token).Body); IEnumerable rows;
                     if (platform == "bili") { if (LookupData.Text(data, "code") != "0") throw new LookupFailure("blocked", "B站平台搜索受登录、签名或限流限制。"); rows = LookupData.Rows(LookupData.Obj(data, "data"), "result"); }
                     else if (platform == "huya") { if (LookupData.Text(LookupData.Obj(data, "responseHeader"), "status") != "0") throw new LookupFailure("blocked", "虎牙平台搜索受阻。"); rows = LookupData.Rows(LookupData.Obj(LookupData.Obj(data, "response"), "1"), "docs"); }
@@ -649,7 +658,7 @@ internal static partial class LiveHub
                         candidate.sources.Add(new LookupSource { url = url, title = Platforms.Name(platform) + "官方主播搜索", retrieved_at = DateTime.UtcNow.ToString("o"), supports = new[] { "平台返回的账号/房间线索" } });
                         if (candidate.room_url != null) candidate.sources.Add(new LookupSource { url = candidate.room_url, title = "官方搜索返回的房间链接", retrieved_at = DateTime.UtcNow.ToString("o"), supports = new[] { "room_id" } });
                         candidate.match_reasons = new[] { "官方平台搜索结果，身份归属待核验" };
-                        result.candidates.Add(candidate); if (result.candidates.Count >= 8) break;
+                        result.candidates.Add(candidate); if (result.candidates.Count >= 20) break;
                     }
                     return result;
                 }
@@ -658,13 +667,17 @@ internal static partial class LiveHub
         }
         private string BiliSearchUrl(string keyword, CancellationToken token)
         {
+            return BiliSearchUrlPage(keyword, token, 1);
+        }
+        private string BiliSearchUrlPage(string keyword, CancellationToken token, int page)
+        {
             var nav = LookupData.Obj(LookupData.Json(Get("https://api.bilibili.com/x/web-interface/nav", token).Body), "data");
             var images = LookupData.Obj(nav, "wbi_img");
             string image = LookupData.Text(images, "img_url"), sub = LookupData.Text(images, "sub_url");
             if (image == null || sub == null) throw new LookupFailure("blocked", "B站没有返回搜索签名密钥，请重试。");
             string mixin = BiliDanmakuClient.MixinKey(Path.GetFileNameWithoutExtension(new Uri(image).AbsolutePath) + Path.GetFileNameWithoutExtension(new Uri(sub).AbsolutePath));
             string cleaned = Regex.Replace(keyword, "[!'()*]", "");
-            string canonical = "keyword=" + Uri.EscapeDataString(cleaned).Replace("%20", "+") + "&page=1&search_type=live_user&web_location=1550101&wts="
+            string canonical = "keyword=" + Uri.EscapeDataString(cleaned).Replace("%20", "+") + "&page=" + page.ToString(System.Globalization.CultureInfo.InvariantCulture) + "&search_type=live_user&web_location=1550101&wts="
                 + ((long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
             string digest;
             using (var md5 = System.Security.Cryptography.MD5.Create()) digest = BitConverter.ToString(md5.ComputeHash(Encoding.UTF8.GetBytes(canonical + mixin))).Replace("-", "").ToLowerInvariant();

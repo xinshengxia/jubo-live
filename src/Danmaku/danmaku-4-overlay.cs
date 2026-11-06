@@ -139,6 +139,15 @@ internal sealed class DanmakuOverlayForm : Form
     private readonly DanmakuRenderer _renderer;
     private readonly object _gate = new object();
     private readonly Queue<object> _inbox = new Queue<object>();
+    private const int MaxInbox = 2048;
+    private const int MaxPendingDanmaku = 1024;
+    private long _inboxDropped;
+    private long _inboxDropsReported;
+    private long _pendingDropped;
+    private int _hotkeyFailures;
+    private bool _hotkeysActive;
+    private DateTime _lastHotkeyRetry;
+    private DateTime _lastHotkeyLog;      // 注册失败重试会每 2 秒来一次，日志最多每分钟一行
 
     private IntPtr _targetHwnd = IntPtr.Zero;
     private Bitmap _canvas;
@@ -226,42 +235,118 @@ internal sealed class DanmakuOverlayForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        RegisterHotkeys();
+        UpdateHotkeyOwnership();
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
     {
         UnregisterHotkeys();
+        _hotkeysActive = false;
         base.OnHandleDestroyed(e);
     }
 
     // ------------------------------------------------------------------ 对外接口（可从任意线程调用）
     public void PostDanmaku(DanmakuItem item)
     {
-        lock (_gate) { _inbox.Enqueue(item); }
+        EnqueueBounded(item);
     }
-    public void PostLiveEvent(LiveEvent item) { lock (_gate) { _inbox.Enqueue(item); } }
+    public void PostLiveEvent(LiveEvent item) { EnqueueBounded(item); }
 
     public void PostSuperChat(SuperChatItem item)
     {
-        lock (_gate) { _inbox.Enqueue(item); }
+        EnqueueBounded(item);
     }
 
     public void PostSuperChatDelete(long id)
     {
-        lock (_gate) { _inbox.Enqueue(new ScDelete(id)); }
+        EnqueueBounded(new ScDelete(id));
     }
 
     public void PostStatus(string text)
     {
-        lock (_gate) { _inbox.Enqueue(new StatusNote(text)); }
+        EnqueueBounded(new StatusNote(text));
     }
 
     /// 表情字典拉好了。走 inbox 而不是直接调渲染器 —— 字典是在客户端线程填的，
     /// 而 SetEmoticons 会清文本位图缓存，必须在 UI 线程做。
     public void PostEmoticons(EmoticonDictionary dict)
     {
-        lock (_gate) { _inbox.Enqueue(new EmoticonsNote(dict)); }
+        EnqueueBounded(new EmoticonsNote(dict));
+    }
+
+    private static int InboxPriority(object message)
+    {
+        if (message is ScDelete) return 4;
+        if (message is SuperChatItem) return 3;
+        if (message is StatusNote || message is EmoticonsNote) return 2;
+        return message is LiveEvent ? 1 : 0;
+    }
+    private void EnqueueBounded(object message)
+    {
+        if (message == null) return;
+        string report = null;
+        lock (_gate)
+        {
+            bool keep = true;
+            if (_inbox.Count >= MaxInbox)
+            {
+                // Evict the oldest item at the lowest priority, not the first item
+                // weaker than the incoming event. A deletion must evict queued chat
+                // before an older SC; otherwise mixed-priority floods lose paid cards.
+                int weakestPriority = InboxPriority(message), weakestIndex = -1, index = 0;
+                foreach (object queued in _inbox)
+                {
+                    int priority = InboxPriority(queued);
+                    if (priority < weakestPriority) { weakestPriority = priority; weakestIndex = index; }
+                    index++;
+                }
+                int existing = _inbox.Count;
+                if (weakestIndex >= 0)
+                    for (int i = 0; i < existing; i++)
+                    {
+                        object old = _inbox.Dequeue();
+                        if (i != weakestIndex) _inbox.Enqueue(old);
+                    }
+                _inboxDropped++;
+                if (weakestIndex < 0) keep = false;
+                if (_inboxDropped == 1 || _inboxDropped - _inboxDropsReported >= 500)
+                {
+                    _inboxDropsReported = _inboxDropped;
+                    report = "弹幕接收队列已满（容量 " + MaxInbox + "），按优先级累计丢弃 "
+                        + _inboxDropped + " 条；优先保留 SC/删除等事件，同级满载时仍可能丢弃";
+                }
+            }
+            if (keep) _inbox.Enqueue(message);
+        }
+        // 文件日志放在锁外：日志慢不能拖住收包线程，也不能在锁里再抢日志互斥量。
+        if (report != null) DanmakuHost.Log(report);
+    }
+    // Only the overlay whose player owns the foreground holds the shortcuts.
+    // This also prevents a hidden first session controlling a second player.
+    private bool OwnsForeground()
+    {
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero) return false;
+        if (IsHandleCreated && foreground == Handle) return true;
+        uint pid; GetWindowThreadProcessId(foreground, out pid);
+        return pid == (uint)_targetPid;
+    }
+    private void UpdateHotkeyOwnership()
+    {
+        bool active = IsHandleCreated && OwnsForeground();
+        if (active != _hotkeysActive)
+        {
+            _hotkeysActive = active;
+            if (active) RegisterHotkeys(); else UnregisterHotkeys();
+            _lastHotkeyRetry = DateTime.UtcNow;
+        }
+        else if (active && _hotkeyFailures > 0 && (DateTime.UtcNow - _lastHotkeyRetry).TotalSeconds >= 2)
+        {
+            // 只在「有组合没注册上」时重试：另一个会话退出后本会话成为前台，
+            // 这里补注册；已经全部注册成功就不反复注销/注册（避免按键落在空窗期丢失）。
+            _lastHotkeyRetry = DateTime.UtcNow;
+            UnregisterHotkeys(); RegisterHotkeys();
+        }
     }
 
     private sealed class ScDelete { public ScDelete(long id) { Id = id; } public long Id; }
@@ -285,31 +370,41 @@ internal sealed class DanmakuOverlayForm : Form
 
     private void RegisterHotkeys()
     {
-        TryHotkey(HotkeyToggleDanmaku, _config.HotkeyToggleDanmaku);
-        TryHotkey(HotkeyCycleSc, _config.HotkeyCycleSc);
-        TryHotkey(HotkeyToggleOverlay, _config.HotkeyToggleOverlay);
-        TryHotkey(HotkeyFontUp, _config.HotkeyFontUp);
-        TryHotkey(HotkeyFontDown, _config.HotkeyFontDown);
-        TryHotkey(HotkeyAreaUp, _config.HotkeyAreaUp);
-        TryHotkey(HotkeyAreaDown, _config.HotkeyAreaDown);
-        TryHotkey(HotkeySpeedUp, _config.HotkeySpeedUp);
-        TryHotkey(HotkeySpeedDown, _config.HotkeySpeedDown);
-        TryHotkey(HotkeyDelayLess, _config.HotkeyDelayLess);
-        TryHotkey(HotkeyDelayMore, _config.HotkeyDelayMore);
+        int failures = 0;
+        if (!TryHotkey(HotkeyToggleDanmaku, _config.HotkeyToggleDanmaku)) failures++;
+        if (!TryHotkey(HotkeyCycleSc, _config.HotkeyCycleSc)) failures++;
+        if (!TryHotkey(HotkeyToggleOverlay, _config.HotkeyToggleOverlay)) failures++;
+        if (!TryHotkey(HotkeyFontUp, _config.HotkeyFontUp)) failures++;
+        if (!TryHotkey(HotkeyFontDown, _config.HotkeyFontDown)) failures++;
+        if (!TryHotkey(HotkeyAreaUp, _config.HotkeyAreaUp)) failures++;
+        if (!TryHotkey(HotkeyAreaDown, _config.HotkeyAreaDown)) failures++;
+        if (!TryHotkey(HotkeySpeedUp, _config.HotkeySpeedUp)) failures++;
+        if (!TryHotkey(HotkeySpeedDown, _config.HotkeySpeedDown)) failures++;
+        if (!TryHotkey(HotkeyDelayLess, _config.HotkeyDelayLess)) failures++;
+        if (!TryHotkey(HotkeyDelayMore, _config.HotkeyDelayMore)) failures++;
+        _hotkeyFailures = failures;
     }
 
-    private void TryHotkey(int id, string spec)
+    private bool TryHotkey(int id, string spec)
     {
         uint modifiers, key;
-        if (!ParseHotkey(spec, out modifiers, out key)) return;
+        if (!ParseHotkey(spec, out modifiers, out key)) return true;   // 空/非法配置不占用组合
         try
         {
             // ⚠️ RegisterHotKey **失败时返回 false 而不是抛异常** —— 原来不看返回值，
             //    于是「热键被别的程序占了」这种情况完全静默：用户按了没反应，日志里也没有。
             if (!RegisterHotKey(Handle, id, modifiers, key))
-                DanmakuHost.Log("热键注册失败（多半被别的程序占了）：" + spec);
+            {
+                if ((DateTime.UtcNow - _lastHotkeyLog).TotalSeconds >= 60)
+                {
+                    _lastHotkeyLog = DateTime.UtcNow;
+                    DanmakuHost.Log("热键注册失败（多半被别的程序占了）：" + spec);
+                }
+                return false;
+            }
+            return true;
         }
-        catch (Exception ex) { DanmakuHost.Log("热键注册异常 " + spec + "：" + ex.Message); }
+        catch (Exception ex) { DanmakuHost.Log("热键注册异常 " + spec + "：" + ex.Message); return false; }
     }
 
     private void UnregisterHotkeys()
@@ -367,6 +462,7 @@ internal sealed class DanmakuOverlayForm : Form
     {
         if (m.Msg == WmHotkey)
         {
+            if (!OwnsForeground()) return;
             int id = m.WParam.ToInt32();
             if (id == HotkeyToggleDanmaku) ToggleDanmaku();
             else if (id == HotkeyCycleSc) CycleSuperChatMode();
@@ -617,6 +713,7 @@ internal sealed class DanmakuOverlayForm : Form
         if (dt <= 0f || dt > 0.5f) dt = 1f / 30f;
         _lastFrame = now;
 
+        UpdateHotkeyOwnership();
         DrainInbox();
         ReloadConfigIfChanged();
         // 即使窗口暂时消失也清理过期弹幕，恢复时不会灌出积攒的旧消息。
@@ -946,6 +1043,14 @@ internal sealed class DanmakuOverlayForm : Form
                     PendingDanmaku pending;
                     pending.Item = danmaku;
                     pending.ArrivedAt = DateTime.UtcNow;
+                    if (_pendingDanmaku.Count >= MaxPendingDanmaku)
+                    {
+                        _pendingDanmaku.RemoveAt(0);
+                        _pendingDropped++;
+                        if (_pendingDropped == 1 || _pendingDropped % 500 == 0)
+                            DanmakuHost.Log("弹幕延迟队列已满（" + MaxPendingDanmaku + "），累计丢弃最旧 "
+                                + _pendingDropped + " 条（先保障已到显示期的弹幕）");
+                    }
                     _pendingDanmaku.Add(pending);
                 }
                 else _renderer.AddDanmaku(danmaku);
@@ -998,7 +1103,7 @@ internal sealed class DanmakuOverlayForm : Form
 
     private void ApplyConfigAndHotkeys()
     {
-        if (IsHandleCreated) { UnregisterHotkeys(); RegisterHotkeys(); }
+        if (IsHandleCreated) { UnregisterHotkeys(); _hotkeysActive = false; UpdateHotkeyOwnership(); }
         _renderer.ApplyConfig();
     }
 
@@ -1742,3 +1847,4 @@ internal static class DanmakuHost
             + " \"" + item.Message + "\"";
     }
 }
+

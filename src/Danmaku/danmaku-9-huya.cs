@@ -432,7 +432,7 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
     /// **收割为什么可行**：虎牙页面把表情渲染成
     ///   `<img style="max-width: 56px;" src="…" alt="[满头问号]" data-emo="…">`
     /// —— `alt` 就是表情名。所以**匿名**打开房间页、轮询聊天区带 alt 的 img，
-    /// 就能拿到平台自己用的那份映射。脚本：`tasks\…\scripts\harvest-emoticon-map.mjs`
+    /// 就能拿到平台自己用的那份映射（该一次性收割脚本不随仓库提供）。
     ///
     /// 格式：`名字|URL`；名字不带方括号（`Add` 会规范化）。
     /// 同名时**这张表覆盖本地 39 条** —— 实测 `[吐血]` 在两边都有但 URL 不同，
@@ -1107,7 +1107,12 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
         {
             reader.EnterStruct(0);
             item.UserName = reader.Str(2, null);
-            item.GuardLevel = (int)reader.Num(5, 0);      // iNobleLevel（贵族等级）
+            // tag5 iNobleLevel 是**虎牙贵族等级（1–7）**，与 B站 的 总督/提督/舰长 不是一套语义：
+            // 以前写进通用 GuardLevel 后会被渲染成「[舰长]」之类的错误头衔（误标）。
+            // 这里读取并丢弃；本版不冒充通用守护头衔，也不凭猜测翻译档位名。
+            // （与 Rust danmaku_huya.rs 当前处理一致；以后要显示虎牙原生贵族时应新增独立字段。）
+            reader.Num(5, 0);
+            item.GuardLevel = 0;
             // ⚠️ **必须吃掉 STRUCTEND** 再出去。
             //    少这一步的话游标停在结构体内部，后面取 sContent(tag3) 会先在 tUserInfo 里
             //    找到 tag3（iGender）——拿到的不是弹幕正文；更常见的是直接撞上 STRUCTEND 返回 null，

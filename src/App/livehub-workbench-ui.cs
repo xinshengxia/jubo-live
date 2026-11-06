@@ -22,6 +22,10 @@ internal static partial class LiveHub
         private string workbenchIdleHint;
         private WorkbenchPanel workbenchContent, workbenchLaunch, workbenchFooter;
         private Panel workbenchHost, workbenchModels;
+        private FlowLayoutPanel workbenchSessionActions;
+        // 观看会话页的同步基线/中继计数（只读）与「标记音画异常」入口。
+        private Label workbenchSessionSync;
+        private Button avSyncMark = new ModernButton();
         private WorkbenchStrip workbenchChrome, workbenchSidebar;
         private Label workbenchTitle, workbenchSubtitle, workbenchBrand;
         private WorkbenchBrandMark workbenchBrandMark, workbenchChromeIcon;
@@ -389,18 +393,45 @@ internal static partial class LiveHub
         {
             Panel page = workbenchPages["sessions"];
             sessionsLabel.Parent = page; reopen.Parent = page; sessionsList.Parent = page;
+            workbenchSessionActions = new FlowLayoutPanel { Name = "workbenchSessionActions", WrapContents = true, AutoSize = false, Margin = Padding.Empty, Padding = Padding.Empty };
+            stopSession.Name = "workbenchStopSession"; stopSession.Text = "停止此会话";
+            resyncSession.Name = "workbenchResyncSession"; resyncSession.Text = "重新同步";
+            avSyncMark.Name = "workbenchAvSyncMark"; avSyncMark.Text = "标记音画异常";
+            enhanceTip.SetToolTip(avSyncMark, "把时间、选中会话与当前中继时间线计数写入本地诊断日志；不记录直播地址或 Cookie。");
+            foreach (Button action in new[] { reopen, resyncSession, stopSession, avSyncMark })
+            {
+                action.AutoSize = false;
+                action.Size = new Size(Px(action == reopen ? 190 : action == avSyncMark ? 140 : 110), Px(30));
+                action.Margin = new Padding(0, 0, Px(8), Px(4));
+                WorkbenchFont(action, 12, FontStyle.Regular);
+                workbenchSessionActions.Controls.Add(action);
+            }
+            page.Controls.Add(workbenchSessionActions);
+            stopSession.Click += delegate { CloseSelectedPlayback(false); };
+            resyncSession.Click += delegate { CloseSelectedPlayback(true); };
+            avSyncMark.Click += delegate { MarkSelectedAvSyncIssue(); };
+            sessionsList.SelectedIndexChanged += delegate { UpdateSessionActions(); };
+            UpdateSessionActions();
             sessionsList.Name = "workbenchSessions";
             ModernLabel sessionsHeading = sessionsLabel as ModernLabel;
             if (sessionsHeading != null) sessionsHeading.Role = ModernLabel.RoleKind.Normal;
             WorkbenchFont(sessionsLabel, 14, FontStyle.Bold);
             WorkbenchFont(reopen, 12, FontStyle.Regular);
-            workbenchSessionHint = WorkbenchLabel("workbenchSessionHint", "重新打开将恢复该会话的播放器、画质、缓冲和弹幕选项。", true);
+            workbenchSessionHint = WorkbenchLabel("workbenchSessionHint", "重新打开保留原选项；重新同步会先停止此会话再新开，可能短暂停顿或跳过内容。", true);
             WorkbenchFont(workbenchSessionHint, 12, FontStyle.Regular);
             page.Controls.Add(workbenchSessionHint);
+            // 只读：本程序显式传给 mpv 的同步参数 + 中继进程写下的时间线计数。
+            workbenchSessionSync = WorkbenchLabel("workbenchSessionSync",
+                "选择会话后显示：mpv 同步参数（video-sync/framedrop/autosync/audio-delay/缓存档）与中继时间线计数。", true);
+            workbenchSessionSync.AutoSize = false; workbenchSessionSync.AutoEllipsis = false;
+            WorkbenchFont(workbenchSessionSync, 11, FontStyle.Regular);
+            page.Controls.Add(workbenchSessionSync);
             workbenchSessionsEmpty = WorkbenchLabel("workbenchSessionsEmpty", "暂无观看会话\r\n打开一个房间后，这里会显示会话记录。", true);
             workbenchSessionsEmpty.AutoSize = false; workbenchSessionsEmpty.TextAlign = ContentAlignment.MiddleCenter;
             WorkbenchFont(workbenchSessionsEmpty, 13, FontStyle.Regular);
             page.Controls.Add(workbenchSessionsEmpty);
+            // 控件都建好后重算一次按钮可用性/诊断文案（构造期间列表可能还没有选中项）。
+            UpdateSessionActions();
         }
 
         private ComboBox WorkbenchPreference(string name, ComboBox source, Action changed)
@@ -991,15 +1022,27 @@ internal static partial class LiveHub
             int width = Math.Max(Px(240), page.ClientSize.Width);
             int height = Math.Max(Px(140), page.ClientSize.Height);
             int y = Px(2);
-            int reopenWidth = Math.Min(Px(190), Math.Max(Px(130), width / 4));
-            sessionsLabel.SetBounds(0, y, Math.Max(Px(90), width - reopenWidth - Px(12)), Px(30));
-            reopen.SetBounds(width - reopenWidth, y, reopenWidth, Px(30));
-            y += Px(30) + Px(4);
+            sessionsLabel.SetBounds(0, y, width, Px(26));
+            y += Px(26) + Px(4);
+            // 四个按钮一行放不下时换行；最小窗口下最多三行，仍然可达。
+            int actionWidth = Px(190 + 110 + 110 + 140 + 32);
+            int actionRows = width >= actionWidth ? 1 : width >= Px(300) ? 2 : 3;
+            workbenchSessionActions.SetBounds(0, y, width, Px(34) * actionRows);
+            y += workbenchSessionActions.Height + Px(4);
             int hintWidth = Math.Max(Px(80), width - Px(12));
             int hintHeight = Math.Max(Px(18), Math.Min(Px(44), TextRenderer.MeasureText(workbenchSessionHint.Text,
                 workbenchSessionHint.Font, new Size(hintWidth, int.MaxValue), TextFormatFlags.WordBreak).Height + Px(2)));
             workbenchSessionHint.SetBounds(0, y, hintWidth, hintHeight);
             y += hintHeight + Px(8);
+            if (workbenchSessionSync != null)
+            {
+                // 两行摘要（同步基线 / 中继计数）；窄窗口允许折成三行，列表仍由页面滚动兜底。
+                int syncHeight = Math.Max(Px(36), Math.Min(Px(84), TextRenderer.MeasureText(workbenchSessionSync.Text,
+                    workbenchSessionSync.Font, new Size(Math.Max(Px(100), width), int.MaxValue),
+                    TextFormatFlags.WordBreak).Height + Px(2)));
+                workbenchSessionSync.SetBounds(0, y, width, syncHeight);
+                y += syncHeight + Px(8);
+            }
             sessionsList.SetBounds(0, y, width, Math.Max(Px(150), height - y - Px(2)));
             if (sessionsList.Width > 2 && sessionsList.Height > 2)
             {

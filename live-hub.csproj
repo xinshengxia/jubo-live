@@ -18,6 +18,9 @@
     <AppConfig>app.config</AppConfig>
     <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- 2026-11-07：B站弹幕 protover=3 的 brotli 解码子集（src\Brotli，第三方+本地封层）含 unsafe/stackalloc。
+         与 Build-Hardened.ps1 的 legacy csc /unsafe 对应。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>none</DebugType>
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <FrameworkPathOverride Condition="'$(FrameworkPathOverride)' == ''">$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319</FrameworkPathOverride>
@@ -32,6 +35,8 @@
     <Compile Include="src\Danmaku\*.cs" />
     <!-- 2026-09-27：partial 拆分出来的另一半（路径与配置解析） -->
     <Compile Include="src\App\*.cs" />
+    <!-- 2026-11-07：B站弹幕 ver=3（brotli）解码子集 + 本地封层，见 src\Brotli\README.md -->
+    <Compile Include="src\Brotli\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
