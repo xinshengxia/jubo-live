@@ -82,6 +82,7 @@ Copy-Item -LiteralPath $antdDll -Destination (Join-Path $outDir 'AntdUI.dll') -F
 if ($outDir -ne $PSScriptRoot) {
     Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $outDir -Force
     Copy-Item -LiteralPath (Join-Path $root 'licenses') -Destination $outDir -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $root 'assets') -Destination $outDir -Recurse -Force
     # 与 SDK 产物布局保持一致；mpv 的显式 --script 参数需要这个文件。
     $luaTo = Join-Path $outDir 'lua'
     New-Item -ItemType Directory -Force -Path $luaTo | Out-Null

@@ -47,8 +47,14 @@ internal static partial class LiveHub
             ProcessStartInfo douyu = BuildStart(Parse("https://www.douyu.com/952595", "bili"), "mpv");
             ProcessStartInfo douyin = BuildStart(Parse("https://live.douyin.com/723910165684", "bili"), "mpv");
             ProcessStartInfo pot = BuildStart(Parse("https://www.douyu.com/952595", "bili"), "potplayer");
-            WriteSelfTestReport(bili, huya, douyu, douyin, pot);
-            return Path.GetFileName(bili.FileName) == "mpv.exe"
+            // 播放音频策略依赖包内 OpenAL 配置；缺了它 mpv 起播会拒绝（明确报错而不是无声）。
+            // 自检把它算作必需项，这样安装/发布流水线在少带 assets\ 时会当场失败，而不是交付后才暴露。
+            bool audioConfig = true;
+            try { RequireMpvOpenAlConfiguration(); }
+            catch (Exception) { audioConfig = false; }
+            WriteSelfTestReport(bili, huya, douyu, douyin, pot, audioConfig);
+            return audioConfig
+                && Path.GetFileName(bili.FileName) == "mpv.exe"
                 && Path.GetFileName(huya.FileName) == "mpv.exe"
                 && Path.GetFileName(douyu.FileName) == "mpv.exe"
                 && Path.GetFileName(pot.FileName) == "PotPlayerMini64.exe"
@@ -75,7 +81,7 @@ internal static partial class LiveHub
         }
     }
 
-    private static void WriteSelfTestReport(ProcessStartInfo bili, ProcessStartInfo huya, ProcessStartInfo douyu, ProcessStartInfo douyin, ProcessStartInfo pot)
+    private static void WriteSelfTestReport(ProcessStartInfo bili, ProcessStartInfo huya, ProcessStartInfo douyu, ProcessStartInfo douyin, ProcessStartInfo pot, bool audioConfig)
     {
         {
             var report = new List<string>();
@@ -86,7 +92,8 @@ internal static partial class LiveHub
             report.Add("DOUYIN = " + douyin.FileName + " || " + douyin.Arguments);
             report.Add("POT   = " + pot.FileName + " || " + pot.Arguments);
             report.Add("YTDLP-EXISTS=" + File.Exists(YtDlp) + "  LUA-EXISTS=" + File.Exists(LiveTitleScript) + "  PORTABLE=" + Portable
-            + "  VARIANT=" + (PortableLite ? "lite" : "full") + "  MPV-BUNDLED=" + File.Exists(Mpv) + "  POTPLAYER-BUNDLED=" + File.Exists(PotPlayer));
+            + "  VARIANT=" + (PortableLite ? "lite" : "full") + "  MPV-BUNDLED=" + File.Exists(Mpv) + "  POTPLAYER-BUNDLED=" + File.Exists(PotPlayer)
+            + "  MPV-AUDIO-CONFIG=" + (audioConfig ? "ok" : "MISSING"));
             // 路径解析来源（2026-09-27，评估报告 §8）：这台机器到底用了哪个程序、从哪找到的。
             // 「改了配置没生效」这类问题从此可以直接看这份报告，不用猜。
             report.AddRange(DescribeResolvedPaths());

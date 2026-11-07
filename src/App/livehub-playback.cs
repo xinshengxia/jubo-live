@@ -65,11 +65,6 @@ internal static partial class LiveHub
     private static ProcessStartInfo Launch(LaunchPlan plan)
     {
         string arguments = plan.Arguments;
-        if (plan.NeedsRelay)
-        {
-            int port = StartRelay(plan.Target);
-            arguments = arguments.Replace(RelayPortToken, port.ToString());
-        }
         if (!File.Exists(plan.FileName) || !LooksLikeExecutable(plan.FileName))
         {
             // 落在包内 bin\ 下的默认路径 = 「这个包没带这个播放器」（lite 包不带 mpv；PotPlayer 一律不带）；
@@ -87,10 +82,20 @@ internal static partial class LiveHub
                         + "\r\n请点主界面「播放器路径 → 选择程序…」重新指定一个能用的播放器。"),
                 plan.FileName);
         }
-        ProcessStartInfo start = new ProcessStartInfo(plan.FileName, arguments);
-        start.UseShellExecute = true;
-        start.WorkingDirectory = Path.GetDirectoryName(plan.FileName);
-        return start;
+        // Check the required audio output before starting a relay. An external
+        // mpv without OpenAL must fail actionably rather than play without sound.
+        string openAlConfig = null;
+        if (plan.Player == "mpv")
+        {
+            openAlConfig = RequireMpvOpenAlConfiguration();
+            RequireMpvOpenAl(plan.FileName);
+        }
+        if (plan.NeedsRelay)
+        {
+            int port = StartRelay(plan.Target);
+            arguments = arguments.Replace(RelayPortToken, port.ToString());
+        }
+        return BuildPlayerProcessStartInfo(plan.Player, plan.FileName, arguments, openAlConfig);
     }
 
     private static ProcessStartInfo BuildStart(Target target, string player)
@@ -162,20 +167,19 @@ internal static partial class LiveHub
                 common += " --vo=gpu-next,gpu --profile=high-quality";   // GPU 翻倍
         }
         catch (Exception ex) { Diagnostics.Report("读取画质增强开关", ex); }
-        return common + " --video-sync=audio --framedrop=vo" + (target.BufferMode == "low"
+        return common + MpvAudioOutputArgs + " --video-sync=audio --framedrop=vo" + (target.BufferMode == "low"
             ? " --cache=yes --cache-secs=3 --demuxer-readahead-secs=2"
             : " --cache=yes --cache-secs=15 --demuxer-readahead-secs=10");
     }
 
     /// 同步相关的 mpv 参数（只读展示，给工作台「观看会话」页用）。
-    /// 展示只描述本程序**显式**传了什么：autosync/audio-delay 我们没有传，
-    /// 用户全局 mpv.conf 仍可能覆盖，因此不能写成「保证同步」。
+    /// 展示实际显式选择的音频输出与同步策略，不把内部 A/V 数值当作物理输出保证。
     private static string PlaybackSyncSummary(string player, Target target)
     {
         if (player == "potplayer")
             return "PotPlayer 自身同步（本程序不传 video-sync/framedrop/autosync/audio-delay）· 缓冲档="
                 + (target != null && target.BufferMode == "low" ? "低延迟" : "稳定");
-        return "video-sync=audio · framedrop=vo · autosync=未显式设置（mpv 默认 0）"
+        return "OpenAL → WASAPI（ALSOFT_DRIVERS=wasapi） · video-sync=audio · framedrop=vo · autosync=30（延迟读数平滑）"
             + " · audio-delay=未显式设置（mpv 默认 0） · 缓存="
             + (target != null && target.BufferMode == "low"
                 ? "低延迟（cache-secs=3 / demuxer-readahead-secs=2）"

@@ -549,7 +549,8 @@ try {
     # ---- 打包内容裁剪：用**白名单**而不是黑名单 ----
     # 黑名单的问题是「明天开发树里多一个东西」时会悄悄进包；白名单是「没写进去就不进包」。
     $allowTopFiles = @('看直播.exe', '看直播.exe.config', '使用说明.md', 'emoji-sheet.png', 'emoji-sheet.txt', 'deps.lock.json', 'THIRD_PARTY_NOTICES.md', 'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'AntdUI.dll', 'portable.marker', 'LICENSE')
-    $allowDirs = @('bin', 'lib', 'fonts', 'lua', 'data', 'licenses')
+    # assets\audio\openal-wasapi.ini 是 mpv OpenAL→WASAPI 音频策略的必需运行资源，必须随包发布。
+    $allowDirs = @('bin', 'lib', 'fonts', 'assets', 'lua', 'data', 'licenses')
     $userDataFiles = @('data/bili-cookies.txt', 'data/bili-cookies.txt.json', 'data/favorites.json', 'data/history.json')
     $skippedSources = New-Object System.Collections.Generic.List[string]
     $skippedUserData = New-Object System.Collections.Generic.List[string]

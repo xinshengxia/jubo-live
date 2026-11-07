@@ -22,7 +22,8 @@ foreach ($directory in Get-ChildItem -LiteralPath $PSScriptRoot -Directory) {
     New-Item -ItemType Directory -Path $to -Force | Out-Null
     foreach ($file in $code) { $source += $file.FullName; Copy-Item -LiteralPath $file.FullName -Destination $to }
 }
-foreach ($asset in @('fonts','lib','licenses','tests','emoji-sheet.png','emoji-sheet.txt','THIRD_PARTY_NOTICES.md','live-title.lua')) {
+# assets 随重建输出一起带走：包内 OpenAL 配置是 mpv 起播的必需资源。
+foreach ($asset in @('fonts','lib','licenses','assets','tests','emoji-sheet.png','emoji-sheet.txt','THIRD_PARTY_NOTICES.md','live-title.lua')) {
     Copy-Item -LiteralPath (Join-Path $root $asset) -Destination $output -Recurse
 }
 & (Join-Path $root 'tools/New-OfflineLayout.ps1') -Source $sourceView -Destination $output -ToolsOnly

@@ -37,7 +37,8 @@ $files['lib/antdui/AntdUI.dll'] = Join-Path $Repo 'lib/antdui/AntdUI.dll'
 foreach ($relative in @('Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','lib/zxing.dll','lib/webview2/assets.json','lib/webview2/Microsoft.Web.WebView2.Core.dll','lib/webview2/Microsoft.Web.WebView2.WinForms.dll','lib/webview2/x64/WebView2Loader.dll','lib/webview2/x86/WebView2Loader.dll','emoji-sheet.png','emoji-sheet.txt')) {
     $files[$relative] = Join-Path $BuiltLayout $relative
 }
-foreach ($directory in @('fonts','licenses')) {
+# assets\audio\openal-wasapi.ini 是 mpv OpenAL→WASAPI 音频策略的必需运行资源；少带它启动播放会明确拒绝。
+foreach ($directory in @('fonts','licenses','assets')) {
     $base = Join-Path $Repo $directory
     foreach ($file in Get-ChildItem -LiteralPath $base -Recurse -File) { $files[$directory + '/' + $file.FullName.Substring($base.Length + 1).Replace('\','/')] = $file.FullName }
 }

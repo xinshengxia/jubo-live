@@ -2,7 +2,7 @@
 
 > **推荐使用 Rust 重构版：[jubo Live Rust](https://github.com/xinshengxia/jubo-live-rust)**
 >
-> 「看直播」已提供独立的 Rust 版本，当前为 **1.0.6**。推荐新用户优先前往 [Rust 仓库](https://github.com/xinshengxia/jubo-live-rust) 和 [下载页面](https://github.com/xinshengxia/jubo-live-rust/releases/latest)。
+> 「看直播」已提供独立的 Rust 版本，当前为 **1.0.7**。推荐新用户优先前往 [Rust 仓库](https://github.com/xinshengxia/jubo-live-rust) 和 [下载页面](https://github.com/xinshengxia/jubo-live-rust/releases/latest)。
 >
 > 本仓库保留 C# 版源码与已有发行版本。两版使用独立数据目录；迁移收藏请主动导出、导入，升级前保留自己的账号、配置和历史资料。
 
@@ -10,6 +10,18 @@
 Windows 绿色版四平台直播启动器：把 **B站 / 虎牙 / 斗鱼 / 抖音** 的直播间，一键交给 **mpv**（也支持 **PotPlayer**）播放，并带上弹幕覆盖层、房间与主播搜索、分平台收藏与最近播放。
 
 免安装：不写注册表、不装服务、不驱动；数据放在 exe 旁边的 `data\` 目录，删掉文件夹就等于卸载。
+
+## 1.1.8 更新
+
+相对 1.1.7：
+
+- **修复 mpv 长时间播放音画不同步（声音持续提前）**：mpv 自带的 WASAPI 音频输出在部分设备驱动上，会把约 12 毫秒的待播放队列上报成约 5.6 秒设备延迟，播放器按这个错误延迟调度音频；听感上声音持续提前，而 mpv 内部 A/V 数值仍接近 0。本版起 mpv 默认改用 OpenAL Soft → WASAPI 输出，并使用随包提供的最小 OpenAL 配置，让音频延迟采用另一套计算模型。已在真实直播上验证恢复同步，并完成连续两小时实播复测。
+- **启动前检查 mpv 的音频能力**：默认启动会先做一次无窗口的 `--ao=help` 检查；所选 mpv 不支持 OpenAL 时会明确提示改用带 OpenAL 的 mpv（full 包自带的 mpv 已支持），不会静默无声播放。
+- **只影响本程序拉起的 mpv**：OpenAL 配置通过子进程环境变量传入，不写系统环境变量、不改 mpv 全局配置，也不影响用户其他程序；C# 版当前没有 mpv 额外参数入口，如需覆盖默认音频输出，请换用支持 OpenAL 的 mpv 或其他播放器。
+- **PotPlayer 路径不变**：PotPlayer 不经过 mpv 的音频后端，本版不改动其设置与启动参数；其同步仍由 PotPlayer 自身渲染器和设置决定。
+- **发布包与安装更新**：full/lite 包、源码包与本机安装都携带 OpenAL 配置文件；升级保留原有 `data`、`runtime`、收藏、历史与登录态。
+
+更新时保留原有 `data`、`runtime` 和个人配置；公开包不含账号数据与登录态。
 
 ## 1.1.7 更新
 

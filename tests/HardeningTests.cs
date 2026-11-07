@@ -923,6 +923,17 @@ internal static partial class HardeningTests
             return 0;
         }
         if (args.Length == 1 && args[0] == "--hang") { Thread.Sleep(5000); return 0; }
+        // 有界子进程捕获的夹具：一条输出远超上限、一条返回非零退出码。
+        if (args.Length == 1 && args[0] == "--emit-stdout-huge")
+        {
+            Console.Write(new string('o', 200000));
+            return 0;
+        }
+        if (args.Length == 2 && args[0] == "--exit-code")
+        {
+            int exitCode;
+            return int.TryParse(args[1], out exitCode) ? exitCode : 2;
+        }
 
         string launcher = null, filter = null, report = null, srcRoot = null;
         bool list = false, verbose = false;
@@ -986,6 +997,9 @@ internal static partial class HardeningTests
         TestRunner.Add("启动器", "标题参数转义", delegate { TestArguments(); });
         TestRunner.Add("启动器", "mpv 空格、中文和逗号路径参数往返", TestMpvPathArguments);
         TestRunner.Add("播放", "mpv 直播音频时钟与缓冲画质策略", TestMpvLiveClockPolicy);
+        TestRunner.Add("播放", "mpv OpenAL 能力与子进程 WASAPI 隔离", TestMpvOpenAlLaunchPolicy);
+        TestRunner.Add("播放", "mpv 真实 --ao=help 能力探测", TestMpvOpenAlProbeAgainstBundledMpv);
+        TestRunner.Add("启动器", "有界子进程捕获的退出码与输出上限", delegate { TestBoundedCapture(self); });
         TestRunner.Add("播放", "控制条使用独立直播标题且保持纯计划", TestMpvMediaTitleHints);
         TestRunner.Add("解析", "虎牙短号标题网页兜底", TestHuyaTitleFallback);
         TestRunner.Add("启动器", "子进程输出捕获与超时", delegate { TestCapture(self); });

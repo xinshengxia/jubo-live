@@ -11,6 +11,8 @@ $exePath = Join-Path $staging '看直播.exe'
 Copy-Item -LiteralPath (Join-Path $Source 'app.config') -Destination ($validationExe + '.config')
 Copy-Item -LiteralPath (Join-Path $Source 'THIRD_PARTY_NOTICES.md') -Destination $staging
 Copy-Item -LiteralPath (Join-Path $Source 'licenses') -Destination $staging -Recurse
+# mpv 的 OpenAL→WASAPI 音频配置是必需运行资源，发布白名单必须把它带进包。
+Copy-Item -LiteralPath (Join-Path $Source 'assets') -Destination $staging -Recurse
 & (Join-Path $Source 'tools\Copy-WebViewAssets.ps1') -SourceRoot $Source -Destination $staging
 
 # 执行发布脚本的实际复制语句和文件筛选块，只操作上面的合成目录。
@@ -47,7 +49,10 @@ if (-not ($allFiles | Where-Object Name -EQ '看直播.exe.config')) { throw 'FA
 foreach ($sdkFile in @('Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','lib/webview2/x64/WebView2Loader.dll','lib/webview2/x86/WebView2Loader.dll')) {
     if (-not ($allFiles | Where-Object { (Get-RelPath $staging $_.FullName) -eq $sdkFile })) { throw "FAIL: 默认发布白名单排除了 $sdkFile" }
 }
-Write-Output 'PASS: 默认运行包筛选保留 exe.config'
+if (-not ($allFiles | Where-Object { (Get-RelPath $staging $_.FullName) -eq 'assets/audio/openal-wasapi.ini' })) {
+    throw 'FAIL: 默认发布白名单排除了 assets/audio/openal-wasapi.ini（mpv 起播必需资源）'
+}
+Write-Output 'PASS: 默认运行包筛选保留 exe.config 与 OpenAL 音频配置'
 foreach ($required in @('THIRD_PARTY_NOTICES.md','licenses/SOURCES.json','licenses/douyinLive-LICENSE.txt',
     'licenses/AllLive-LICENSE.txt','licenses/blivedm-LICENSE.txt','licenses/libwebp-COPYING.txt','licenses/libwebp-PATENTS.txt','licenses/libwebp-AUTHORS.txt','licenses/WebView2-SDK-LICENSE.txt','licenses/WebView2-SDK-NOTICE.txt')) {
     if (-not ($allFiles | Where-Object { (Get-RelPath $staging $_.FullName) -eq $required })) { throw "FAIL: 默认发布白名单遗漏 $required" }

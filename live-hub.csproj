@@ -51,7 +51,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="emoji-sheet.png;emoji-sheet.txt;fonts\**\*;lib\zxing.dll;lib\webview2\**\*;lib\antdui\**\*;tests\fixtures\**\*;THIRD_PARTY_NOTICES.md;licenses\**\*">
+    <Content Include="emoji-sheet.png;emoji-sheet.txt;fonts\**\*;lib\zxing.dll;lib\webview2\**\*;lib\antdui\**\*;tests\fixtures\**\*;THIRD_PARTY_NOTICES.md;licenses\**\*;assets\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="live-title.lua">

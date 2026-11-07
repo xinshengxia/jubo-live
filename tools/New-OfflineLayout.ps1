@@ -9,7 +9,7 @@ foreach ($relative in @('bin\mpv\mpv.exe', 'bin\PotPlayer\PotPlayerMini64.exe', 
 New-Item -ItemType Directory -Force -Path (Join-Path $Destination 'lua') | Out-Null
 Copy-Item -LiteralPath (Join-Path $Source 'live-title.lua') -Destination (Join-Path $Destination 'lua\live-title.lua') -Force
 if ($ToolsOnly) { return }
-foreach ($asset in @('emoji-sheet.png', 'emoji-sheet.txt', 'fonts', 'lib', 'tests\fixtures', 'THIRD_PARTY_NOTICES.md', 'licenses')) {
+foreach ($asset in @('emoji-sheet.png', 'emoji-sheet.txt', 'fonts', 'lib', 'tests\fixtures', 'THIRD_PARTY_NOTICES.md', 'licenses', 'assets')) {
     $from = Join-Path $Source $asset
     if (Test-Path -LiteralPath $from) {
         $target = Join-Path $Destination $asset
