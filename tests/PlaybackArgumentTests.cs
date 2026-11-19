@@ -120,6 +120,8 @@ internal static partial class HardeningTests
                     object plan = Call("ResolvePlan", target, "mpv", false, false);
                     string[] args = ParseCommandLine("mpv.exe " + (string)LookupGet(plan, "Arguments"));
                     int syncCount = 0, dropCount = 0, audioCount = 0, syncAt = -1, dropAt = -1, audioAt = -1, lastProfileAt = -1;
+                    Check(MpvArgument(args, "--keep-open-pause") == "no",
+                        label + " 保留 EOF 窗口且不把断流转为用户暂停");
                     for (int i = 0; i < args.Length; i++)
                     {
                         if (args[i].StartsWith("--video-sync=", StringComparison.Ordinal)) { syncCount++; syncAt = i; }

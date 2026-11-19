@@ -7,7 +7,9 @@ foreach ($relative in @('bin\mpv\mpv.exe', 'bin\PotPlayer\PotPlayerMini64.exe', 
     if (-not (Test-Path -LiteralPath $path)) { [IO.File]::WriteAllBytes($path, [byte[]]@()) }
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $Destination 'lua') | Out-Null
-Copy-Item -LiteralPath (Join-Path $Source 'live-title.lua') -Destination (Join-Path $Destination 'lua\live-title.lua') -Force
+foreach ($scriptName in @('live-title.lua','live-resync.lua')) {
+    Copy-Item -LiteralPath (Join-Path $Source $scriptName) -Destination (Join-Path $Destination "lua/$scriptName") -Force
+}
 if ($ToolsOnly) { return }
 foreach ($asset in @('emoji-sheet.png', 'emoji-sheet.txt', 'fonts', 'lib', 'tests\fixtures', 'THIRD_PARTY_NOTICES.md', 'licenses', 'assets')) {
     $from = Join-Path $Source $asset

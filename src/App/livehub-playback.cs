@@ -41,7 +41,7 @@ internal static partial class LiveHub
     // `yes` 要等到**真的开始播放**才建窗口 —— 上游取不到流时（下播/重播/CDN 403）进程活着
     // 但屏幕上什么都没有，用户看到的就是「点开了却没反应」。
     // immediate 会在等待媒体数据时也创建窗口，让起播状态可见。
-    private const string MpvWindowArgs = "--force-window=immediate --keep-open=yes --load-scripts=no";
+    private const string MpvWindowArgs = "--force-window=immediate --keep-open=yes --keep-open-pause=no --load-scripts=no";
 
     private sealed class LaunchPlan
     {
@@ -58,9 +58,20 @@ internal static partial class LiveHub
         if (target.SessionId == null) target.SessionId = NewSessionId();
         if (allowNetwork && target.Platform == "bili" && !File.Exists(YtDlp))
             throw new FileNotFoundException("B站播放需要 yt-dlp.exe。请从使用说明中的 yt-dlp 官方发布页下载，再到「播放器与画质」选择 yt-dlp 的程序路径。", YtDlp);
+        if (allowNetwork && allowSideEffects && target.Platform == "bili")
+        {
+            string note;
+            if (CheckRoomState(target.Platform, target.Room, out note) == RoomStateKind.Offline)
+                throw new InvalidOperationException(OfflinePlaybackMessage(target));
+        }
         return player == "potplayer"
             ? ResolvePotPlayerPlan(target, allowNetwork, allowSideEffects)
             : ResolveMpvPlan(target, allowNetwork, allowSideEffects);
+    }
+
+    private static string OfflinePlaybackMessage(Target target)
+    {
+        return PlatformName(target.Platform) + " " + target.Room + " 主播已下播，当前未开播。";
     }
 
     // 唯一做副作用的地方：起中转 → 等 READY 拿到实际端口 → 回填 → 返回播放器启动信息
@@ -275,6 +286,7 @@ internal static partial class LiveHub
             if (File.Exists(LiveResyncScript)) args += " " + QuoteWindowsArg("--script=" + LiveResyncScript.Replace('\\', '/'));
             args += " " + QuoteWindowsArg("--script-opts=" + YtdlHookOpts()
                 + ",live_title_state_file=" + MpvListValue(SessionRoomStatePath(target))
+                + (File.Exists(LiveResyncScript) ? ",live_title_autoreplay=yes" : "")
                 + (baseFile != null ? ",live_title_base_file=" + MpvListValue(baseFile) : ""));
             args += " --title=" + QuoteWindowsArg(SafeTitle(baseTitle))
                 + " --stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=30"

@@ -12,7 +12,9 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe' }
 $source = @((Join-Path $PSScriptRoot 'live-hub-v2.cs'),(Join-Path $PSScriptRoot 'build-info.cs'))
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'live-hub-v2.cs') -Destination $sourceView
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'live-title.lua') -Destination $sourceView
+foreach ($name in @('live-title.lua','live-resync.lua')) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $sourceView
+}
 New-Item -ItemType Directory -Path (Join-Path $sourceView 'tests') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'tests/fixtures') -Destination (Join-Path $sourceView 'tests') -Recurse
 foreach ($directory in Get-ChildItem -LiteralPath $PSScriptRoot -Directory) {

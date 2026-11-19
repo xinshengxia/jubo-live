@@ -24,6 +24,8 @@ $plan = foreach ($relative in $selected.Keys) {
     if ($relative -match '^[/\\]|(^|/)\.\.(/|$)|:') { throw 'Unsafe dependency path' }
     $from = if ($relative -in @('bin/mpv/mpv.exe','bin/mpv/mpv.com')) {
         Join-Path $MpvDirectory ([IO.Path]::GetFileName($relative))
+    } elseif ($relative -in @('bin/mpv/portable_config/scripts/live-title.lua','bin/mpv/portable_config/scripts/live-resync.lua')) {
+        Join-Path $Repo ([IO.Path]::GetFileName($relative))
     } else { Join-Path $Source $relative }
     $item = Get-Item -LiteralPath $from -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Dependency file cannot be a reparse point' }

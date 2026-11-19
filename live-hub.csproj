@@ -58,6 +58,10 @@
       <TargetPath>lua\live-title.lua</TargetPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="live-resync.lua">
+      <TargetPath>lua\live-resync.lua</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <Target Name="WriteLiveHubBuildInfo" BeforeTargets="CoreCompile">

@@ -76,6 +76,11 @@ Copy-Item -LiteralPath (Join-Path $root 'app.config') -Destination ($exe + '.con
 & $compiler @mainArgs
 if ($LASTEXITCODE -ne 0) { throw "启动器编译失败：$LASTEXITCODE" }
 Copy-Item -LiteralPath $antdDll -Destination (Join-Path $outDir 'AntdUI.dll') -Force
+$luaTo = Join-Path $outDir 'lua'
+New-Item -ItemType Directory -Force -Path $luaTo | Out-Null
+foreach ($scriptName in @('live-title.lua','live-resync.lua')) {
+    Copy-Item -LiteralPath (Join-Path $root $scriptName) -Destination (Join-Path $luaTo $scriptName) -Force
+}
 # -Out 换目录时必须把精灵图一起带过去：离线测试里有一组会从**目标 exe 旁边**找
 # emoji-sheet.png，不带过去就会以「找不到 emoji-sheet.png」失败 ——
 # 而 -Out 的卖点恰恰是「目标被占用时构建到别处」，那样等于这个功能不成立（评估报告实测）。
@@ -83,10 +88,6 @@ if ($outDir -ne $PSScriptRoot) {
     Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $outDir -Force
     Copy-Item -LiteralPath (Join-Path $root 'licenses') -Destination $outDir -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $root 'assets') -Destination $outDir -Recurse -Force
-    # 与 SDK 产物布局保持一致；mpv 的显式 --script 参数需要这个文件。
-    $luaTo = Join-Path $outDir 'lua'
-    New-Item -ItemType Directory -Force -Path $luaTo | Out-Null
-    Copy-Item -LiteralPath (Join-Path $root 'live-title.lua') -Destination (Join-Path $luaTo 'live-title.lua') -Force
     $qrFrom = Join-Path $root 'lib\zxing.dll'
     if (Test-Path -LiteralPath $qrFrom -PathType Leaf) {
         New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'lib') | Out-Null

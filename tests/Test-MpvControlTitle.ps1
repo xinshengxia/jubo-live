@@ -20,6 +20,9 @@ if ($Mode -ne 'Native') {
     $options = 'title_test_source=' + (Mpv-Value $TitleScript) + ',title_test_dir=' + (Mpv-Value $Workspace)
     Invoke-TestMpv -PlayerArgs @('--no-config','--load-scripts=no','--idle=yes','--vo=null','--ao=null','--osc=no',"--script=$PSScriptRoot\live-title-tests.lua","--script-opts=$options") -Log (Join-Path $Workspace 'unit.log')
     Get-Content -LiteralPath (Join-Path $Workspace 'unit.log') -Encoding UTF8
+    $recoveryOptions = 'recovery_source=' + (Mpv-Value (Join-Path $source 'live-resync.lua')) + ',recovery_directory=' + (Mpv-Value $Workspace)
+    Invoke-TestMpv -PlayerArgs @('--no-config','--load-scripts=no','--idle=yes','--vo=null','--ao=null','--osc=no',"--script=$PSScriptRoot\resync-tests.lua","--script-opts=$recoveryOptions") -Log (Join-Path $Workspace 'recovery-unit.log')
+    Get-Content -LiteralPath (Join-Path $Workspace 'recovery-unit.log') -Encoding UTF8
 }
 if ($Mode -ne 'Unit') {
     $probe = @'

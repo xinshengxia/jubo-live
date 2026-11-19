@@ -1,55 +1,148 @@
--- live-resync.lua —— 给 B站等直播流用的「刷新 / 追到最新」快捷键
--- 安装位置: %APPDATA%\mpv\scripts\live-resync.lua
--- 配合 input.conf 使用：
---   Ctrl+r  script-binding live_resync/reload
---   Ctrl+l  script-binding live_resync/jump_live
-
+-- Explicitly loaded by the launcher, also usable as ordinary mpv key bindings.
 local mp = require "mp"
-local msg = require "mp.msg"
+local options = mp.get_property_native("options/script-opts") or {}
 
--- 记录加载时间，用于刷新后给用户一个提示
-local load_count = 0
+-- Recovery is enabled only for a launcher's per-session state file. Only the
+-- first playlist entry and its own replacements belong to this subscription.
+local function install_recovery(resolve_source)
+    local enabled = type(options.live_title_state_file) == "string" and options.live_title_state_file ~= ""
+    local origin, next_path, generation = nil, nil, 0
+    local busy, stopped, failed = false, false, false
+    local delays = {2, 4, 8, 15, 30, 60}
+    local attempts, due, previous_pos, stable = 0, nil, nil, 0
+    local original_idle = mp.get_property("idle")
+    local owns_idle = false
 
-mp.register_event("file-loaded", function()
-    load_count = load_count + 1
-    local fmt = mp.get_property("video-format") or "?"
-    local w = mp.get_property("width") or 0
-    local h = mp.get_property("height") or 0
-    if load_count > 1 then
-        mp.osd_message("已刷新直播流  (" .. fmt .. " " .. w .. "x" .. h .. ")", 2)
+    local function restore_idle()
+        if owns_idle then
+            owns_idle = false
+            mp.set_property("idle", original_idle or "no")
+        end
     end
-end)
 
--- ① 重新解析并加载（最彻底：让 yt-dlp 重新取一份带新签名的流地址）
---
--- 关键：必须用 path，不能用 stream-open-filename。
--- 走 yt-dlp 播放时两者的区别（实测日志）:
---   path                  = https://live.bilibili.com/7777   ← 原始页面地址
---   stream-open-filename  = edl://!new_stream;...%841%https://d1--cn-gotcha208b.bilivideo.com/...
--- 后者是 yt-dlp 包装出来的 EDL，里面嵌的直链签名会过期；
--- 重新加载它只是复用旧地址，刷新不出新流。用 path 才会重新触发 yt-dlp 解析。
-mp.add_key_binding(nil, "reload", function()
-    local path = mp.get_property("path")
-    if not path or path == "" then
-        mp.osd_message("刷新失败：拿不到直播间地址", 3)
-        return
+    local function cancel()
+        generation = generation + 1
+        busy, stopped, failed = false, true, false
+        due, next_path = nil, nil
+        restore_idle()
     end
-    mp.osd_message("正在刷新直播流（重新解析地址）...", 2)
-    msg.info("resync reload via path: " .. tostring(path))
-    mp.commandv("loadfile", path, "replace")
-end)
 
--- ② 追到直播最新位置（不重新解析，只是跳到缓存末尾）
+    local function hint(path)
+        if type(path) ~= "string" or path == "" then return "" end
+        local file = io.open(path, "rb")
+        if not file then return "" end
+        local value = file:read(512) or ""
+        file:close()
+        return value:gsub("^\239\187\191", ""):match("^%s*([A-Z_-]+)") or ""
+    end
+
+    local function blocked()
+        local room = hint(options.live_title_state_file)
+        local relay = hint(options.live_title_relay_file)
+        return room == "OFFLINE" or relay == "OFFLINE" or relay == "REPLAY-UNAVAILABLE"
+            or relay == "VERIFICATION"
+    end
+
+    local function reload(manual)
+        local current = mp.get_property("path")
+        local path = current or (enabled and not stopped and origin)
+        if not path or path == "" or busy then return end
+        if not manual and (stopped or blocked() or mp.get_property_native("pause")) then return end
+        if manual then
+            attempts, due = 0, nil
+            mp.osd_message("正在刷新直播流…", 2)
+        else
+            attempts = math.min(attempts + 1, #delays)
+            mp.osd_message(attempts == #delays and "连接仍未恢复，每 60 秒重试一次" or "连接已中断，正在重连…", 2)
+        end
+        local serial = generation
+        busy, due, stable = true, nil, 0
+        local function valid()
+            local active = mp.get_property("path")
+            return generation == serial and (active == current or (not active and failed))
+        end
+        resolve_source(path, function(new_path)
+            if not valid() then return end
+            if not manual and (mp.get_property_native("pause") or blocked()) then
+                busy = false
+                return
+            end
+            next_path = new_path
+            failed = false
+            mp.commandv("loadfile", new_path, "replace")
+        end, function()
+            if not valid() then return end
+            busy = false
+            failed = failed or not manual or mp.get_property_native("eof-reached")
+            if manual then mp.osd_message("刷新直播地址失败，可稍后再试", 4) end
+        end)
+    end
+
+    mp.register_event("start-file", function()
+        local path = mp.get_property("path")
+        if next_path and path == next_path then
+            origin = path
+            next_path = nil
+        elseif not origin and not stopped then
+            origin = path
+        else
+            cancel()
+        end
+    end)
+
+    mp.register_event("file-loaded", function()
+        if not stopped then origin = origin or mp.get_property("path") end
+        busy, failed = false, false
+        previous_pos, stable = nil, 0
+        if enabled and not stopped and origin and not owns_idle then
+            -- Keep a failed reopen available for the next bounded attempt. An
+            -- explicit stop restores the user's original mpv idle behaviour.
+            mp.set_property("idle", "yes")
+            owns_idle = true
+        end
+    end)
+
+    mp.register_event("end-file", function(event)
+        if event.reason == "quit" then
+            cancel()
+        elseif event.reason == "stop" and not next_path then
+            cancel()
+        elseif event.reason == "error" or event.reason == "eof" then
+            failed, busy = true, false
+        end
+    end)
+    mp.register_event("shutdown", cancel)
+    mp.add_key_binding(nil, "reload", function() reload(true) end)
+    if not enabled then return end
+
+    mp.add_periodic_timer(1, function()
+        if stopped or busy or not origin or mp.get_property_native("pause") then return end
+        local terminal = failed or mp.get_property_native("eof-reached")
+        if not terminal then
+            due = nil
+            local pos = mp.get_property_number("time-pos")
+            if pos and previous_pos and pos > previous_pos and pos - previous_pos < 3 then
+                stable = stable + (pos - previous_pos)
+                if stable >= 15 then attempts = 0 end
+            else
+                stable = 0
+            end
+            previous_pos = pos
+            return
+        end
+        previous_pos, stable = nil, 0
+        if blocked() then due = nil; return end
+        local now = mp.get_time()
+        due = due or (now + delays[math.min(attempts + 1, #delays)])
+        if now >= due then reload(false) end
+    end)
+end
+
+install_recovery(function(path, load) load(path) end)
+
 mp.add_key_binding(nil, "jump_live", function()
-    local seekable = mp.get_property("seekable")
-    if seekable ~= "yes" then
-        -- 直播流通常不可 seek，这时退化成重新加载
-        msg.info("stream not seekable, fallback to reload")
-        mp.commandv("script-binding", "live_resync/reload")
-        return
-    end
     local cache_end = mp.get_property_number("demuxer-cache-time")
-    if cache_end and cache_end > 0 then
+    if mp.get_property_native("seekable") and cache_end and cache_end > 0 then
         mp.commandv("seek", cache_end, "absolute", "exact")
         mp.osd_message("已跳到直播最新位置", 2)
     else
@@ -57,26 +150,20 @@ mp.add_key_binding(nil, "jump_live", function()
     end
 end)
 
--- ③ 自动追帧（默认关闭，用 Ctrl+Shift+l 切换）
--- 直播延迟往往来自缓冲堆积，定期跳到缓存末尾能显著降低延迟。
-local auto_timer = nil
-local function auto_tick()
-    local cache_end = mp.get_property_number("demuxer-cache-time")
-    local pos = mp.get_property_number("time-pos")
-    if cache_end and pos and (cache_end - pos) > 6 then
-        mp.commandv("seek", cache_end, "absolute", "exact")
-        msg.info(string.format("auto resync: lag was %.1fs", cache_end - pos))
-    end
-end
+local auto_timer
 mp.add_key_binding(nil, "auto_toggle", function()
     if auto_timer then
-        auto_timer:stop()
+        auto_timer:kill()
         auto_timer = nil
         mp.osd_message("自动追直播已关闭", 2)
     else
-        auto_timer = mp.add_periodic_timer(5, auto_tick)
-        mp.osd_message("自动追直播已开启（延迟超 6 秒自动追上）", 3)
+        auto_timer = mp.add_periodic_timer(5, function()
+            local pos = mp.get_property_number("time-pos")
+            local edge = mp.get_property_number("demuxer-cache-time")
+            if not mp.get_property_native("pause") and pos and edge and edge - pos > 6 then
+                mp.commandv("seek", edge, "absolute", "exact")
+            end
+        end)
+        mp.osd_message("自动追直播已开启", 2)
     end
 end)
-
-msg.info("live-resync loaded")

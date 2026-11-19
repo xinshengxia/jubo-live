@@ -68,6 +68,7 @@ internal static partial class LiveHub
                 {
                     string result = File.ReadAllText(statusFile, Encoding.UTF8).Trim();
                     try { File.Delete(statusFile); } catch (Exception) { }
+                    if (result == "OFFLINE") throw new InvalidOperationException(OfflinePlaybackMessage(target));
                     // READY <端口>：端口由中转回报，启动器不再自己猜
                     int readyPort;
                     if (result.StartsWith("READY", StringComparison.Ordinal)
@@ -88,8 +89,7 @@ internal static partial class LiveHub
         string reason;
         RoomStateKind state = CheckRoomState(target.Platform, target.Room, out reason);
         if (state == RoomStateKind.Offline)
-            throw new InvalidOperationException("主播没在播" + (reason == null ? "" : "（" + reason + "）")
-                + "，没有可播放的流：" + target.Platform + ":" + target.Room);
+            throw new InvalidOperationException(OfflinePlaybackMessage(target));
         if (state == RoomStateKind.Replay)
             throw new InvalidOperationException(ReplayUnavailableMessage(reason ?? "中转未能就绪")
                 + "：" + target.Platform + ":" + target.Room);
@@ -380,8 +380,16 @@ internal static partial class LiveHub
         TcpListener listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         int boundPort = ((IPEndPoint)listener.LocalEndpoint).Port;   // 传 0 时这里是系统分配的端口
-        string upstream = ResolveRelayUrl(platform, room, false);
+        bool startupOffline;
+        string upstream = ResolveRelayUrl(platform, room, false, out startupOffline);
         RelayLog("上游地址=" + (upstream == null ? "(解析失败)" : "解析成功") + "，监听 127.0.0.1:" + boundPort);
+        if (upstream == null && startupOffline)
+        {
+            PublishRelayState(platform, room, "OFFLINE");
+            PublishRelayStatus(statusFile, "OFFLINE");
+            listener.Stop();
+            return;
+        }
         if (upstream == null && !ReadActiveRelayState(platform, room).StartsWith("REPLAY-UNAVAILABLE|", StringComparison.Ordinal))
         { PublishRelayStatus(statusFile, "ERROR"); listener.Stop(); return; }
         // 重播暂时取不到流也让播放器连进来：live-title.lua 会显示准确原因，Pump 按 20 秒节流重试。

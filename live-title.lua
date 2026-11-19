@@ -253,7 +253,8 @@ mp.add_periodic_timer(2, function()
         applyTitle()
         if text then
             mp.osd_message(text, 8)
-        elseif notice then
+        elseif notice and (room == "LIVE" or relay == "ONLINE")
+            and not mp.get_property_native("eof-reached") and not mp.get_property_native("core-idle") then
             mp.osd_message("已恢复播放", 4)
         end
         notice = text

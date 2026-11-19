@@ -77,6 +77,14 @@ try {
             $expectedBundles = @($lock.bundles | Where-Object { $_.name -ne 'potplayer-dist' -and ($manifest.variant -eq 'full' -or $_.name -ne 'mpv-dist') })
             foreach ($required in @($expectedComponents) + @($expectedBundles)) { if (-not $componentNames.ContainsKey($required.name)) { throw '发布包遗漏锁定组件' } }
             if ($componentNames.Count -ne ($expectedComponents.Count + $expectedBundles.Count)) { throw '发布包包含意外组件' }
+            foreach ($script in @('live-title.lua','live-resync.lua')) {
+                $canonical = @($manifest.artifacts | Where-Object path -EQ ('lua/' + $script))
+                if ($canonical.Count -ne 1) { throw "发布包缺少启动器脚本：$script" }
+                if ($manifest.variant -eq 'full') {
+                    $copy = @($manifest.artifacts | Where-Object path -EQ ('bin/mpv/portable_config/scripts/' + $script))
+                    if ($copy.Count -ne 1 -or $copy[0].sha256 -ne $canonical[0].sha256) { throw "mpv 和启动器脚本版本不一致：$script" }
+                }
+            }
         }
         if (-not $listed.ContainsKey('看直播.exe')) { throw 'ZIP 缺少启动器' }
         if (-not $listed.ContainsKey('看直播.exe.config')) { throw 'ZIP 缺少启动器运行配置' }

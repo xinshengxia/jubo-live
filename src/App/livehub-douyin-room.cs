@@ -477,11 +477,15 @@ internal static partial class LiveHub
         return PrepareDouyinWithMediaTitle(target, out title, out roomTitle);
     }
 
+    private static bool InteractivePlaybackVerification = true;
+
     private static string PrepareDouyinWithMediaTitle(Target target, out string title, out string roomTitle)
     {
         DouyinRoom info = FetchDouyinRoom(target.Room, false);
         if (info == null && DouyinCaptchaBlocked)
         {
+            if (!InteractivePlaybackVerification)
+                throw new InvalidOperationException("抖音需要网页验证，请在启动器账号页完成验证后重试。");
             // 风控拦了 —— 给用户一次过验证的机会（开 Edge 窗口，过了自动取 cookie），然后再取一次。
             // 不去掉标志的话每次播放都会重弹，很烦；所以无论成败都清掉，让用户主动再点播放才重试。
             DouyinCaptchaBlocked = false;
@@ -495,7 +499,7 @@ internal static partial class LiveHub
             : info.Title != null ? info.Title
             : "抖音直播 " + target.Room;
         roomTitle = CreatePlaybackTitleInfo(title, info.Title).RoomTitle;
-        if (info.Status == 4) throw new InvalidOperationException("抖音 " + target.Room + " 现在没有开播");
+        if (info.Status == 4) throw new InvalidOperationException(OfflinePlaybackMessage(target));
         if (info.Status != 2)
         {
             PlatformHealth.Record("douyin", "playback", "parse-error");

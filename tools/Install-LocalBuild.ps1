@@ -43,7 +43,7 @@ foreach ($directory in @('fonts','licenses','assets')) {
     foreach ($file in Get-ChildItem -LiteralPath $base -Recurse -File) { $files[$directory + '/' + $file.FullName.Substring($base.Length + 1).Replace('\','/')] = $file.FullName }
 }
 foreach ($name in @('live-title.lua','live-resync.lua')) { $files['lua/' + $name] = Join-Path $Repo $name }
-$files['live-title.lua'] = Join-Path $Repo 'live-title.lua'
+foreach ($name in @('live-title.lua','live-resync.lua')) { $files[$name] = Join-Path $Repo $name }
 function Get-InstallationDocument([string]$name) {
     $public = Join-Path $Repo ('release-docs/' + $name)
     if ($Layout -eq 'portable' -and (Test-Path -LiteralPath $public)) { return $public }
@@ -74,7 +74,7 @@ if ($Layout -eq 'portable') {
         & (Join-Path $Repo 'tools/Write-BuildInfo.ps1') -Repo $Repo -Out $generatedVersion | Out-Null
         $files['src/build-info.cs'] = $generatedVersion
         $files['src/build.ps1'] = Join-Path $Repo 'tools/portable-src-build.ps1'
-        $files['src/live-title.lua'] = Join-Path $Repo 'live-title.lua'
+        foreach ($name in @('live-title.lua','live-resync.lua')) { $files['src/' + $name] = Join-Path $Repo $name }
         $files['src/THIRD_PARTY_NOTICES.md'] = Get-InstallationDocument 'THIRD_PARTY_NOTICES.md'
         foreach ($name in @('Copy-WebViewAssets.ps1','Invoke-BoundedProcess.ps1','New-OfflineLayout.ps1')) { $files['tools/' + $name] = Join-Path $Repo ('tools/' + $name) }
         foreach ($file in Get-ChildItem -LiteralPath (Join-Path $Repo 'tests/fixtures') -Recurse -File) {

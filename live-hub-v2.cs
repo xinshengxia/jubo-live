@@ -233,6 +233,8 @@ internal static partial class LiveHub
         // 要先于 InitPaths 解析，并且**从 args 里摘掉** —— 后面那些按位置取参数的开关（--self-test 等）
         // 用的是 args.Length，留着会让它们全部失效。
         args = ApplyPathOverrides(args);
+        if (args.Length > 0 && (args[0] == "--plan" || args[0] == "--play" || args[0] == "--streaminfo"))
+            InteractivePlaybackVerification = false;
 
         InitPaths();
         InstallSafetyNets();

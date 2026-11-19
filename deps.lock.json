@@ -70,8 +70,8 @@
       "source": "repo:live-title.lua",
       "version": "repository",
       "versionEvidence": "本次发布 commit 中的 live-title.lua；已通过控制条标题/时钟回归",
-      "sha256": "28ffc35015d7b15b89c7a6a17a546a3e652ff3cc880189b14939e767c21a4001",
-      "size": 12264,
+      "sha256": "73894d9372776ad5e4bdf86f9d7a55fdf80d29f5739d335989a012383923bd5b",
+      "size": 12408,
       "license": "live-hub 自有脚本（随仓库）",
       "note": "mpv 窗口标题脚本；便携布局下启动器从 exe 旁边的 lua\\ 找它（livehub-paths.cs 的 Portable 分支）"
     },
@@ -81,8 +81,8 @@
       "source": "repo:live-resync.lua",
       "version": "unknown（脚本文件没有版本号）",
       "versionEvidence": "受跟踪脚本与固定 SHA-256 一致，复制到显式加载目录",
-      "sha256": "c2379a47fb3fdec40c7cd8d40fe0d1d971363d8a038f55a72f33afa6f34455db",
-      "size": 3379,
+      "sha256": "c43d953d9f5f6d912681cbc76aa4eb46f8359bbb554e73dfa4682ed4140d81d1",
+      "size": 6570,
       "license": "live-hub 自有脚本（随仓库）",
       "note": "重连/重新同步脚本；来源为当前干净源码检出"
     },
@@ -163,10 +163,10 @@
       "exclude": [
         "portable_config/cache/**"
       ],
-      "note": "Ordinary x86_64 mpv runtime with the existing generic scripts; no personal configuration or runtime cache.",
+      "note": "Windows x86_64 mpv runtime with byte-identical copies of the launcher playback scripts.",
       "fileCount": 4,
-      "bytes": 121024328,
-      "treeSha256": "f3f95dc38207b5341c49686eacae15fd9a026f0faf05d32b0176a7186dbdf0d1",
+      "bytes": 121033250,
+      "treeSha256": "525ca4774b30991e935683347fab789a4b69cb576c7961a5e87ab99dd86007f8",
       "files": [
         {
           "path": "mpv.com",
@@ -180,13 +180,13 @@
         },
         {
           "path": "portable_config/scripts/live-resync.lua",
-          "sha256": "c2379a47fb3fdec40c7cd8d40fe0d1d971363d8a038f55a72f33afa6f34455db",
-          "size": 3379
+          "sha256": "c43d953d9f5f6d912681cbc76aa4eb46f8359bbb554e73dfa4682ed4140d81d1",
+          "size": 6570
         },
         {
           "path": "portable_config/scripts/live-title.lua",
-          "sha256": "7f70105dd93493dae824d1ffe0ad762e396649d7d46c851710b0ec02687c8298",
-          "size": 6677
+          "sha256": "73894d9372776ad5e4bdf86f9d7a55fdf80d29f5739d335989a012383923bd5b",
+          "size": 12408
         }
       ]
     },

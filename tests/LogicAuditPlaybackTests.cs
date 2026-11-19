@@ -111,7 +111,7 @@ internal static partial class HardeningTests
                 string error = null;
                 try { Call("PrepareDouyinWithMediaTitle", Call("Parse", "douyin:7777", "bili"), null, null); }
                 catch (TargetInvocationException ex) { error = ex.InnerException.Message; }
-                Check(error != null && error.Contains(status == 4 ? "现在没有开播" : "房间状态无法确认"),
+                Check(error != null && error.Contains(status == 4 ? "当前未开播" : "房间状态无法确认"),
                     "抖音启动区分未知状态、明确下播与直播：" + status);
                 if (status != 2 && status != 4)
                     Check(File.ReadAllText(Path.Combine(dir, "health-douyin-playback.state.txt")).Split('|')[1] == "parse-error",
