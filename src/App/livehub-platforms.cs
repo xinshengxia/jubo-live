@@ -162,6 +162,21 @@ internal static partial class LiveHub
             return value == 1 ? RoomStateKind.Live : value == 2 ? RoomStateKind.Replay
                 : value == 0 ? RoomStateKind.Offline : RoomStateKind.Unknown;
         }
+        internal static RoomStateKind StateFromRoomInfo(Dictionary<string, object> root, out string note)
+        {
+            string code = Field(root, "code");
+            if (code != "0")
+            {
+                note = code == "1" ? "房间不存在或已失效" : "平台未确认房间状态";
+                return RoomStateKind.Unknown;
+            }
+            int status;
+            RoomStateKind state = int.TryParse(Field(Field2(root, "data"), "live_status"), out status)
+                ? StateFromLiveStatus(status) : RoomStateKind.Unknown;
+            note = state == RoomStateKind.Replay ? "房间在放轮播"
+                : state == RoomStateKind.Unknown ? "接口没给出开播状态" : null;
+            return state;
+        }
         public override RoomStateKind GetRoomStateKind(string room, out string note)
         {
             note = null;
@@ -169,17 +184,7 @@ internal static partial class LiveHub
             {
                 string json = HttpGetText("https://api.live.bilibili.com/room/v1/Room/get_info?room_id=" + room, "https://live.bilibili.com/");
                 var root = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
-                var data = Field2(root, "data");
-                string status = Field(data, "live_status");
-                int value;
-                if (status == null || !int.TryParse(status, out value))
-                {
-                    note = Field(root, "code") == "1" ? "房间不存在或已失效" : "接口没给出开播状态";
-                    return RoomStateKind.Unknown;
-                }
-                RoomStateKind state = StateFromLiveStatus(value);
-                note = value == 2 ? "房间在放轮播" : null;
-                return state;
+                return StateFromRoomInfo(root, out note);
             }
             catch (Exception ex) { note = "查询失败：" + ex.GetType().Name; return RoomStateKind.Unknown; }
         }

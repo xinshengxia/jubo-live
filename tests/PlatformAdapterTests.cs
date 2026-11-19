@@ -91,6 +91,23 @@ internal static partial class HardeningTests
         MethodInfo douyuState = byId["douyu"].GetType().GetMethod("StateFromValues", BindingFlags.NonPublic | BindingFlags.Static);
         Check(biliState != null && Equals(biliState.Invoke(null, new object[] { 2 }), replay),
             "B站：live_status=2 映射轮播态");
+        MethodInfo biliInfo = byId["bili"].GetType().GetMethod("StateFromRoomInfo", BindingFlags.NonPublic | BindingFlags.Static);
+        var biliData = new Dictionary<string, object> { { "live_status", 0 } };
+        var biliResponse = new Dictionary<string, object> { { "data", biliData } };
+        Check(Equals(biliInfo.Invoke(null, new object[] { biliResponse, null }), unknown),
+            "B站：缺少业务成功码，不能根据默认状态值判下播");
+        biliResponse["code"] = -412;
+        Check(Equals(biliInfo.Invoke(null, new object[] { biliResponse, null }), unknown),
+            "B站：业务失败即使携带 live_status=0 也只能判未知");
+        biliResponse["code"] = 0;
+        Check(Equals(biliInfo.Invoke(null, new object[] { biliResponse, null }), offline),
+            "B站：成功响应的 live_status=0 确认下播");
+        biliData["live_status"] = 1;
+        Check(Equals(biliInfo.Invoke(null, new object[] { biliResponse, null }), live),
+            "B站：成功响应的 live_status=1 确认直播");
+        biliData["live_status"] = 2;
+        Check(Equals(biliInfo.Invoke(null, new object[] { biliResponse, null }), replay),
+            "B站：成功响应的 live_status=2 保持轮播状态");
         Check(douyuState != null && Equals(douyuState.Invoke(null, new object[] { 2, 1 }), replay)
             && Equals(douyuState.Invoke(null, new object[] { 1, 1 }), live)
             && Equals(douyuState.Invoke(null, new object[] { 99, 0 }), unknown)
