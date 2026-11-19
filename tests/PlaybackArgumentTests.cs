@@ -65,6 +65,15 @@ internal static partial class HardeningTests
                     && Array.IndexOf(args, "--script=" + resync.Replace('\\', '/')) >= 0,
                     platform + " 脚本路径包含空格/中文/逗号时保持完整 argv");
                 string options = MpvArgument(args, "--script-opts");
+                if (platform != "bili")
+                {
+                    object second = Call("Parse", platform + ":7777", "bili");
+                    Call("ResolvePlan", second, "mpv", false, false);
+                    string firstHint = (string)Call("BitrateHintPath", target);
+                    Check(ReadMpvListValue(options, "live_title_bitrate_file") == firstHint.Replace('\\', '/')
+                        && firstHint != (string)Call("BitrateHintPath", second),
+                        platform + " 两个窗口的码率提示分别属于各自会话");
+                }
                 Check(options != null && ReadMpvListValue(options, "live_title_state_file")
                     == ((string)Call("SessionRoomStatePath", target)).Replace('\\', '/'),
                     platform + " 状态路径按 UTF-8 字节长度完整传给 mpv 列表解析器");

@@ -53,9 +53,9 @@ internal static partial class LiveHub
             + " " + NormalizeQuality(target.Quality) + ChildProcessPathArguments());
         psi.UseShellExecute = true;
         psi.WorkingDirectory = Path.GetDirectoryName(exe);
-        using (Process relay = Process.Start(psi))
+        Process relay = Process.Start(psi);
+        try
         {
-            target.RelayProcessId = relay.Id;
             DateTime deadline = DateTime.UtcNow.AddSeconds(35);
             while (DateTime.UtcNow < deadline)
             {
@@ -72,14 +72,18 @@ internal static partial class LiveHub
                     int readyPort;
                     if (result.StartsWith("READY", StringComparison.Ordinal)
                         && int.TryParse(result.Substring("READY".Length).Trim(), out readyPort) && readyPort > 0)
+                    {
+                        target.PendingRelay = relay;
+                        relay = null;
                         return readyPort;
+                    }
                     break;
                 }
                 if (relay.HasExited) break;
                 Thread.Sleep(50);
             }
-            if (!relay.HasExited) { try { relay.Kill(); } catch (Exception) { } }
         }
+        finally { if (relay != null) CloseLaunchRelay(relay, true); }
         // 起不来时先问房间状态：只有真 OFF 才说未开播；重播要明确说明是重播流取不到。
         string reason;
         RoomStateKind state = CheckRoomState(target.Platform, target.Room, out reason);
@@ -109,6 +113,23 @@ internal static partial class LiveHub
     {
         return target.SessionId == null ? RoomStatePath(target.Platform, target.Room)
             : Path.Combine(RuntimeDir, "session-" + target.SessionId + ".state.txt");
+    }
+
+    private static void CloseLaunchRelay(Process relay, bool stop)
+    {
+        using (relay)
+        {
+            if (!stop) return;
+            try { if (!relay.HasExited) relay.Kill(); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception ex) { Diagnostics.Report("停止本次启动的中转", ex); }
+        }
+    }
+
+    private static void ReleaseLaunchRelay(Target target, bool stop)
+    {
+        Process relay = Interlocked.Exchange(ref target.PendingRelay, null);
+        if (relay != null) CloseLaunchRelay(relay, stop);
     }
 
     private static void RunRoomWatcher(string platform, string room, string sessionId, int playerId)

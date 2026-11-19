@@ -2,7 +2,7 @@
 
 > **推荐使用 Rust 重构版：[jubo Live Rust](https://github.com/xinshengxia/jubo-live-rust)**
 >
-> 「看直播」已提供独立的 Rust 版本，当前为 **1.0.7**。推荐新用户优先前往 [Rust 仓库](https://github.com/xinshengxia/jubo-live-rust) 和 [下载页面](https://github.com/xinshengxia/jubo-live-rust/releases/latest)。
+> 「看直播」也提供独立的 Rust 版本。[Rust 仓库](https://github.com/xinshengxia/jubo-live-rust) · [下载最新 Rust 版](https://github.com/xinshengxia/jubo-live-rust/releases/latest)
 >
 > 本仓库保留 C# 版源码与已有发行版本。两版使用独立数据目录；迁移收藏请主动导出、导入，升级前保留自己的账号、配置和历史资料。
 
@@ -10,6 +10,12 @@
 Windows 绿色版四平台直播启动器：把 **B站 / 虎牙 / 斗鱼 / 抖音** 的直播间，一键交给 **mpv**（也支持 **PotPlayer**）播放，并带上弹幕覆盖层、房间与主播搜索、分平台收藏与最近播放。
 
 免安装：不写注册表、不装服务、不驱动；数据放在 exe 旁边的 `data\` 目录，删掉文件夹就等于卸载。
+
+## 1.1.9 更新
+
+- 导入收藏时保留其他窗口刚完成的改名和删除。导入与导出使用一致的名称和文件大小限制，支持恢复较大的旧备份。
+- 跨平台主播查询按各平台的分页进度继续加载。房间核验区分直播、重播、下播和未知状态。
+- 解析新房间时仍可停止另一个播放会话。同房间多画质窗口各自显示对应的码率提示。
 
 ## 1.1.8 更新
 

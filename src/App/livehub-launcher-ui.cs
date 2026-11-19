@@ -840,6 +840,12 @@ internal static partial class LiveHub
             string name = Microsoft.VisualBasic.Interaction.InputBox(
                 "给这个" + PlatformName(target.Platform) + "房间起个收藏名：", "加入收藏", suggestion).Trim();
             if (name.Length == 0) return;
+            if (!ValidFavoriteName(name, out name))
+            {
+                status.ForeColor = ModernTheme.Danger;
+                status.Text = "收藏名最多 256 个字符，且不能包含控制字符";
+                return;
+            }
             string value = target.Platform == "bili" ? target.Room : target.Platform + ":" + target.Room;
             var next = CreateFavoritesUpdate(favorites);
             next.RemoveAll(delegate(KeyValuePair<string, string> favorite) {
@@ -938,7 +944,7 @@ internal static partial class LiveHub
                 FavoritesImportResult result;
                 try { result = ImportFavoritesFile(path, favorites); }
                 catch (Exception ex) { FavoritesTransferFailed("导入收藏", ex); return; }
-                List<KeyValuePair<string, string>> next = new List<KeyValuePair<string, string>>(result.Favorites);
+                List<KeyValuePair<string, string>> next = result.Favorites;
                 try { SaveFavorites(next); }
                 catch (Exception ex) { FavoritesTransferFailed("导入收藏", ex); return; }
                 favorites.Clear(); favorites.AddRange(next);
@@ -1488,9 +1494,7 @@ internal static partial class LiveHub
                 finally
                 {
                     LaunchCancellation = default(CancellationToken);
-                    if (process == null && target.RelayProcessId != 0)
-                        try { using (Process relay = Process.GetProcessById(target.RelayProcessId)) relay.Kill(); }
-                        catch (Exception) { }
+                    ReleaseLaunchRelay(target, process == null);
                 }
                 try
                 {

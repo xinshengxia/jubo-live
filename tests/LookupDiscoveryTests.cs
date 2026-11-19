@@ -16,6 +16,40 @@ internal static partial class HardeningTests
         TestRunner.Add("主播查询改进", "刷新真实控件与独立来源摘录", TestLookupDiscoveryUi);
         TestRunner.Add("主播查询改进", "全平台结果筛选、迟到核验隔离及AI跨平台置顶", TestLookupResultFilters);
         TestRunner.Add("主播查询改进", "四平台粉丝量解析、核验更新与展示", TestLookupFollowers);
+        TestRunner.Add("主播查询改进", "重播核验与部分平台分页重试", TestLookupStateAndCursors);
+    }
+    private static void TestLookupStateAndCursors()
+    {
+        object verifier = LookupNew("LookupVerifier");
+        LookupDelegate(verifier, "Transport", delegate(object[] args) {
+            string url = (string)args[0];
+            if (url.Contains("/Master/info?"))
+                return LookupReply(200, "{\"code\":0,\"data\":{\"info\":{\"uid\":\"456\",\"uname\":\"Synthetic\"}}}", null);
+            if (url.Contains("/get_info?"))
+                return LookupReply(200, "{\"code\":0,\"data\":{\"room_id\":\"123\",\"uid\":\"456\",\"live_status\":2}}", null);
+            if (url.Contains("/betard/"))
+                return LookupReply(200, "{\"room\":{\"room_id\":\"123\",\"owner_uid\":\"456\",\"show_status\":2,\"videoLoop\":1}}", null);
+            throw new InvalidOperationException("Unexpected test URL");
+        });
+        foreach (string platform in new[] { "bili", "douyu" }) {
+            object result = LookupCall(verifier, "Verify", LookupCandidate(platform, "456", "123"), CancellationToken.None);
+            Check((string)LookupGet(result, "live_status") == "replay", platform + " 核验保留重播状态");
+        }
+        var pages = new Dictionary<string, int> { { "bili", 2 }, { "douyin", 2 } };
+        var resultPage = LookupNew("LookupResult");
+        var outcomes = (IList)LookupGet(resultPage, "platforms");
+        foreach (string platform in new[] { "bili", "douyin" }) {
+            var outcome = LookupNew("LookupPlatformOutcome");
+            LookupSet(outcome, "platform", platform);
+            LookupSet(outcome, "status", platform == "bili" ? "platform" : "blocked");
+            LookupSet(outcome, "count", platform == "bili" ? 10 : 0);
+            outcomes.Add(outcome);
+        }
+        LookupCall(hub, "UpdateLookupPages", pages, "all", resultPage, false);
+        Check(pages["bili"] == 3 && pages["douyin"] == 2, "成功平台推进、失败平台停留并独立重试");
+        LookupSet(outcomes[1], "status", "empty");
+        LookupCall(hub, "UpdateLookupPages", pages, "all", resultPage, false);
+        Check(pages["bili"] == 4 && !pages.ContainsKey("douyin"), "一平台耗尽后其他平台继续分页");
     }
     private static void TestLookupFollowers()
     {

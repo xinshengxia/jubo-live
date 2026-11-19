@@ -47,8 +47,7 @@ internal static partial class LiveHub
         private bool replacing, closed;
         private LookupResult lastResult;
         private string shownQueryContext;
-        private int shownPage = 1;
-        private bool pagingAvailable;
+        private readonly Dictionary<string, int> nextPages = new Dictionary<string, int>();
         internal LookupUi(string platform, string initial, Action<LookupCandidate, string> onSave)
             : this(platform, initial, onSave, new LookupService(), new LookupVerifier()) { }
         internal LookupUi(string platform, string initial, Action<LookupCandidate, string> onSave, LookupService service, LookupVerifier verifier)
@@ -295,7 +294,7 @@ internal static partial class LiveHub
         {
             if (closed || Form.Disposing || View.Disposing || View.IsDisposed) return;
             DouyinBrowser.Enabled = queryCancel == null && (CurrentPlatform() == "all" || CurrentPlatform() == "douyin");
-            More.Enabled = queryCancel == null && pagingAvailable && shownPage < 50 && allCandidates.Count < 500;
+            More.Enabled = queryCancel == null && nextPages.Count > 0 && allCandidates.Count < 500;
             foreach (var pair in PlatformFilters)
             {
                 int count = pair.Key == "all" ? allCandidates.Count : allCandidates.FindAll(delegate(LookupCandidate c) { return c.platform == pair.Key; }).Count;
@@ -344,7 +343,7 @@ internal static partial class LiveHub
         private void Reset(string note)
         {
             if (closed || Form.Disposing || View.Disposing || View.IsDisposed) return;
-            pagingAvailable = false; shownPage = 1;
+            nextPages.Clear();
             CancelWork(note);
             replacing = true; Candidates.Items.Clear(); Sources.Items.Clear(); replacing = false;
             allCandidates.Clear(); aiRecommendation = null; ((LookupCandidateList)Candidates).Recommendation = null;
@@ -378,7 +377,7 @@ internal static partial class LiveHub
         private void BeginSearchCore(bool deep, bool forceAi, List<LookupCandidate> current) { BeginSearchCore(deep, forceAi, current, false); }
         private void BeginSearchCore(bool deep, bool forceAi, List<LookupCandidate> current, bool refresh)
         {
-            pagingAvailable = false; shownPage = 1;
+            nextPages.Clear();
             if (forceAi) CancelWork("正在使用 DeepSeek，可随时取消；已有候选保留…");
             else CancelWork(refresh ? "正在重新检索，已有候选保留…" : "正在查询平台与公开索引…");
             int generation = queries.Next(); string platform = CurrentPlatform(), text = Input.Text;
@@ -407,8 +406,7 @@ internal static partial class LiveHub
                     {
                         if (!queries.Current(generation) || cancellation.IsCancellationRequested) return;
                         queryCancel = null; Candidates.Enabled = true; lastResult = result;
-                        pagingAvailable = !forceAi && current == null && result.candidates.Exists(delegate(LookupCandidate candidate)
-                            { return candidate.source == "platform_search" || candidate.source == "douyin_http"; });
+                        if (!forceAi && current == null) UpdateLookupPages(nextPages, platform, result, true);
                         bool retained = result.candidates.Count == 0 && allCandidates.Count > 0;
                         if (!retained)
                         {
@@ -441,19 +439,20 @@ internal static partial class LiveHub
         }
         internal void BeginMore()
         {
-            if (!pagingAvailable || queryCancel != null || shownPage >= 50 || allCandidates.Count >= 500) return;
+            if (nextPages.Count == 0 || queryCancel != null || allCandidates.Count >= 500) return;
             string platform = CurrentPlatform(), text = Input.Text;
             if (shownQueryContext != platform + "\n" + text.Trim()) { Reset("查询已改变，请重新查询。"); return; }
             CancelWork(null);
-            int page = shownPage + 1, generation = queries.Next();
+            var requested = new Dictionary<string, int>(nextPages);
+            int generation = queries.Next();
             var cancellation = new CancellationTokenSource(); queryCancel = cancellation;
             Candidates.Enabled = false; Cancel.Enabled = true; Deep.Enabled = false; UpdateFilters();
-            Status.Text = "正在加载第" + page + "页；已有结果保留…";
+            Status.Text = "正在继续加载各平台候选…";
             ThreadPool.QueueUserWorkItem(delegate
             {
                 try
                 {
-                    LookupResult result = Service.MorePage(platform, text, page, cancellation.Token, delegate { });
+                    LookupResult result = Service.MorePage(requested, text, cancellation.Token);
                     Ui(delegate
                     {
                         if (!queries.Current(generation) || cancellation.IsCancellationRequested) return;
@@ -464,13 +463,13 @@ internal static partial class LiveHub
                         foreach (LookupCandidate candidate in result.candidates)
                             if (allCandidates.Count < 500 && seen.Add(LookupStableIdentity(candidate))) { allCandidates.Add(candidate); added++; }
                         bool retry = result.status == "blocked" || result.status == "partial";
-                        if (!retry) { shownPage = page; pagingAvailable = added > 0 && shownPage < 50 && allCandidates.Count < 500; }
+                        UpdateLookupPages(nextPages, platform, result, false);
                         lastResult = result; selected = null; Name.Text = ""; Add.Enabled = Resolve.Enabled = false;
                         ShowResults(); Sources.Items.Clear();
                         foreach (LookupSource source in result.sources) Sources.Items.Add(new SourceItem(source));
                         ((LookupCandidateList)Candidates).Avatars.Preload(result.candidates, Candidates, cancellation.Token);
-                        Status.Text = "第" + page + "页新增" + added + "个候选，共" + allCandidates.Count + "个。"
-                            + (retry ? "部分平台受阻，再点加载更多将重试本页。" : !pagingAvailable ? "本次未发现更多未重复候选，或已达本地上限。" : "请选择候选重新核验。");
+                        Status.Text = "本次新增" + added + "个候选，共" + allCandidates.Count + "个。"
+                            + (retry ? "下次继续成功平台并重试受阻平台。" : nextPages.Count == 0 ? "各平台已加载完毕。" : "可以继续加载或选择候选核验。");
                         Details.Text = "分页结果未自动选择或收藏。"; SourcePreview.Inner.Text = "选择来源查看摘录。";
                     });
                 }
@@ -489,7 +488,7 @@ internal static partial class LiveHub
         }
         internal void BeginBrowserSearch()
         {
-            pagingAvailable = false; shownPage = 1;
+            nextPages.Clear();
             string platform = CurrentPlatform(), text = Input.Text.Trim();
             if (platform != "all" && platform != "douyin") { Status.Text = "抖音网页辅助仅用于抖音账号查询。"; return; }
             if (text.Length == 0 || text.Length > 600) { Status.Text = "请先输入主播昵称或抖音号。"; return; }
@@ -563,7 +562,7 @@ internal static partial class LiveHub
                 + (candidate.platform_update == null ? "" : "\r\n平台去向 · 公开资料提示（需核对公告日期）：" + candidate.platform_update)
                 + (candidate.platform == "douyin" ? "\r\n抖音号：" + (candidate.account_handle ?? "尚未取得") : "")
                 + "\r\n直播链接：" + (candidate.verification == "verified" ? candidate.room_url : "尚未解析并核验")
-                + "\r\n直播状态：" + (candidate.live_status == "live" ? "核验时正在直播" : candidate.live_status == "offline" ? "核验时未开播（房间链接仍可收藏）" : "尚未确定") + "；当前状态以启动器为准。"
+                + "\r\n直播状态：" + (candidate.live_status == "live" ? "核验时正在直播" : candidate.live_status == "replay" ? "核验时正在" + RoomStateLabel(candidate.platform, RoomStateKind.Replay) : candidate.live_status == "offline" ? "核验时未开播（房间链接仍可收藏）" : "尚未确定") + "；当前状态以启动器为准。"
                 + "\r\n粉丝量：" + (candidate.follower_count == null ? "平台未提供" : LookupDiscovery.FollowerDetail(candidate.follower_count))
                 + (candidate.platform == "douyin" ? "\r\n账号资料：" + (candidate.account_verified ? "已核实平台身份" : "待核实")
                     + "\r\n解析路径：" + DouyinResolution(candidate.resolution_path) : "")

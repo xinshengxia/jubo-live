@@ -305,6 +305,7 @@ internal static partial class LiveHub
             // 2026-10-16 再抽样 30 个目录在播房：show_status=1 且 videoLoop 全为 0，仍没有
             // 证据证明录播会同时给 show_status=1；因此不把 1+videoLoop=1 擅自改判为录播。
             if (showStatus == 1) return RoomStateKind.Live;
+            if (showStatus != 0 && showStatus != 2) return RoomStateKind.Unknown;
             return videoLoop == 1 ? RoomStateKind.Replay : RoomStateKind.Offline;
         }
         public override RoomStateKind GetRoomStateKind(string room, out string note)

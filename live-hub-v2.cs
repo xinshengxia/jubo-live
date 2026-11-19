@@ -44,7 +44,7 @@ internal static partial class LiveHub
         public string Quality = "best";
         public string BufferMode = "low";
         public string DanmakuMode = "auto";   // auto=按设置 / on=本次开 / off=本次关
-        public int RelayProcessId;
+        public Process PendingRelay;
     }
 
     private sealed class PlaybackSession
@@ -480,6 +480,7 @@ internal static partial class LiveHub
                     if (withRelay && plan.NeedsRelay)
                     {
                         int relayPort = StartRelay(planTarget);
+                        ReleaseLaunchRelay(planTarget, false);
                         plan.Arguments = plan.Arguments.Replace(RelayPortToken, relayPort.ToString());
                         report.Add("RELAY=port=" + relayPort);
                     }
@@ -549,12 +550,14 @@ internal static partial class LiveHub
                     playReport.Add("ARGS=" + playStart.Arguments);
                     playReport.Add("RELAY=" + (playPlan.NeedsRelay ? "started" : "none"));
                     Process playerProcess = Process.Start(playStart);
+                    ReleaseLaunchRelay(playTarget, playerProcess == null);
                     playReport.Add("PID=" + (playerProcess == null ? 0 : playerProcess.Id));
                     if (playerProcess != null) StartRoomWatcher(playTarget, playerProcess);
                     if (playerProcess != null) StartDanmakuHost(playTarget, playerProcess);
                 }
                 catch (Exception ex)
                 {
+                    ReleaseLaunchRelay(playTarget, true);
                     playReport.Add("ERROR=" + ex.GetType().Name + " " + ex.Message);
                     playExit = 1;
                 }

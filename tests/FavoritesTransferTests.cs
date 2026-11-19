@@ -23,6 +23,7 @@ internal static partial class HardeningTests
         TestRunner.Add("收藏导入导出", "导入旧 map 与结构化 favorites", TestFavoritesImportMapAndStructured);
         TestRunner.Add("收藏导入导出", "合并计数：新增/更新/跳过与文件内重复", TestFavoritesImportMerge);
         TestRunner.Add("收藏导入导出", "往返：导出再导入得到原收藏", TestFavoritesRoundTrip);
+        TestRunner.Add("收藏导入导出", "大收藏备份往返与并发导入", TestLargeBackupAndConcurrentImport);
         TestRunner.Add("收藏导入导出", "文件级错误：不存在/过大/坏 JSON/无有效条目/非 UTF-8", TestFavoritesImportFileErrors);
         TestRunner.Add("收藏导入导出", "导出文件名格式", TestFavoritesExportFileName);
     }
@@ -269,6 +270,33 @@ internal static partial class HardeningTests
 
     // ---------------- 8. 文件级错误 ----------------
 
+    private static void TestLargeBackupAndConcurrentImport()
+    {
+        var many = new List<KeyValuePair<string, string>>();
+        string prefix = new string('名', 230);
+        for (int i = 1; i <= 3000; i++)
+            many.Add(new KeyValuePair<string, string>(prefix + i, i.ToString()));
+        string json = ExportFavorites(many);
+        Check(Encoding.UTF8.GetByteCount(json) > 2 * 1024 * 1024, "夹具超过旧上限");
+        Check(ImportFavoritesText(json, FavoritesList()).Added == many.Count, "大备份可重新导入");
+        string dir = ReviewDirectory();
+        var field = hub.GetField("Favorites", ReviewStatic);
+        object previous = field.GetValue(null);
+        try
+        {
+            string path = Path.Combine(dir, "favorites.json");
+            field.SetValue(null, path);
+            var old = FavoritesList("A", "1", "B", "2");
+            var result = ImportFavoritesText("[{\"name\":\"C\",\"room\":\"3\"}]", old);
+            File.WriteAllText(path, ExportFavorites(FavoritesList("A-new", "1")), new UTF8Encoding(false));
+            Call("SaveFavorites", result.Favorites);
+            var disk = ImportFavoritesFile(path, FavoritesList());
+            Check(disk.Favorites.Count == 2 && FavoritesHas(disk.Favorites, "A-new", "1")
+                && FavoritesHas(disk.Favorites, "C", "3"), "保存保留其他实例的改名及删除");
+        }
+        finally { field.SetValue(null, previous); Directory.Delete(dir, true); }
+    }
+
     private static void TestFavoritesImportFileErrors()
     {
         string directory = ReviewDirectory();
@@ -279,9 +307,9 @@ internal static partial class HardeningTests
             Exception error = FavoritesTransferFailure(delegate { ImportFavoritesFile(missing, none); });
             Check(error is FileNotFoundException, "文件导入：不存在的文件抛明确异常");
             string tooBig = Path.Combine(directory, "too-big.json");
-            File.WriteAllBytes(tooBig, new byte[2 * 1024 * 1024 + 1]);
+            using (var oversized = File.Create(tooBig)) oversized.SetLength(16 * 1024 * 1024 + 1);
             error = FavoritesTransferFailure(delegate { ImportFavoritesFile(tooBig, none); });
-            Check(FavoritesErrorContains(error, typeof(InvalidDataException), "过大"), "文件导入：超过 2 MiB 被拒绝");
+            Check(FavoritesErrorContains(error, typeof(InvalidDataException), "过大"), "文件导入：超过 16 MiB 被拒绝");
             string badJson = Path.Combine(directory, "bad.json");
             File.WriteAllText(badJson, "{这不是 JSON", new UTF8Encoding(false));
             error = FavoritesTransferFailure(delegate { ImportFavoritesFile(badJson, none); });

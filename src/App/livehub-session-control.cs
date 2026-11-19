@@ -75,7 +75,7 @@ internal static partial class LiveHub
         private void CloseSelectedPlayback(bool resync)
         {
             PlaybackSession session = SelectedPlaybackSession();
-            if (session == null || closingSession || currentLaunch != null) return;
+            if (session == null || closingSession || (resync && currentLaunch != null)) return;
             closingSession = true; UpdateSessionActions();
             status.Text = resync ? "正在重新同步：关闭此会话后以原选项重新打开，期间可能短暂停顿或跳过直播内容…" : "正在停止选中会话…";
             ThreadPool.QueueUserWorkItem(delegate

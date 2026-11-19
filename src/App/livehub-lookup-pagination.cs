@@ -7,18 +7,20 @@ internal static partial class LiveHub
 {
     internal sealed partial class LookupService
     {
-        internal LookupResult MorePage(string platform, string text, int page, CancellationToken token, Action<string> progress)
+        internal LookupResult MorePage(Dictionary<string, int> requested, string text, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            platform = LookupData.Platform(platform);
             text = (text ?? "").Trim();
-            if (!LookupDiscovery.KnownScope(platform) || text.Length == 0 || text.Length > 600 || page < 2 || page > 50)
-                throw new LookupFailure("input", "请先完成昵称查询，再加载第2至50页。");
-            string[] scopes = platform == "all" ? LookupDiscovery.PlatformKeys : new[] { platform };
+            if (text.Length == 0 || text.Length > 600 || requested.Count == 0)
+                throw new LookupFailure("input", "请先完成昵称查询。");
+            string[] scopes = new List<string>(requested.Keys).ToArray();
             var tasks = new Task<LookupResult>[scopes.Length];
             for (int i = 0; i < scopes.Length; i++)
             {
                 string scope = scopes[i];
+                int page = requested[scope];
+                if (!Platforms.Known(scope) || page < 1 || page > 50)
+                    throw new LookupFailure("input", "平台或页码无效。");
                 tasks[i] = Task.Factory.StartNew(delegate
                 {
                     try
@@ -51,9 +53,27 @@ internal static partial class LiveHub
             }
             LookupDiscovery.Rank(combined.candidates, text, false);
             combined.status = blocked == scopes.Length ? "blocked" : blocked > 0 ? "partial" : combined.candidates.Count == 0 ? "empty" : "platform";
-            combined.note = "第" + page + "页返回" + combined.candidates.Count + "条候选"
+            combined.note = "各平台本次返回" + combined.candidates.Count + "条候选"
                 + (blocked > 0 ? "；部分平台受阻，可重试或单独查询。" : "；与已有结果去重合并。") ;
             return combined;
+        }
+    }
+
+    internal static void UpdateLookupPages(Dictionary<string, int> cursors, string platform, LookupResult result, bool initial)
+    {
+        if (initial) cursors.Clear();
+        var outcomes = result.platforms;
+        if (outcomes.Count == 0 && Platforms.Known(platform))
+            outcomes = new List<LookupPlatformOutcome> { new LookupPlatformOutcome {
+                platform = platform, status = result.status, count = result.candidates.Count } };
+        foreach (LookupPlatformOutcome outcome in outcomes)
+        {
+            int page = 1;
+            if (!initial && !cursors.TryGetValue(outcome.platform, out page)) continue;
+            if (outcome.status == "blocked") cursors[outcome.platform] = page;
+            else if (outcome.status == "platform" && outcome.count > 0 && page < 50)
+                cursors[outcome.platform] = page + 1;
+            else cursors.Remove(outcome.platform);
         }
     }
 

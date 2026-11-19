@@ -71,7 +71,8 @@ internal static partial class LiveHub
 
     private static string BitrateHintPath(Target target)
     {
-        return Path.Combine(RuntimeDir, target.Platform + "-" + target.Room + ".bitrate.txt");
+        string key = target.SessionId == null ? target.Platform + "-" + target.Room : "session-" + target.SessionId;
+        return Path.Combine(RuntimeDir, key + ".bitrate.txt");
     }
 
     private static void AddMpvMediaTitle(LaunchPlan plan, string title, bool allowSideEffects)

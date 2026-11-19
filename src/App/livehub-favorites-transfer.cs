@@ -6,7 +6,7 @@
 //     B站也写成 bili:房间号，Rust 版和本版收藏数组都能读回来；
 //   · 导入同时接受四种历史格式（原版数组 / Rust target 对象 / 旧 map / {"favorites":[…]}]）；
 //   · 校验规则与 Rust 版 favorites_transfer.rs 对齐：名称 trim 后 1..256、无控制字符，
-//     房间必须能被平台适配器解析；文件 2 MiB、条目 10000 条上限。
+//     房间必须能被平台适配器解析；文件 16 MiB、条目 10000 条上限。
 //
 // 这里不碰用户数据：文件路径由界面选择、读写由调用方决定；本文件只做字符串/对象转换。
 // --------------------------------------------------------------------------------------------
@@ -20,7 +20,7 @@ using System.Web.Script.Serialization;
 
 internal static partial class LiveHub
 {
-    internal const int FavoritesTransferMaxBytes = 2 * 1024 * 1024;
+    internal const int FavoritesTransferMaxBytes = 16 * 1024 * 1024;
     internal const int FavoritesTransferMaxEntries = 10000;
     internal const int FavoritesTransferMaxNameChars = 256;
 
@@ -76,7 +76,10 @@ internal static partial class LiveHub
             text.Append("  }");
         }
         text.Append("\n]\n");
-        return text.ToString();
+        string json = text.ToString();
+        if (Encoding.UTF8.GetByteCount(json) > FavoritesTransferMaxBytes)
+            throw new InvalidDataException("收藏导出超过 16 MiB，无法生成可重新导入的文件。");
+        return json;
     }
 
     /// <summary>保存对话框的默认文件名：live-hub-favorites-YYYYMMDD-HHMM.json（纯 ASCII）。</summary>
@@ -100,7 +103,7 @@ internal static partial class LiveHub
         int bytes = Encoding.UTF8.GetByteCount(json);
         if (bytes > FavoritesTransferMaxBytes)
         {
-            throw new InvalidDataException("收藏文件过大（" + bytes + " 字节，最多 2 MiB）。");
+            throw new InvalidDataException("收藏文件过大（" + bytes + " 字节，最多 16 MiB）。");
         }
         int skipped;
         int rawCount;
@@ -114,25 +117,22 @@ internal static partial class LiveHub
 
         FavoritesImportResult result = new FavoritesImportResult();
         result.Skipped = skipped;
-        result.Favorites = new List<KeyValuePair<string, string>>();
+        result.Favorites = new FavoriteSnapshot(existing ?? new List<KeyValuePair<string, string>>());
         Dictionary<string, int> positions = new Dictionary<string, int>(StringComparer.Ordinal);
-        if (existing != null)
+        for (int i = 0; i < result.Favorites.Count; i++)
         {
-            foreach (KeyValuePair<string, string> entry in existing)
+            Target target = Parse(result.Favorites[i].Value, "bili");
+            if (target != null)
             {
-                Target target = Parse(entry.Value, "bili");
-                if (target != null)
-                {
-                    string key = target.Platform + ":" + target.Room;
-                    if (!positions.ContainsKey(key)) positions[key] = result.Favorites.Count;
-                }
-                result.Favorites.Add(entry);
+                string key = target.Platform + ":" + target.Room;
+                if (!positions.ContainsKey(key)) positions[key] = i;
             }
         }
         foreach (KeyValuePair<string, string> entry in imported)
         {
             Target target = Parse(entry.Value, "bili");
             string key = target.Platform + ":" + target.Room;
+            MarkFavoriteChanged(result.Favorites, entry.Value);
             int position;
             if (positions.TryGetValue(key, out position))
             {
@@ -150,7 +150,7 @@ internal static partial class LiveHub
     }
 
     /// <summary>
-    /// 从本地文件导入：不存在 / 超过 2 MiB / 非 UTF-8 都抛明确异常，由界面显示。
+    /// 从本地文件导入：不存在 / 超过 16 MiB / 非 UTF-8 都抛明确异常，由界面显示。
     /// 文件只在调用方给定路径上读取，不碰真实收藏目录。
     /// </summary>
     internal static FavoritesImportResult ImportFavoritesFile(string path, IEnumerable<KeyValuePair<string, string>> existing)
@@ -160,7 +160,7 @@ internal static partial class LiveHub
         long length = new FileInfo(path).Length;
         if (length > FavoritesTransferMaxBytes)
         {
-            throw new InvalidDataException("收藏文件过大（" + length + " 字节，最多 2 MiB）。");
+            throw new InvalidDataException("收藏文件过大（" + length + " 字节，最多 16 MiB）。");
         }
         string json;
         try
@@ -181,8 +181,7 @@ internal static partial class LiveHub
         skipped = 0;
         rawCount = 0;
         JavaScriptSerializer serializer = new JavaScriptSerializer();
-        // 文件被限制在 2 MiB，与 serializer 默认 MaxJsonLength 重合；显式放宽，边界文件不会误报。
-        serializer.MaxJsonLength = int.MaxValue;
+        serializer.MaxJsonLength = FavoritesTransferMaxBytes;
         object root;
         try { root = serializer.DeserializeObject(json); }
         catch (Exception ex) { throw new InvalidDataException("收藏文件不是有效的 JSON：" + ex.Message); }

@@ -92,7 +92,9 @@ internal static partial class HardeningTests
         Check(biliState != null && Equals(biliState.Invoke(null, new object[] { 2 }), replay),
             "B站：live_status=2 映射轮播态");
         Check(douyuState != null && Equals(douyuState.Invoke(null, new object[] { 2, 1 }), replay)
-            && Equals(douyuState.Invoke(null, new object[] { 1, 1 }), live),
+            && Equals(douyuState.Invoke(null, new object[] { 1, 1 }), live)
+            && Equals(douyuState.Invoke(null, new object[] { 99, 0 }), unknown)
+            && Equals(douyuState.Invoke(null, new object[] { 99, 1 }), unknown),
             "斗鱼：仅已证实的非直播 videoLoop=1 映射录播，1+1 暂不猜");
         Type huyaState = hub.Assembly.GetType("HuyaRoomState");
         object huyaReplay = Enum.Parse(hub.Assembly.GetType("HuyaLiveState"), "Replay");

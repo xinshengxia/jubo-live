@@ -188,7 +188,7 @@ internal static partial class LiveHub
             {
                 string json = File.ReadAllText(Favorites, Encoding.UTF8);
                 var result = new List<KeyValuePair<string, string>>();
-                var serializer = new JavaScriptSerializer();
+                var serializer = new JavaScriptSerializer { MaxJsonLength = FavoritesTransferMaxBytes };
                 if (json.TrimStart().StartsWith("["))
                 {
                     var entries = serializer.Deserialize<List<Dictionary<string, string>>>(json);
@@ -235,21 +235,26 @@ internal static partial class LiveHub
             if (snapshot != null) foreach (var entry in snapshot.Original) original[FavoriteRoomKey(entry.Value)] = entry.Key;
             var desired = new Dictionary<string, string>();
             foreach (var entry in favorites) desired[FavoriteRoomKey(entry.Value)] = entry.Key;
-            latest.RemoveAll(delegate(KeyValuePair<string, string> entry) {
-                string key = FavoriteRoomKey(entry.Value);
-                return original.ContainsKey(key) && !desired.ContainsKey(key);
-            });
+            var replacements = new HashSet<string>();
+            var additions = new List<KeyValuePair<string, string>>();
             foreach (var entry in favorites)
             {
                 string key = FavoriteRoomKey(entry.Value), oldName;
                 if (original.TryGetValue(key, out oldName) && oldName == entry.Key && !snapshot.ChangedRooms.Contains(key)) continue;
-                latest.RemoveAll(delegate(KeyValuePair<string, string> old) { return FavoriteRoomKey(old.Value) == key; });
-                latest.Add(entry);
+                if (replacements.Add(key)) additions.Add(entry);
             }
+            int previousCount = latest.Count;
+            latest.RemoveAll(delegate(KeyValuePair<string, string> entry) {
+                string key = FavoriteRoomKey(entry.Value);
+                return replacements.Contains(key) || (original.ContainsKey(key) && !desired.ContainsKey(key));
+            });
+            latest.AddRange(additions);
+            if (latest.Count > FavoritesTransferMaxEntries && latest.Count > previousCount)
+                throw new InvalidDataException("收藏总数超过 10000 条，无法保存。");
             var data = new List<Dictionary<string, string>>();
             foreach (var entry in latest)
                 data.Add(new Dictionary<string, string> { { "name", entry.Key }, { "room", entry.Value } });
-            AtomicWriteAllText(Favorites, new JavaScriptSerializer().Serialize(data));
+            AtomicWriteAllText(Favorites, new JavaScriptSerializer { MaxJsonLength = FavoritesTransferMaxBytes }.Serialize(data));
             favorites.Clear(); favorites.AddRange(latest);
             if (snapshot != null) { snapshot.Original.Clear(); snapshot.Original.AddRange(latest); snapshot.ChangedRooms.Clear(); }
         });

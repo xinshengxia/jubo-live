@@ -345,6 +345,7 @@ internal static partial class LiveHub
     {
         string key = LookupData.FavoriteKey(candidate);
         if (key == null || string.IsNullOrWhiteSpace(name)) throw new LookupFailure("unverified", "请先选中并核验数字房间号。");
+        if (!ValidFavoriteName(name, out name)) throw new LookupFailure("invalid_name", "收藏名最多 256 个字符，且不能包含控制字符。");
         foreach (var old in favorites)
         {
             Target target = Parse(old.Value, "bili");

@@ -319,7 +319,9 @@ internal static partial class LiveHub
             if (!LookupData.Digits(canonical)) throw new LookupFailure("blocked", "B站未提供房间关联字段。");
             if (candidate.room_id != canonical && candidate.room_id != shortId) throw new LookupFailure("mismatch", "B站返回了不同房间。");
             Owner(candidate, LookupData.Text(room, "uid")); candidate.room_id = canonical; Metadata(candidate, room);
-            string live = LookupData.Text(room, "live_status"); candidate.live_status = live == "1" ? "live" : live == "0" || live == "2" ? "offline" : "unknown";
+            int live;
+            if (int.TryParse(LookupData.Text(room, "live_status"), out live))
+                candidate.live_status = BiliAdapter.StateFromLiveStatus(live).ToString().ToLowerInvariant();
             var user = LookupData.Obj(LookupData.Obj(LookupData.Json(Get("https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + candidate.account_id, token).Body), "data"), "info");
             if (LookupData.Text(user, "uid") != null && LookupData.Text(user, "uid") != candidate.account_id) throw new LookupFailure("mismatch", "B站主播资料返回了不同账号。");
             candidate.display_name = LookupData.Text(user, "uname") ?? "B站账号 " + candidate.account_id; Metadata(candidate, user);
@@ -377,7 +379,10 @@ internal static partial class LiveHub
             if (roomId == null) throw new LookupFailure("blocked", "斗鱼没有返回账号与房间关联信息。");
             if (roomId != candidate.room_id) throw new LookupFailure("mismatch", "斗鱼返回了不同房间。");
             Owner(candidate, LookupData.Text(room, "owner_uid")); candidate.display_name = LookupData.Text(room, "owner_name") ?? candidate.display_name; Metadata(candidate, room);
-            string live = LookupData.Text(room, "show_status"); candidate.live_status = live == "1" ? "live" : live == "2" ? "offline" : "unknown";
+            int live, loop;
+            int.TryParse(LookupData.Text(room, "videoLoop"), out loop);
+            if (int.TryParse(LookupData.Text(room, "show_status"), out live))
+                candidate.live_status = DouyuAdapter.StateFromValues(live, loop).ToString().ToLowerInvariant();
         }
         private void Douyin(LookupCandidate candidate, CancellationToken token)
         {
