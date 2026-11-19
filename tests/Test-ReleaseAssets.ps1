@@ -86,6 +86,12 @@ function New-SyntheticArchive([string]$name, [bool]$includeConfig, [bool]$validC
         $treeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("tool.txt`n$hash`n")))
         $bundle = @{name='fixture';targetDir='bin/fixture';treeSha256=$treeHash;files=@(@{path='tool.txt';size=$bytes.Length;sha256=$hash})}
         $components = @(@{name='fixture';target='bin/fixture';kind='bundle';sha256=$treeHash;size=$bytes.Length})
+        foreach ($scriptName in @('live-title.lua','live-resync.lua')) {
+            $sourceText = '-- synthetic ' + $scriptName
+            $contents['lua/' + $scriptName] = $sourceText
+            $contents['bin/mpv/portable_config/scripts/' + $scriptName] = $sourceText
+        }
+        if ($BundleCase -eq 'stale-script') { $contents['bin/mpv/portable_config/scripts/live-title.lua'] = '-- stale synthetic copy' }
         if ($BundleCase -eq 'tree') { $components[0].sha256 = '0' * 64 }
         if ($BundleCase -eq 'member') { $contents['bin/fixture/tool.txt'] = 'Modified member with consistent artifact hash' }
         if ($BundleCase -eq 'omitted') { $components = @(@{name='unknown';kind='file';target='bin/fixture/tool.txt';sha256=$hash;size=$bytes.Length}) }
@@ -127,7 +133,7 @@ try { & $verifier -Zip (New-SyntheticArchive 'tampered-license.zip' $true $true 
 if (-not $rejected) { throw 'FAIL: 归档验收接受了与上游快照哈希不同的许可原文' }
 Write-Output 'PASS: 缺失声明/许可/专利授权或修改许可原文的归档均被拒绝'
 & $verifier -Zip (New-SyntheticArchive 'valid-bundle.zip' $true $true -BundleCase 'valid')
-foreach ($case in @('tree','member','omitted')) {
+foreach ($case in @('tree','member','omitted','stale-script')) {
     $rejected = $false
     try { & $verifier -Zip (New-SyntheticArchive ($case + '-bundle.zip') $true $true -BundleCase $case) } catch { $rejected = $true }
     if (-not $rejected) { throw ('FAIL: inconsistent locked bundle accepted: ' + $case) }
