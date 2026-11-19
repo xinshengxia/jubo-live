@@ -42,6 +42,8 @@
     },
     {
       "name": "yt-dlp",
+      "distribution": "external",
+      "download": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
       "target": "bin/yt-dlp.exe",
       "source": "installed:bin/yt-dlp.exe",
       "version": "2026.08.19",

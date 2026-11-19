@@ -11,7 +11,7 @@ if (Test-Path -LiteralPath $destination) { throw 'Dependency output must be a ne
 $lock = Get-Content -LiteralPath (Join-Path $Repo 'deps.lock.json') -Raw | ConvertFrom-Json
 $selected = @{}
 foreach ($component in $lock.components) {
-    if ($component.name -eq 'potplayer' -or $component.source -notlike 'installed:*') { continue }
+    if ($component.name -eq 'potplayer' -or $component.distribution -eq 'external' -or $component.source -notlike 'installed:*') { continue }
     $relative = $component.source.Substring('installed:'.Length)
     $selected[$relative] = @{sha256=$component.sha256;size=$component.size}
 }

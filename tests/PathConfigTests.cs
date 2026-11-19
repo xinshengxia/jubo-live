@@ -51,14 +51,6 @@ internal static partial class HardeningTests
             File.WriteAllBytes(fakeMpv, new byte[0]);
             File.WriteAllBytes(Path.Combine(dir, "yt-dlp-fake.exe"), new byte[0]);
 
-            // Both full (bundled mpv) and lite (portable.marker) use portable
-            // path semantics. A lite package must not be mistaken for a dev tree.
-            // 便携布局下：命令行覆盖仍然生效，但**配置文件不参与** ——
-            // 那是设计意图（包拷到哪都一样跑），所以两种布局断言不同。
-            bool portable = File.Exists(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(launcher)),
-                "bin", "mpv", "mpv.exe")) || File.Exists(Path.Combine(
-                    Path.GetDirectoryName(Path.GetFullPath(launcher)), "portable.marker"));
-
             // --runtime 走命令行：两种布局都必须生效（便携包也该听显式命令行覆盖）；
             // 于是报告一定落在 $dir 里，下面就能按布局分别断言别的路径。
             int code = RunLauncherExitCode(launcher,
@@ -78,22 +70,10 @@ internal static partial class HardeningTests
                 Check(report.IndexOf("TOOL runtime = " + dir, StringComparison.OrdinalIgnoreCase) >= 0,
                     "runtime 目录能被 --runtime 覆盖（两种布局都成立）");
 
-                if (portable)
-                {
-                    // 便携布局：配置文件**刻意不参与**（包拷到哪都一样跑），所以 yt-dlp 应当还是包内那份。
-                    string bundled = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(launcher)), "bin", "yt-dlp.exe");
-                    Check(report.IndexOf("TOOL yt-dlp = " + bundled, StringComparison.OrdinalIgnoreCase) >= 0,
-                        "便携布局：yt-dlp 用包内那份（配置文件不参与，这是设计意图）");
-                    Check(report.IndexOf(Path.Combine(dir, "yt-dlp-fake.exe"), StringComparison.OrdinalIgnoreCase) < 0,
-                        "便携布局：配置文件里的路径确实没被采用");
-                }
-                else
-                {
-                    Check(report.IndexOf("TOOL yt-dlp = " + Path.Combine(dir, "yt-dlp-fake.exe"), StringComparison.OrdinalIgnoreCase) >= 0,
-                        "开发布局：配置文件里的 yt-dlp 生效了");
-                    Check(report.IndexOf("<- 配置文件 live-hub.json", StringComparison.Ordinal) >= 0,
-                        "自检报告写明 yt-dlp 来自配置文件");
-                }
+                Check(report.IndexOf("TOOL yt-dlp = " + Path.Combine(dir, "yt-dlp-fake.exe"), StringComparison.OrdinalIgnoreCase) >= 0,
+                    "便携与开发布局均使用明确选择的 yt-dlp");
+                Check(report.IndexOf("<- 配置文件 live-hub.json", StringComparison.Ordinal) >= 0,
+                    "自检报告写明 yt-dlp 来自配置文件");
             }
         }
         finally { try { Directory.Delete(dir, true); } catch (Exception) { } }

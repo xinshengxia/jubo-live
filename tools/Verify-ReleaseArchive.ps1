@@ -70,7 +70,10 @@ try {
         if ($lock) {
             foreach ($required in @('LICENSE','deps.lock.json')) { if (-not $listed.ContainsKey($required)) { throw '实际发布包缺少许可或依赖锁' } }
             if ($manifest.variant -notin @('full','lite')) { throw '发布变体无效' }
-            $expectedComponents = @($lock.components | Where-Object { $_.name -ne 'potplayer' -and ($manifest.variant -eq 'full' -or $_.name -ne 'mpv') })
+            foreach ($external in @($lock.components | Where-Object distribution -EQ 'external')) {
+                if ($names.ContainsKey($external.target)) { throw "发布包意外包含外置工具：$($external.name)" }
+            }
+            $expectedComponents = @($lock.components | Where-Object { $_.distribution -ne 'external' -and $_.name -ne 'potplayer' -and ($manifest.variant -eq 'full' -or $_.name -ne 'mpv') })
             $expectedBundles = @($lock.bundles | Where-Object { $_.name -ne 'potplayer-dist' -and ($manifest.variant -eq 'full' -or $_.name -ne 'mpv-dist') })
             foreach ($required in @($expectedComponents) + @($expectedBundles)) { if (-not $componentNames.ContainsKey($required.name)) { throw '发布包遗漏锁定组件' } }
             if ($componentNames.Count -ne ($expectedComponents.Count + $expectedBundles.Count)) { throw '发布包包含意外组件' }

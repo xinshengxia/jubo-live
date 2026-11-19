@@ -247,10 +247,11 @@ internal static partial class LiveHub
                 }
                 catch (Exception ex) { Diagnostics.Report("旧 live-hub.json 损坏，按新文件重写", ex); }
             }
-            root[tool] = path;
+            string configKey = tool == "yt-dlp" ? "ytdlp" : tool;
+            root[configKey] = path;
             AtomicWriteAllText(target, new JavaScriptSerializer().Serialize(root));
             PathConfigFile = target;
-            PathConfigValues[tool.ToLowerInvariant()] = path;
+            PathConfigValues[configKey.ToLowerInvariant()] = path;
             return true;
         }
         catch (Exception ex) { error = ex.GetType().Name + "：" + ex.Message; return false; }
@@ -259,13 +260,14 @@ internal static partial class LiveHub
     /// <summary>界面用：当前生效的播放器路径（tool = "mpv" / "potplayer"）。</summary>
     internal static string CurrentToolPath(string tool)
     {
-        return tool == "mpv" ? Mpv : PotPlayer;
+        return tool == "yt-dlp" ? YtDlp : tool == "mpv" ? Mpv : PotPlayer;
     }
 
     /// <summary>界面里选完播放器后立刻生效，不用重启。</summary>
     internal static void ApplyToolPath(string tool, string path)
     {
-        if (tool == "mpv") Mpv = path; else PotPlayer = path;
+        if (tool == "yt-dlp") YtDlp = path;
+        else if (tool == "mpv") Mpv = path; else PotPlayer = path;
     }
 
     /// <summary>按优先级链解析一个外部程序的路径。</summary>
@@ -350,6 +352,10 @@ internal static partial class LiveHub
             if (File.Exists(marker)) PortableLite = File.ReadAllText(marker).IndexOf("lite", StringComparison.OrdinalIgnoreCase) >= 0;
         }
         catch (Exception ex) { Diagnostics.Report("读取 portable.marker", ex); }
+        YtDlp = ResolveTool("yt-dlp", "ytdlp",
+            new string[] { Path.Combine(dir, @"bin\yt-dlp.exe"), Path.Combine(dir, "yt-dlp.exe") },
+            new string[] { "yt-dlp.exe" }, new string[] { @"%LOCALAPPDATA%\Programs\yt-dlp\yt-dlp.exe" },
+            Path.Combine(dir, @"bin\yt-dlp.exe"));
         if (Portable)
         {
             // 便携布局：默认值全部取自 exe 旁边（拷到哪都一样跑，这是设计意图），
@@ -359,7 +365,6 @@ internal static partial class LiveHub
             // 直接后果是「同一个测试在便携布局下必然失败」—— 发布流水线实测撞到过）。
             Mpv = PortableToolOverride("mpv", portableMpv);
             PotPlayer = PortableToolOverride("potplayer", Path.Combine(dir, @"bin\PotPlayer\PotPlayerMini64.exe"));
-            YtDlp = PortableOverride("yt-dlp", Path.Combine(dir, @"bin\yt-dlp.exe"));
             StreamlinkConsole = PortableOverride("streamlink", null);
             LiveTitleScript = PortableOverride("live-title", Path.Combine(dir, @"lua\live-title.lua"));
             LiveResyncScript = PortableOverride("live-resync", Path.Combine(dir, @"lua\live-resync.lua"));
@@ -385,11 +390,6 @@ internal static partial class LiveHub
                 new string[] { @"%ProgramFiles%\DAUM\PotPlayer\PotPlayerMini64.exe",
                     @"%ProgramFiles(x86)%\DAUM\PotPlayer\PotPlayerMini64.exe" },
                 Path.Combine(dir, @"bin\PotPlayer\PotPlayerMini64.exe"));
-            YtDlp = ResolveTool("yt-dlp", "ytdlp",
-                new string[] { Path.Combine(dir, "yt-dlp.exe"), Path.Combine(dir, @"bin\yt-dlp.exe") },
-                new string[] { "yt-dlp.exe" },
-                new string[] { @"%LOCALAPPDATA%\Programs\yt-dlp\yt-dlp.exe" },
-                Path.Combine(dir, @"bin\yt-dlp.exe"));
             StreamlinkConsole = ResolveTool("streamlink", "streamlink",
                 new string[] { Path.Combine(dir, @"bin\streamlink.exe"), Path.Combine(dir, @".venv\Scripts\streamlink.exe") },
                 new string[] { "streamlink.exe", "streamlinkw.exe" },

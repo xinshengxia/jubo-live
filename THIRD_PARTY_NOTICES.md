@@ -11,7 +11,7 @@
 | 组件 | 用途 | 许可 |
 | --- | --- | --- |
 | [mpv](https://mpv.io/) | 默认播放器（仅 `full` 包内置） | GPLv2+ / LGPLv2.1+，原文见 `licenses/mpv-LICENSE.GPL.txt`、`licenses/mpv-LICENSE.LGPL.txt` |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | B站取流解析 | 原文见 `licenses/yt-dlp-LICENSE.txt`、`licenses/yt-dlp-THIRD_PARTY_LICENSES.txt` |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 用户单独配置的 B站取流解析器 | 原文见 `licenses/yt-dlp-LICENSE.txt`、`licenses/yt-dlp-THIRD_PARTY_LICENSES.txt` |
 | [ZXing.Net](https://github.com/micjahn/ZXing.Net) | 扫码登录的二维码生成 | 原文见 `licenses/ZXing.Net-COPYING.txt` |
 | [WebView2 SDK](https://developer.microsoft.com/microsoft-edge/webview2/) | 网页辅助登录（抖音） | 原文见 `licenses/WebView2-SDK-LICENSE.txt`、`licenses/WebView2-SDK-NOTICE.txt` |
 | [AntdUI](https://github.com/AntdUI/AntdUI) | 主窗口按钮、输入、下拉选择、标签页与状态标签 | Apache-2.0，原文见 `licenses/AntdUI-LICENSE.txt` |
@@ -39,7 +39,7 @@
 
 本项目自身采用 **GNU General Public License v3.0**（原文见 [LICENSE](LICENSE)）：可以自由使用、修改、再分发，但再分发衍生作品时必须同样以 GPL-3.0 授权，并提供对应源码。
 
-上表中的第三方组件与参考项目各自保留其原始许可，GPL-3.0 不改变这些条款。分发本项目的二进制时，本项目的对应源码在本仓库；随包分发的第三方组件（如 mpv、yt-dlp）的源码请见其各自上游项目。
+上表中的第三方组件与参考项目各自保留其原始许可，GPL-3.0 不改变这些条款。本项目二进制的对应源码在本仓库，随包分发的 mpv 等第三方组件的源码见各自上游项目。
 
 ## full 包的 mpv 运行时
 

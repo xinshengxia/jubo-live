@@ -322,6 +322,10 @@ try {
     Step '[6/9] 按 deps.lock.json 复制固定版本依赖（逐个校验 sha256，任何一个不符就失败）'
     $verified = New-Object System.Collections.Generic.List[object]
     foreach ($c in $lock.components) {
+        if ($c.distribution -eq 'external') {
+            Say ('  · ' + $c.name + ' 由用户单独配置，包内保留锁定版本和校验值')
+            continue
+        }
         # lite：不带播放器 —— mpv / PotPlayer 既不复制也不校验（其余组件照旧逐个校验 sha256）
         if (-not $IncludePotPlayer -and [string]$c.name -eq 'potplayer') {
             Say ('  · ' + ([string]$c.name).PadRight(12) + ' 跳过（PotPlayer 不再分发，用户自备）')

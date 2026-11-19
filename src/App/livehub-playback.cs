@@ -56,6 +56,8 @@ internal static partial class LiveHub
     {
         // 会话号在这里兜底生成：中转 URL 拿它当令牌，状态文件也按它命名，必须早于任何拼串
         if (target.SessionId == null) target.SessionId = NewSessionId();
+        if (allowNetwork && target.Platform == "bili" && !File.Exists(YtDlp))
+            throw new FileNotFoundException("B站播放需要 yt-dlp.exe。请从使用说明中的 yt-dlp 官方发布页下载，再到「播放器与画质」选择 yt-dlp 的程序路径。", YtDlp);
         return player == "potplayer"
             ? ResolvePotPlayerPlan(target, allowNetwork, allowSideEffects)
             : ResolveMpvPlan(target, allowNetwork, allowSideEffects);

@@ -546,7 +546,7 @@ internal static partial class LiveHub
         playerLabel.TextAlign = ContentAlignment.MiddleLeft;
         playerHint.TextAlign = ContentAlignment.MiddleLeft;
         playerBox.DropDownStyle = ComboBoxStyle.DropDownList;
-        playerBox.Items.AddRange(new object[] { "mpv", "PotPlayer" });
+        playerBox.Items.AddRange(new object[] { "mpv", "PotPlayer", "yt-dlp" });
         playerBox.SelectedIndex = 0;
         pickPlayer.Text = "选择程序…";
         pickPlayer.FlatStyle = FlatStyle.Flat;
@@ -1317,15 +1317,14 @@ internal static partial class LiveHub
         {
             try
             {
-                string tool = playerBox.SelectedIndex == 1 ? "potplayer" : "mpv";
+                string tool = Convert.ToString(playerBox.SelectedItem).ToLowerInvariant();
                 string path = LiveHub.CurrentToolPath(tool);
                 bool usable = PlayerFileLooksValid(path);
                 string shown = string.IsNullOrEmpty(path) ? "(未设置)" : path;
                 playerHint.Text = usable
                     ? "当前：" + shown + "　·　已就绪，选一次就记住（写在 exe 旁边的 live-hub.json）"
-                    : "当前：" + shown + "　·　还没有可用的 " + (tool == "mpv" ? "mpv" : "PotPlayer")
-                      + "：点右边「选择程序…」指到你自己的 " + (tool == "mpv" ? "mpv.exe" : "PotPlayerMini64.exe")
-                      + "（绿色包不自带播放器）";
+                    : "当前：" + shown + "　·　请选择 " + ToolExecutableName(tool)
+                      + (tool == "yt-dlp" ? "；B站解析器下载地址见使用说明。" : "。");
                 playerHint.ForeColor = usable ? ModernTheme.Text : ModernTheme.Danger;
                 listTips.SetToolTip(playerHint, shown);
             }
@@ -1349,15 +1348,18 @@ internal static partial class LiveHub
         }
 
         /// <summary>选播放器程序：写进 exe 旁边的 live-hub.json（选一次就记住）并立刻生效。</summary>
+        private static string ToolExecutableName(string tool)
+        {
+            return tool == "yt-dlp" ? "yt-dlp.exe" : tool == "potplayer" ? "PotPlayerMini64.exe" : "mpv.exe";
+        }
         internal void PickPlayerProgram()
         {
-            string tool = playerBox.SelectedIndex == 1 ? "potplayer" : "mpv";
+            string tool = Convert.ToString(playerBox.SelectedItem).ToLowerInvariant();
             using (OpenFileDialog picker = new OpenFileDialog())
             {
-                picker.Title = tool == "mpv" ? "选择 mpv.exe" : "选择 PotPlayerMini64.exe";
-                picker.Filter = tool == "mpv"
-                    ? "mpv (mpv.exe)|mpv.exe|可执行文件 (*.exe)|*.exe"
-                    : "PotPlayer (PotPlayerMini64.exe)|PotPlayerMini64.exe|可执行文件 (*.exe)|*.exe";
+                string name = ToolExecutableName(tool);
+                picker.Title = "选择 " + name;
+                picker.Filter = name + "|" + name + "|可执行文件 (*.exe)|*.exe";
                 picker.CheckFileExists = true;
                 string current = LiveHub.CurrentToolPath(tool);
                 try { if (!string.IsNullOrEmpty(current) && File.Exists(current)) picker.InitialDirectory = Path.GetDirectoryName(current); }
@@ -1372,7 +1374,7 @@ internal static partial class LiveHub
                 }
                 LiveHub.ApplyToolPath(tool, picker.FileName);
                 status.ForeColor = ModernTheme.Accent;
-                status.Text = "已记住 " + (tool == "mpv" ? "mpv" : "PotPlayer") + " 路径，之后打开房间直接用它：" + picker.FileName;
+                status.Text = "已记住 " + name + " 的路径：" + picker.FileName;
                 RefreshPlayerRow();
             }
         }
