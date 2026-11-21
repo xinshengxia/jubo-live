@@ -35,6 +35,11 @@ function Test-Content([byte[]]$bytes, [string]$path) {
     foreach ($view in $views) {
         foreach ($rule in $patterns.Keys) {
             $candidateView = $view
+            if ($rule -eq 'userDirectory' -and $path -eq 'licenses/player-styles/ModernZ/upstream-README.md') {
+                # ModernZ documents the literal account placeholder in its Windows installation example.
+                $example = 'C:/' + 'Users' + '/%username%/AppData/Roaming/mpv/'
+                $candidateView = $candidateView.Replace($example, '%APPDATA%/mpv/')
+            }
             if ($binary -and $path -eq 'bin/mpv/mpv.exe' -and $rule -eq 'userDirectory') {
                 # mpv's module loader uses this exact path-like phrase as a root-category placeholder.
                 $candidateView = $candidateView.Replace(('/' + 'home/dos-drive/builtin/meta-dir'), '')

@@ -6,13 +6,20 @@ $guard = Join-Path $Source 'tools\Test-PublishPrivacy.ps1'
 function Invoke-Case([string]$name,[string]$file,[string]$content,[bool]$reject) {
     $directory = Join-Path $Workspace $name
     New-Item -ItemType Directory -Path $directory | Out-Null
-    [IO.File]::WriteAllText((Join-Path $directory $file),$content)
+    $target = Join-Path $directory $file
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
+    [IO.File]::WriteAllText($target,$content)
     $rejected = $false
     try { & $guard -Directory $directory | Out-Null } catch { $rejected = $true }
     if ($rejected -ne $reject) { throw ('Unexpected privacy decision: ' + $name) }
     Write-Output ('PASS: ' + $name)
 }
 Invoke-Case 'public-readme' 'README.md' 'Public documentation with relative paths.' $false
+$modernzDoc = 'licenses/player-styles/ModernZ/upstream-README.md'
+$profileRoot = 'C:/' + 'Users' + '/'
+$example = $profileRoot + '%username%/AppData/Roaming/mpv/'
+Invoke-Case 'upstream-placeholder' $modernzDoc $example $false
+Invoke-Case 'upstream-named-account' $modernzDoc ($example + [Environment]::NewLine + $profileRoot + 'fixture-account/AppData/') $true
 Invoke-Case 'host-manifest' 'manifest.json' '{"sourceRepo":"private source","os":{"version":"private build"}}' $true
 Invoke-Case 'local-path' 'sample.txt' ('Z' + ':\private-example\source') $true
 Invoke-Case 'credential' 'sample.txt' ('sk-' + ('a' * 30)) $true
