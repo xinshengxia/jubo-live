@@ -45,6 +45,8 @@ internal static partial class LiveHub
         public string BufferMode = "low";
         public string DanmakuMode = "auto";   // auto=按设置 / on=本次开 / off=本次关
         public Process PendingRelay;
+        public bool MonitorRoom = true;
+        public bool RelayBiliFlv;
     }
 
     private sealed class PlaybackSession
@@ -217,6 +219,25 @@ internal static partial class LiveHub
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 4 && args[0] == "--bili-native-url")
+        {
+            string url = null;
+            try
+            {
+                InstallSafetyNets();
+                Target room = Parse("bili:" + args[1], "bili");
+                if (room == null || room.Platform != "bili") { Environment.ExitCode = 2; return; }
+                room.Quality = NormalizeQuality(args[2]);
+                url = TryBiliPlaybackUrl(room.Room, room.Quality, args[3]);
+                string tool = Environment.GetEnvironmentVariable("JUBO_BILI_YTDLP");
+                if (url == null && File.Exists(tool) && PlatformCredentialStorage.ProtectedMode(args[3]))
+                    url = ResolveBiliWithYtdlp(room, tool, args[3]);
+            }
+            catch (Exception) { Environment.ExitCode = 1; return; }
+            if (url != null) Console.WriteLine(url);
+            Environment.ExitCode = url == null ? 1 : 0;
+            return;
+        }
         // ⚠️ 必须是**第一件事**：DPI 感知一旦创建了窗口就改不了了。
         // 不声明的话，200% 缩放的屏上 Windows 会把整个窗口位图放大 2 倍 ——
         // 尺寸对但**所有文字都糊**（用户反馈的就是这个）。
@@ -237,7 +258,19 @@ internal static partial class LiveHub
             InteractivePlaybackVerification = false;
 
         InitPaths();
+        if (args.Length == 2 && args[0] == "--credential-storage")
+        {
+            try { Console.WriteLine(PlatformCredentialStorage.Configure(args[1])); }
+            catch (Exception ex) { Console.Error.WriteLine("凭据操作失败：" + ex.GetType().Name); Environment.ExitCode = 1; }
+            return;
+        }
         InstallSafetyNets();
+        if (args.Length == 0)
+        {
+            try { ResolverCookie.CleanAbandoned(); }
+            catch (IOException ex) { Diagnostics.Report("清理备用解析器目录", ex); }
+            catch (UnauthorizedAccessException ex) { Diagnostics.Report("备用解析器目录权限", ex); }
+        }
         PruneRuntime();
 
         if (args.Length >= 3 && args.Length <= 4 && args[0] == "--lookup-douyin-probe")

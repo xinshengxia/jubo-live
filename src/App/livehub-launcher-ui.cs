@@ -173,6 +173,8 @@ internal static partial class LiveHub
         internal List<KeyValuePair<string, string>> currentFavorites = new List<KeyValuePair<string, string>>();
         internal List<HistoryEntry> currentHistory = new List<HistoryEntry>();
         internal Dictionary<string, RoomStateKind> roomBadges = new Dictionary<string, RoomStateKind>();
+        private readonly Dictionary<string, RoomStateKind> lastConfirmedBadge = new Dictionary<string, RoomStateKind>();
+        private readonly Dictionary<string, string> badgeHints = new Dictionary<string, string>();
         internal Dictionary<string, DateTime> badgeTimes = new Dictionary<string, DateTime>();
         internal HashSet<string> badgePending = new HashSet<string>();
         internal List<PlaybackSession> sessions = new List<PlaybackSession>();
@@ -614,7 +616,7 @@ internal static partial class LiveHub
             if (Application.MessageLoop) foreach (string p in platforms) LoginHealth.RequestCheck(p, false);
             foreach (PlaybackSession session in sessions)
             {
-                if (session.Ended || session.Polling || (DateTime.UtcNow - session.LastPoll).TotalSeconds < 10) continue;
+                if (!session.Target.MonitorRoom || session.Ended || session.Polling || (DateTime.UtcNow - session.LastPoll).TotalSeconds < 10) continue;
                 session.Polling = true;
                 session.LastPoll = DateTime.UtcNow;
                 ThreadPool.QueueUserWorkItem(delegate
@@ -630,7 +632,7 @@ internal static partial class LiveHub
                             session.Polling = false;
                             if (session.Ended) return;
                             session.LiveState = live;
-                            UpdateBadge(session.Target, live);
+                            RecordBadge(session.Target, live, note);
                             RefreshSessions();
                         });
                     }
@@ -666,7 +668,7 @@ internal static partial class LiveHub
                     form.BeginInvoke((MethodInvoker)delegate
                     {
                         if (token != previewToken || currentLaunch != null) return;
-                        UpdateBadge(target, live);
+                        RecordBadge(target, live, note);
                         string name = PlatformName(target.Platform) + " " + target.Room;
                         if (live == RoomStateKind.Unknown)
                         {
@@ -734,11 +736,13 @@ internal static partial class LiveHub
                 byKey[key] = candidate;
                 keys.Add(key);
             }
+            bool firstQueryStarted = false;
             foreach (string key in BadgeScheduler.Pick(keys, badgePending, badgeTimes,
                 DateTime.UtcNow, BadgeScheduler.MaxInFlight))
             {
                 Target checking = byKey[key];
                 badgePending.Add(key);
+                if (!roomBadges.ContainsKey(key)) firstQueryStarted = true;
                 ThreadPool.QueueUserWorkItem(delegate
                 {
                     string note;
@@ -748,13 +752,14 @@ internal static partial class LiveHub
                         form.BeginInvoke((MethodInvoker)delegate
                         {
                             badgePending.Remove(key);
-                            UpdateBadge(checking, live);
+                            RecordBadge(checking, live, note);
                             PumpBadgeChecks();             // 空出一个名额就立刻补位
                         });
                     }
                     catch (Exception) { }
                 });
             }
+            if (firstQueryStarted && workbenchReady) RefreshWorkbenchRooms();
         }
 
         /// <summary>其余事件接线：输入回车、取消启动、双击开播、扫码按钮、收藏增删、关闭窗口。</summary>
@@ -1224,12 +1229,33 @@ internal static partial class LiveHub
 
         internal void UpdateBadge(Target target, RoomStateKind live)
         {
+            RecordBadge(target, live, null);
+        }
+
+        private string BadgeHint(string key)
+        {
+            string text;
+            return badgeHints.TryGetValue(key, out text) ? text : "";
+        }
+
+        private void RecordBadge(Target target, RoomStateKind live, string note)
+        {
             if (target == null) return;
             string key = target.Platform + ":" + target.Room;
+            string oldHint = BadgeHint(key);
+            if (live != RoomStateKind.Unknown) { lastConfirmedBadge[key] = live; badgeHints.Remove(key); }
+            else
+            {
+                RoomStateKind previous;
+                badgeHints[key] = (string.IsNullOrEmpty(note) ? "平台暂未确认房态。" : note)
+                    + (lastConfirmedBadge.TryGetValue(key, out previous) ? "　上次确认：" + RoomStateLabel(target.Platform, previous) : "");
+            }
             roomBadges[key] = live;
             BadgeScheduler.RecordResult(badgeTimes, key, DateTime.UtcNow, live == RoomStateKind.Unknown);
             if (target.Platform != platform) return;
+            string previousSignature = lastRoomListSignature;
             RefreshLists();
+            if (workbenchReady && oldHint != BadgeHint(key) && previousSignature == lastRoomListSignature) RefreshWorkbenchRooms();
         }
 
         private bool refreshingLists;
@@ -1352,29 +1378,40 @@ internal static partial class LiveHub
         {
             return tool == "yt-dlp" ? "yt-dlp.exe" : tool == "potplayer" ? "PotPlayerMini64.exe" : "mpv.exe";
         }
-        internal void PickPlayerProgram()
+        internal async void PickPlayerProgram()
         {
             string tool = Convert.ToString(playerBox.SelectedItem).ToLowerInvariant();
             using (OpenFileDialog picker = new OpenFileDialog())
             {
                 string name = ToolExecutableName(tool);
                 picker.Title = "选择 " + name;
-                picker.Filter = name + "|" + name + "|可执行文件 (*.exe)|*.exe";
+                picker.Filter = "程序或快捷方式 (*.exe, *.lnk)|*.exe;*.lnk";
+                picker.DereferenceLinks = false;
                 picker.CheckFileExists = true;
                 string current = LiveHub.CurrentToolPath(tool);
                 try { if (!string.IsNullOrEmpty(current) && File.Exists(current)) picker.InitialDirectory = Path.GetDirectoryName(current); }
                 catch (Exception ex) { Diagnostics.Report("播放器对话框初始目录", ex); }
                 if (picker.ShowDialog(form) != DialogResult.OK) return;
                 string error;
-                if (!LiveHub.SaveToolPath(tool, picker.FileName, out error))
+                string path;
+                pickPlayer.Enabled = false;
+                try
+                {
+                    path = LiveHub.SelectedToolExecutable(tool, picker.FileName);
+                    await System.Threading.Tasks.Task.Run(() => ProbeSelectedTool(tool, path));
+                    if (form.IsDisposed) return;
+                }
+                catch (Exception ex) { if (!form.IsDisposed) { status.ForeColor = ModernTheme.Danger; status.Text = ex.Message; } return; }
+                finally { if (!form.IsDisposed) pickPlayer.Enabled = true; }
+                if (!LiveHub.SaveToolPath(tool, path, out error))
                 {
                     status.ForeColor = ModernTheme.Danger;
                     status.Text = "播放器路径没能保存：" + (error ?? "未知原因");
                     return;
                 }
-                LiveHub.ApplyToolPath(tool, picker.FileName);
+                LiveHub.ApplyToolPath(tool, path);
                 status.ForeColor = ModernTheme.Accent;
-                status.Text = "已记住 " + name + " 的路径：" + picker.FileName;
+                status.Text = "已记住 " + name + " 的路径：" + path;
                 RefreshPlayerRow();
             }
         }

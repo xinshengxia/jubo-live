@@ -47,9 +47,13 @@ internal static partial class LiveHub
     // 输出上限（字符数，0 = 不限）与退出码。探测外部程序时用它，防止任意程序把启动器内存撑爆。
     private static string RunCaptureBounded(string exe, string args, int timeoutMs, int maxChars, out int exitCode, out bool truncated)
     {
+        return CaptureProcessOutput(new ProcessStartInfo(exe, args), timeoutMs, maxChars, out exitCode, out truncated);
+    }
+
+    private static string CaptureProcessOutput(ProcessStartInfo psi, int timeoutMs, int maxChars, out int exitCode, out bool truncated)
+    {
         exitCode = -1;
         truncated = false;
-        ProcessStartInfo psi = new ProcessStartInfo(exe, args);
         psi.UseShellExecute = false;
         psi.RedirectStandardOutput = true;
         psi.RedirectStandardError = true;
@@ -79,7 +83,7 @@ internal static partial class LiveHub
             {
                 try { p.Kill(); } catch (Exception) { }
                 try { p.WaitForExit(5000); } catch (Exception) { }
-                throw new InvalidOperationException("解析超时：" + Path.GetFileName(exe));
+                throw new InvalidOperationException("解析超时：" + Path.GetFileName(psi.FileName));
             }
             p.WaitForExit(); // 等待异步输出事件处理完毕
             exitCode = p.ExitCode;

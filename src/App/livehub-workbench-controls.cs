@@ -308,7 +308,7 @@ internal sealed class WorkbenchNavigationButton : Button
 
 internal sealed class WorkbenchRoomItem
 {
-    internal string Key, Name, Room, Meta, State, AvatarUrl;
+    internal string Key, Name, Room, Meta, State, StateHint, AvatarUrl;
     // Cached 48px PNG from the on-disk avatar cache; lets the first paint show
     // the account image without another network request.
     internal byte[] AvatarPng;
@@ -324,6 +324,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
     }
 
     private readonly List<WorkbenchRoomItem> items = new List<WorkbenchRoomItem>();
+    private readonly ToolTip stateTip = new ToolTip();
     private readonly List<ItemLayout> layouts = new List<ItemLayout>();
     private bool cards = true, arranging;
     private int selectedIndex = -1, columns = 1, hoverItem = -1, hoverAction, pressedItem = -1, pressedAction;
@@ -387,6 +388,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
             ArrangeItems();
         }
         else Invalidate();
+        RefreshStateTip();
         // Seed once per URL; rebuilding the card list must not decode and replace
         // every avatar bitmap again (that churn repaints the whole grid).
         foreach (WorkbenchRoomItem item in items)
@@ -768,14 +770,20 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
     protected override void OnMouseMove(MouseEventArgs e)
     {
         int action, index = HitTest(e.Location, out action);
-        if (hoverItem != index || hoverAction != action) { hoverItem = index; hoverAction = action; Invalidate(); }
+        if (hoverItem != index || hoverAction != action) { hoverItem = index; hoverAction = action; RefreshStateTip(); Invalidate(); }
         Cursor = index >= 0 && Enabled ? Cursors.Hand : Cursors.Default;
         base.OnMouseMove(e);
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
-        hoverItem = pressedItem = -1; hoverAction = pressedAction = 0; Invalidate(); base.OnMouseLeave(e);
+        hoverItem = pressedItem = -1; hoverAction = pressedAction = 0; RefreshStateTip(); Invalidate(); base.OnMouseLeave(e);
+    }
+
+    private void RefreshStateTip()
+    {
+        string hint = hoverItem >= 0 && hoverItem < items.Count ? items[hoverItem].StateHint ?? "" : "";
+        if (stateTip.GetToolTip(this) != hint) stateTip.SetToolTip(this, hint);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -1002,7 +1010,7 @@ internal sealed class WorkbenchRoomBrowser : ScrollableControl, IDpiScaled
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { ModernTheme.Changed -= UpdateTheme; ReleaseFonts(); Avatars.Dispose(); }
+        if (disposing) { ModernTheme.Changed -= UpdateTheme; ReleaseFonts(); Avatars.Dispose(); stateTip.Dispose(); }
         base.Dispose(disposing);
     }
 }

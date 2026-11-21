@@ -274,7 +274,7 @@ internal static partial class LiveHub
                     + "\t" + expires + "\t" + name + "\t" + value);
             }
             string aclNote;
-            CookieAcl = AtomicWritePrivateText(Cookie,
+            CookieAcl = PlatformCredentialStorage.WriteText(Cookie,
                 string.Join(Environment.NewLine, lines.ToArray()) + Environment.NewLine, out aclNote);
             CookieAclNote = aclNote;
 
@@ -307,9 +307,7 @@ internal static partial class LiveHub
         }
     }
 
-    // 登录凭据落盘（SESSDATA = 完整账号登录态）。文件必须保持明文 Netscape 格式
-    // （yt-dlp / mpv 直接读），所以这里做的是**缩小暴露面**而不是加密：写完后断开 ACL 继承，
-    // 只留当前用户与 SYSTEM。便携包把 data\ 放在 U 盘/共享盘时，至少保证同机其它账户读不到。
+    // Windows 文件权限适用于兼容格式、DPAPI 密文以及交给外部解析器的短期文件。
     /// <summary>ACL 收紧的结果。**必须如实回传**（评估报告 §3）。</summary>
     internal enum AclOutcome { Applied, NotSupported, Failed }
 

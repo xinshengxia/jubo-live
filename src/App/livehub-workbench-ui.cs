@@ -57,6 +57,10 @@ internal static partial class LiveHub
         private readonly List<HomeSessionRow> workbenchHomeRows = new List<HomeSessionRow>();
         private WorkbenchPanel workbenchPlayerCard, workbenchPlayerPreferences;
         private ComboBox workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance;
+        private ComboBox mpvStyle, potStyle;
+        private ComboBox waitAfterOffline, monitorRoom, biliRelay;
+        private ModernButton getMpv, getYtdlp;
+        private System.Threading.CancellationTokenSource toolDownload;
         private readonly List<Label> workbenchPlayerCaptions = new List<Label>();
         private LookupUi workbenchLookup;
         private Control workbenchDanmakuPage;
@@ -463,18 +467,76 @@ internal static partial class LiveHub
             WorkbenchFont(pickPlayer, 12, FontStyle.Regular);
             WorkbenchFont(playerBox, 12, FontStyle.Regular);
             workbenchPlayerCard.Controls.Add(workbenchPlayerHelp);
+            getMpv = WorkbenchButton("workbenchGetMpv", "获取兼容 mpv", delegate
+            {
+                try { System.Diagnostics.Process.Start("https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261021"); }
+                catch (Exception ex) { status.Text = "打开下载页失败：" + ex.Message; }
+            });
+            getYtdlp = WorkbenchButton("workbenchGetYtdlp", "下载备用 yt-dlp", FetchYtdlp);
+            workbenchPlayerCard.Controls.AddRange(new Control[] { getMpv, getYtdlp });
+            form.FormClosed += delegate { if (toolDownload != null) toolDownload.Cancel(); };
             workbenchQuality = WorkbenchPreference("workbenchPlayerQuality", qualityBox, null);
             workbenchBuffer = WorkbenchPreference("workbenchPlayerBuffer", bufferBox, null);
             workbenchDanmaku = WorkbenchPreference("workbenchPlayerDanmaku", danmakuBox, null);
             workbenchEnhance = WorkbenchPreference("workbenchPlayerEnhance", enhanceBox, null);
-            string[] captions = { "画质 · 本次播放", "mpv 缓冲 · 本次播放", "弹幕 · 本次播放", "mpv 画质增强 · 保存偏好" };
+            DanmakuConfig config = DanmakuHost.LoadOrCreateConfig();
+            mpvStyle = PlaybackPreferenceBox("workbenchMpvStyle", config.CustomMpvStyle, "沿用播放器设置", "ModernZ ＋ 缩略图", (c,v) => c.CustomMpvStyle = v);
+            potStyle = PlaybackPreferenceBox("workbenchPotPlayerStyle", config.CustomPotPlayerStyle, "沿用播放器设置", "Fluent Glass", (c,v) => c.CustomPotPlayerStyle = v);
+            waitAfterOffline = PlaybackPreferenceBox("workbenchWaitAfterOffline", config.WaitAfterOffline, "结束此会话", "等待重新开播", (c,v) => c.WaitAfterOffline = v);
+            monitorRoom = PlaybackPreferenceBox("workbenchMonitorRoom", config.MonitorPlaybackRoom, "关闭", "开启", (c,v) => c.MonitorPlaybackRoom = v);
+            biliRelay = PlaybackPreferenceBox("workbenchBiliRelay", config.RelayBiliFlv, "直连", "FLV 使用中转", (c,v) => c.RelayBiliFlv = v);
+            string[] captions = { "画质 · 本次播放", "mpv 缓冲 · 本次播放", "弹幕 · 本次播放", "mpv 画质增强 · 保存偏好", "mpv 播放外观", "PotPlayer 播放外观",
+                "中转确认下播后", "观看时轮询房态", "B站断流恢复" };
             foreach (string caption in captions)
             {
                 Label label = WorkbenchLabel("workbenchPlayerCaption" + workbenchPlayerCaptions.Count, caption, true);
                 WorkbenchFont(label, 11, FontStyle.Regular);
                 workbenchPlayerCaptions.Add(label); workbenchPlayerPreferences.Controls.Add(label);
             }
-            workbenchPlayerPreferences.Controls.AddRange(new Control[] { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance });
+            workbenchPlayerPreferences.Controls.AddRange(new Control[] { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance, mpvStyle, potStyle, waitAfterOffline, monitorRoom, biliRelay });
+        }
+
+        private ComboBox PlaybackPreferenceBox(string name, bool enabled, string off, string on, Action<DanmakuConfig, bool> set)
+        {
+            var box = new ModernComboBox { Name = name,
+                DropDownStyle = ComboBoxStyle.DropDownList };
+            box.Items.Add(off);
+            box.Items.Add(on);
+            box.SelectedIndex = enabled ? 1 : 0;
+            box.SelectedIndexChanged += delegate
+            {
+                if (syncingWorkbench) return;
+                var config = DanmakuHost.LoadOrCreateConfig();
+                set(config, box.SelectedIndex == 1);
+                bool saved = config.Save(DanmakuHost.ConfigPath());
+                if (!saved) RefreshWorkbenchSavedPreferences();
+                status.Text = saved ? "播放设置已保存，下次播放时生效。" : "播放设置保存失败。";
+            };
+            return box;
+        }
+
+        private async void FetchYtdlp()
+        {
+            if (toolDownload != null) { toolDownload.Cancel(); return; }
+            using (var download = new System.Threading.CancellationTokenSource())
+            {
+                toolDownload = download;
+                getYtdlp.Text = "取消下载";
+                status.Text = "正在下载并校验官方 yt-dlp…";
+                try
+                {
+                    string directory = System.IO.Path.GetDirectoryName(DanmakuHost.ConfigPath());
+                    string path = await System.Threading.Tasks.Task.Run(() => DownloadYtdlp(directory, download.Token));
+                    if (form.IsDisposed || download.IsCancellationRequested) return;
+                    string error;
+                    if (!SaveToolPath("yt-dlp", path, out error)) throw new System.IO.IOException(error);
+                    ApplyToolPath("yt-dlp", path);
+                    RefreshPlayerRow();
+                    status.Text = "yt-dlp 已通过 SHA-256 校验并设为备用解析器。";
+                }
+                catch (Exception ex) { if (!form.IsDisposed) status.Text = download.IsCancellationRequested ? "下载已取消。" : "配置 yt-dlp 失败：" + ex.Message; }
+                finally { toolDownload = null; if (!form.IsDisposed) getYtdlp.Text = "下载备用 yt-dlp"; }
+            }
         }
 
         private void BuildWorkbenchLookup()
@@ -589,6 +651,11 @@ internal static partial class LiveHub
             {
                 DanmakuConfig config = DanmakuHost.LoadOrCreateConfig();
                 int sc = Math.Max(0, Array.IndexOf(scIds, config.ScMode));
+                mpvStyle.SelectedIndex = config.CustomMpvStyle ? 1 : 0;
+                potStyle.SelectedIndex = config.CustomPotPlayerStyle ? 1 : 0;
+                waitAfterOffline.SelectedIndex = config.WaitAfterOffline ? 1 : 0;
+                monitorRoom.SelectedIndex = config.MonitorPlaybackRoom ? 1 : 0;
+                biliRelay.SelectedIndex = config.RelayBiliFlv ? 1 : 0;
                 int enhance = Math.Max(0, Array.IndexOf(pqIds, config.MpvQuality));
                 // Source handlers save these preferences, but only when the value changes.
                 if (scBox.SelectedIndex != sc) scBox.SelectedIndex = sc;
@@ -699,7 +766,8 @@ internal static partial class LiveHub
                     AvatarUrl = workbenchAvatars.Get(target.Platform + ":" + target.Room),
                     AvatarPng = workbenchAvatars.ImageBytes(target.Platform + ":" + target.Room),
                     Meta = PlatformName(target.Platform) + " · " + target.Room,
-                    State = known ? RoomStateLabel(target.Platform, kind) : "待检测", Live = known && kind == RoomStateKind.Live,
+                    State = known ? RoomStateLabel(target.Platform, kind) : badgePending.Contains(target.Platform + ":" + target.Room) ? "查询中" : "待检测",
+                    StateHint = BadgeHint(target.Platform + ":" + target.Room), Live = known && kind == RoomStateKind.Live,
                     Accent = PlatformAccent(target.Platform) });
             }
             List<WorkbenchRoomItem> recentItems = new List<WorkbenchRoomItem>();
@@ -710,7 +778,8 @@ internal static partial class LiveHub
                     AvatarUrl = workbenchAvatars.Get(platform + ":" + entry.Room),
                     AvatarPng = workbenchAvatars.ImageBytes(platform + ":" + entry.Room),
                     Room = entry.Room, Meta = PlatformName(platform) + " · " + entry.Room + " · " + (entry.At ?? ""),
-                    State = known ? RoomStateLabel(platform, kind) : "待检测", Live = known && kind == RoomStateKind.Live,
+                    State = known ? RoomStateLabel(platform, kind) : badgePending.Contains(platform + ":" + entry.Room) ? "查询中" : "待检测",
+                    StateHint = BadgeHint(platform + ":" + entry.Room), Live = known && kind == RoomStateKind.Live,
                     Accent = PlatformAccent(platform) });
             }
             bool previous = syncingWorkbench; syncingWorkbench = true;
@@ -1079,10 +1148,13 @@ internal static partial class LiveHub
             int helpHeight = Math.Max(Px(26), Math.Min(Px(46), TextRenderer.MeasureText(workbenchPlayerHelp.Text,
                 workbenchPlayerHelp.Font, new Size(Math.Max(Px(100), inner), int.MaxValue), TextFormatFlags.WordBreak).Height + Px(4)));
             workbenchPlayerHelp.SetBounds(pad, playerHint.Bottom + Px(8), inner, helpHeight);
-            workbenchPlayerCard.SetBounds(0, 0, width, workbenchPlayerHelp.Bottom + Px(12));
+            int toolWidth = Math.Min(Px(150), (inner - Px(8)) / 2);
+            getMpv.SetBounds(pad, workbenchPlayerHelp.Bottom + Px(6), toolWidth, Px(32));
+            getYtdlp.SetBounds(getMpv.Right + Px(8), getMpv.Top, toolWidth, Px(32));
+            workbenchPlayerCard.SetBounds(0, 0, width, getMpv.Bottom + Px(12));
             int columns = inner >= Px(760) ? 4 : inner >= Px(600) ? 3 : 2;
             int gap = Px(16), cell = (inner - gap * (columns - 1)) / columns;
-            ComboBox[] boxes = { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance };
+            ComboBox[] boxes = { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance, mpvStyle, potStyle, waitAfterOffline, monitorRoom, biliRelay };
             int prefTop = workbenchPlayerCard.Bottom + Px(14);
             int prefHeight = Px(16) + ((boxes.Length + columns - 1) / columns) * Px(76);
             workbenchPlayerPreferences.SetBounds(0, prefTop, width, prefHeight);

@@ -2,6 +2,48 @@
   "schema": "livehub-third-party-sources/1",
   "reviewedOn": "2026-11-07",
   "scope": "License verification snapshots, not assertions of the original adoption revisions",
+  "player_styles": [
+    {
+      "name": "ModernZ",
+      "source": "https://github.com/Samillion/ModernZ",
+      "base_revision": "579897e8c974c380caa5017dc7b27a69123c1333",
+      "usage": "LGPL-2.1; icons Apache-2.0 and MIT",
+      "files": {
+        "assets/player-styles/mpv/fonts/modernz-icons.ttf": "5033b84d569502538968c6f23b0859bda790eed85c10e419b0759537ec60a016",
+        "assets/player-styles/mpv/script-opts/modernz-locale.json": "5d3064227d77d4c952a44a814ffd0736e3cb3d7e8cf07b22dcb8cd4750588cb2",
+        "assets/player-styles/mpv/scripts/modernz.lua": "6f622f138931a0b3b019fd17fb7d85febf0d0b733948a814ab54ec1c40ed2268",
+        "licenses/player-styles/ModernZ/Fluent-System-Icons-MIT.txt": "69bc45dc42b9acb96a69823adbc6ae538374e3c0bde169b855b32c48eaaef52f",
+        "licenses/player-styles/ModernZ/Material-Symbols-Apache-2.0.txt": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+        "licenses/player-styles/ModernZ/ModernZ-LGPL-2.1.txt": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
+        "licenses/player-styles/ModernZ/NOTICE.txt": "d4f685f59a3acc065dba47b2baa6db365cad0495e083d979f62a8f52481253aa",
+        "licenses/player-styles/ModernZ/upstream-README.md": "5d3b3e610b8c53f53211585b4f314c4146f44bc92680b8cfcd1e5b50ce0d53a8"
+      }
+    },
+    {
+      "name": "thumbfast",
+      "source": "https://github.com/po5/thumbfast",
+      "base_revision": "0f711de3138c9bd6718209d819ac54022c23ded2",
+      "usage": "MPL-2.0; modified live and VOD thumbnail cache",
+      "files": {
+        "assets/player-styles/mpv/scripts/thumbfast.lua": "1d45272f561e6954b589e0e25b5cad8dcf1b3201d9ae510929de2d070ff33e67",
+        "licenses/player-styles/thumbfast/MPL-2.0.txt": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+      }
+    },
+    {
+      "name": "Fluent Glass",
+      "source": "https://github.com/Elysia4319/potplayer-fluent-glass",
+      "base_revision": "4de27e6c3602d354c98a86268d75e6f5d58ead1d",
+      "usage": "MIT; modified color scheme and isolated installation; Lucide 0.468.0 ISC and Feather MIT",
+      "files": {
+        "assets/player-styles/fluent-glass/assets/lucide/LICENSE": "1e7290b35280a048667bbf0ebabac1c7fd52a75300e8b2946ac165715997f2bc",
+        "assets/player-styles/fluent-glass/LICENSE": "1c64e1871c2116bbd1e3e660a1b7f338f04a4c9d63cbea8ff83f51a9a7f7ef13",
+        "assets/player-styles/fluent-glass/THIRD_PARTY_NOTICES.md": "3c072afb0157b3ef337c50ad4cbe17244380269be60c32038af877da962f878b",
+        "assets/player-styles/fluent-glass.sha256": "2684e27a8de9331a10c0534e7755b14e3b507245d564d5314d86b99b72526d89",
+        "licenses/player-styles/Feather-MIT.txt": "308028e93fcf84972523cdf6e616f73168546b4953895f516d01287f16fe7bee"
+      },
+      "feather_notice_source": "https://raw.githubusercontent.com/feathericons/feather/1b002399e8758fb2bccea4d07312dc9e0f43dcb8/LICENSE"
+    }
+  ],
   "protocolReferences": [
     {
       "repository": "xfgryujk/blivedm",

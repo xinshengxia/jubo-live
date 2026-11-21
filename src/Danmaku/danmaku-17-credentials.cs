@@ -255,7 +255,7 @@ internal static class CredentialCookies
             string json = new JavaScriptSerializer().Serialize(payload);
             string path = SidecarPath(cookieFilePath);
             string aclNote;
-            LiveHub.AtomicWritePrivateText(path, json, out aclNote);
+            PlatformCredentialStorage.WriteText(path, json, out aclNote);
             return path;
         }
         catch (Exception ex)
@@ -273,7 +273,7 @@ internal static class CredentialCookies
         if (path == null || !File.Exists(path)) return records;
         try
         {
-            string json = File.ReadAllText(path, Encoding.UTF8);
+            string json = PlatformCredentialStorage.ReadText(path);
             var serializer = new JavaScriptSerializer();
             serializer.MaxJsonLength = 8 * 1024 * 1024;
             var root = serializer.Deserialize<Dictionary<string, object>>(json);

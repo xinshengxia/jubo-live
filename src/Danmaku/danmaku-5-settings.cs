@@ -157,7 +157,15 @@ internal sealed class DanmakuSettingsDialog
         int[] fontValues = new int[] { 60, 80, 100, 130, 170 };
         string[] fontLabels = new string[] { "超小", "小", "标准（同 B站）", "大", "超大" };
         for (int i = 0; i < fontValues.Length; i++) fontScale.Items.Add(fontLabels[i]);
-        fontScale.SelectedIndex = Math.Max(0, Array.IndexOf(fontValues, config.FontScalePercent));
+        int fontIndex = Array.IndexOf(fontValues, config.FontScalePercent);
+        if (fontIndex < 0)
+        {
+            fontIndex = fontValues.Length;
+            Array.Resize(ref fontValues, fontIndex + 1);
+            fontValues[fontIndex] = config.FontScalePercent;
+            fontScale.Items.Add(config.FontScalePercent + "%（当前微调值）");
+        }
+        fontScale.SelectedIndex = fontIndex;
 
         ComboBox speed = combo("弹幕速度");
         int[] speedValues = new int[] { 60, 80, 100, 130, 170 };

@@ -696,8 +696,9 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
         try
         {
             if (_cookieFile == null || !File.Exists(_cookieFile)) return;
-            foreach (string line in File.ReadAllLines(_cookieFile))
+            foreach (string raw in PlatformCredentialStorage.ReadText(_cookieFile).Split('\n'))
             {
+                string line = raw.TrimEnd('\r');
                 if (line.Length == 0 || line[0] == '#') continue;
                 string[] parts = line.Split('\t');
                 if (parts.Length < 7) continue;

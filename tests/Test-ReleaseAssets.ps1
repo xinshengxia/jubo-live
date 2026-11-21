@@ -53,6 +53,19 @@ if (-not ($allFiles | Where-Object { (Get-RelPath $staging $_.FullName) -eq 'ass
     throw 'FAIL: 默认发布白名单排除了 assets/audio/openal-wasapi.ini（mpv 起播必需资源）'
 }
 Write-Output 'PASS: 默认运行包筛选保留 exe.config 与 OpenAL 音频配置'
+$included = @{}
+foreach ($file in $allFiles) { $included[(Get-RelPath $staging $file.FullName)] = $file.FullName }
+$styleSources = (Get-Content -LiteralPath (Join-Path $Source 'licenses/SOURCES.json') -Raw | ConvertFrom-Json).player_styles
+foreach ($style in $styleSources) {
+    foreach ($entry in $style.files.psobject.Properties) {
+        if (!$included.ContainsKey($entry.Name) -or (Get-FileHash -LiteralPath $included[$entry.Name]).Hash -ne $entry.Value) {
+            throw "FAIL: 外观资源或许可原文校验失败 $($entry.Name)"
+        }
+    }
+}
+foreach ($name in @('assets/player-styles/Prepare-PotPlayer.ps1','assets/player-styles/mpv/mpv.conf','assets/playback/bili-native.lua')) {
+    if (!$included.ContainsKey($name)) { throw "FAIL: 默认运行包遗漏 $name" }
+}
 foreach ($required in @('THIRD_PARTY_NOTICES.md','licenses/SOURCES.json','licenses/douyinLive-LICENSE.txt',
     'licenses/AllLive-LICENSE.txt','licenses/blivedm-LICENSE.txt','licenses/libwebp-COPYING.txt','licenses/libwebp-PATENTS.txt','licenses/libwebp-AUTHORS.txt','licenses/WebView2-SDK-LICENSE.txt','licenses/WebView2-SDK-NOTICE.txt')) {
     if (-not ($allFiles | Where-Object { (Get-RelPath $staging $_.FullName) -eq $required })) { throw "FAIL: 默认发布白名单遗漏 $required" }

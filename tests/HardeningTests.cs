@@ -997,6 +997,9 @@ internal static partial class HardeningTests
         TestRunner.Add("启动器", "标题参数转义", delegate { TestArguments(); });
         TestRunner.Add("启动器", "mpv 空格、中文和逗号路径参数往返", TestMpvPathArguments);
         TestRunner.Add("播放", "mpv 直播音频时钟与缓冲画质策略", TestMpvLiveClockPolicy);
+        TestRunner.Add("解析", "B站原生流格式优先级与失败回退", TestBiliPlaybackUrl);
+        TestRunner.Add("中转", "关闭等待后本次会话持续返回下播", TestStopAfterOffline);
+        TestRunner.Add("凭据", "当前用户加密、临时解析与无损回退", TestReversibleLoginStorage);
         TestRunner.Add("播放", "mpv OpenAL 能力与子进程 WASAPI 隔离", TestMpvOpenAlLaunchPolicy);
         TestRunner.Add("播放", "mpv 真实 --ao=help 能力探测", TestMpvOpenAlProbeAgainstBundledMpv);
         TestRunner.Add("启动器", "有界子进程捕获的退出码与输出上限", delegate { TestBoundedCapture(self); });

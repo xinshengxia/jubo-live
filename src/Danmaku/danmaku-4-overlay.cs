@@ -26,7 +26,7 @@ using System.Windows.Forms;
 // --------------------------------------------------------------------------------------------
 // 覆盖层窗口：分层 + 点击穿透 + 跟随播放器窗口 + 托盘菜单 + 全局热键
 //
-// 实测要点（Build 29671 / 200% 缩放）：
+// 高 DPI 实现要点：
 //  · 必须声明 PerMonitorV2，否则 GetWindowRect 拿到的是被 DPI 虚拟化的坐标（差约 2 倍）。
 //  · 取目标矩形用 DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)，它比 GetWindowRect
 //    少一圈不可见阴影/边框（实测左右下各少 11px）。
@@ -87,8 +87,19 @@ internal sealed class DanmakuOverlayForm : Form
 
     [DllImport("user32.dll")] private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
         ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
-    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfoHeader
+    {
+        public uint Size;
+        public int Width, Height;
+        public ushort Planes, BitsPerPixel;
+        public uint Compression, ImageSize;
+        public int XPixelsPerMeter, YPixelsPerMeter;
+        public uint ColorsUsed, ColorsImportant;
+    }
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern IntPtr CreateDIBSection(IntPtr dc, ref BitmapInfoHeader header,
+        uint colorUsage, out IntPtr pixels, IntPtr section, uint offset);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
         int X, int Y, int cx, int cy, uint uFlags);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
@@ -152,6 +163,7 @@ internal sealed class DanmakuOverlayForm : Form
     private IntPtr _targetHwnd = IntPtr.Zero;
     private Bitmap _canvas;
     private Graphics _canvasGraphics;
+    private IntPtr _canvasDc, _dib, _previousBitmap;
     // 弹幕延迟补偿队列。
     //
     // 为什么需要：弹幕是**实时到达**的（平台协议一推就推过来），而视频是**缓冲之后**
@@ -169,7 +181,9 @@ internal sealed class DanmakuOverlayForm : Form
     private readonly List<PendingDanmaku> _pendingDanmaku = new List<PendingDanmaku>();
 
     private System.Windows.Forms.Timer _tick;
-    private DateTime _lastFrame = DateTime.UtcNow;
+    private long _lastFrame = Stopwatch.GetTimestamp();
+    private const int ScrollingIntervalMs = 15;
+    private const int IdleIntervalMs = 33;
     private DateTime _lastConfigCheck = DateTime.MinValue;
     private DateTime _lastConfigWrite = DateTime.MinValue;
     private NotifyIcon _tray;
@@ -357,12 +371,10 @@ internal sealed class DanmakuOverlayForm : Form
     public void Start()
     {
         Show();
-        _canvas = new Bitmap(640, 360, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-        _canvasGraphics = Graphics.FromImage(_canvas);
         SetTray();
 
         _tick = new System.Windows.Forms.Timer();
-        _tick.Interval = 33;                       // ≈30fps；弹幕场景足够，也给主渲染留余量
+        _tick.Interval = IdleIntervalMs;
         _tick.Tick += delegate { Frame(); };
         _tick.Start();
         _renderer.ShowTransient(_config.Enabled ? "弹幕已开启" : "弹幕已关闭");
@@ -629,13 +641,13 @@ internal sealed class DanmakuOverlayForm : Form
 
     private void StepFont(int direction)
     {
-        int index = NearestIndex(FontSteps, _config.FontScalePercent);
-        index = Math.Max(0, Math.Min(FontSteps.Length - 1, index + direction));
-        if (FontSteps[index] == _config.FontScalePercent) return;
-        _config.FontScalePercent = FontSteps[index];
+        // The standard 25 px message changes by 2 px at the reference height.
+        int next = Math.Max(50, Math.Min(300, _config.FontScalePercent + 8 * direction));
+        if (next == _config.FontScalePercent) return;
+        _config.FontScalePercent = next;
         _renderer.ApplyConfig();
         SaveConfig();
-        _renderer.ShowTransient("弹幕字号：" + FontLabels[index] + "（" + FontSteps[index] + "%）");
+        _renderer.ShowTransient("弹幕字号：" + FontLabelOf(next));
     }
 
     /// 弹幕速度：PgUp 更快 / PgDn 更慢（与字号 / 显示区域的热键同一套手感）
@@ -657,6 +669,7 @@ internal sealed class DanmakuOverlayForm : Form
         if (_pendingDanmaku.Count == 0) return;
         int delayMs = Math.Max(0, _config.DanmakuDelayMs);
         int released = 0;
+        long start = Stopwatch.GetTimestamp();
         while (_pendingDanmaku.Count > 0 && (delayMs == 0
             || _pendingDanmaku[0].ArrivedAt.AddMilliseconds(delayMs) <= now))
         {
@@ -664,7 +677,7 @@ internal sealed class DanmakuOverlayForm : Form
                 _renderer.AddDanmaku(_pendingDanmaku[0].Item);
             _pendingDanmaku.RemoveAt(0);
             released++;
-            if (released > 2000) break;    // 防呆：延迟突然调大/时钟跳变时别一次灌爆
+            if (released >= 32 || Stopwatch.GetTimestamp() - start >= Stopwatch.Frequency / 500) break;
         }
     }
 
@@ -709,9 +722,11 @@ internal sealed class DanmakuOverlayForm : Form
     private void Frame()
     {
         DateTime now = DateTime.UtcNow;
-        float dt = (float)(now - _lastFrame).TotalSeconds;
-        if (dt <= 0f || dt > 0.5f) dt = 1f / 30f;
-        _lastFrame = now;
+        long stamp = Stopwatch.GetTimestamp();
+        float dt = (float)((stamp - _lastFrame) / (double)Stopwatch.Frequency);
+        _lastFrame = stamp;
+        // After suspend or a modal dialog, freshly drained messages should still enter at the edge.
+        if (dt > 0.5f) dt = ScrollingIntervalMs / 1000f;
 
         UpdateHotkeyOwnership();
         DrainInbox();
@@ -719,6 +734,8 @@ internal sealed class DanmakuOverlayForm : Form
         // 即使窗口暂时消失也清理过期弹幕，恢复时不会灌出积攒的旧消息。
         ReleasePendingDanmaku(now);
         _renderer.Advance(now, dt);
+        int interval = _overlayVisible && _renderer.ActiveCount > 0 ? ScrollingIntervalMs : IdleIntervalMs;
+        if (_tick.Interval != interval) _tick.Interval = interval;
 
         int tick = Environment.TickCount;
         if (_targetProcessMissing || unchecked(tick - _lastProcessCheck) >= 1000 || _lastProcessCheck == 0)
@@ -890,13 +907,36 @@ internal sealed class DanmakuOverlayForm : Form
     private void EnsureCanvas(int width, int height)
     {
         if (_canvas != null && _canvas.Width == width && _canvas.Height == height) return;
-        if (_canvasGraphics != null) _canvasGraphics.Dispose();
-        if (_canvas != null) _canvas.Dispose();
-        _canvas = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-        _canvasGraphics = Graphics.FromImage(_canvas);
-        _canvasGraphics.SmoothingMode = SmoothingMode.AntiAlias;
-        _canvasGraphics.TextRenderingHint = TextRenderingHint.AntiAlias;
-        _canvasGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        ReleaseCanvas();
+        try
+        {
+            var header = new BitmapInfoHeader { Size = (uint)Marshal.SizeOf(typeof(BitmapInfoHeader)),
+                Width = width, Height = -height, Planes = 1, BitsPerPixel = 32 };
+            IntPtr pixels;
+            _canvasDc = CreateCompatibleDC(IntPtr.Zero);
+            if (_canvasDc == IntPtr.Zero) throw new InvalidOperationException("无法创建弹幕画布 DC");
+            _dib = CreateDIBSection(_canvasDc, ref header, 0, out pixels, IntPtr.Zero, 0);
+            if (_dib == IntPtr.Zero || pixels == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            _previousBitmap = SelectObject(_canvasDc, _dib);
+            if (_previousBitmap == IntPtr.Zero) throw new InvalidOperationException("无法选入弹幕画布");
+            // GDI+ draws directly into the top-down premultiplied surface used by the layered window.
+            _canvas = new Bitmap(width, height, checked(width * 4), System.Drawing.Imaging.PixelFormat.Format32bppPArgb, pixels);
+            _canvasGraphics = Graphics.FromImage(_canvas);
+            _canvasGraphics.SmoothingMode = SmoothingMode.AntiAlias;
+            _canvasGraphics.TextRenderingHint = TextRenderingHint.AntiAlias;
+            _canvasGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        }
+        catch { ReleaseCanvas(); throw; }
+    }
+
+    private void ReleaseCanvas()
+    {
+        if (_canvasGraphics != null) { _canvasGraphics.Dispose(); _canvasGraphics = null; }
+        if (_canvas != null) { _canvas.Dispose(); _canvas = null; }
+        if (_previousBitmap != IntPtr.Zero) SelectObject(_canvasDc, _previousBitmap);
+        if (_canvasDc != IntPtr.Zero) DeleteDC(_canvasDc);
+        if (_dib != IntPtr.Zero) DeleteObject(_dib);
+        _previousBitmap = _canvasDc = _dib = IntPtr.Zero;
     }
 
     internal static int LayerAlpha(DanmakuConfig config)
@@ -910,38 +950,13 @@ internal sealed class DanmakuOverlayForm : Form
         if (alpha < 1) alpha = 1;
         if (alpha > 255) alpha = 255;
 
-        IntPtr screenDc = GetDC(IntPtr.Zero);
-        IntPtr memoryDc = CreateCompatibleDC(screenDc);
-        IntPtr hBitmap = _canvas.GetHbitmap(Color.FromArgb(0));
-        IntPtr old = SelectObject(memoryDc, hBitmap);
-        try
-        {
-            SIZE size = new SIZE();
-            size.cx = _canvas.Width;
-            size.cy = _canvas.Height;
-            POINT dst = new POINT();
-            dst.x = rect.Left;
-            dst.y = rect.Top;
-            POINT src = new POINT();
-            BLENDFUNCTION blend = new BLENDFUNCTION();
-            blend.BlendOp = 0;
-            blend.BlendFlags = 0;
-            blend.SourceAlpha = (byte)alpha;
-            blend.AlphaFormat = 1;                  // AC_SRC_ALPHA
-            UpdateLayeredWindow(Handle, screenDc, ref dst, ref size, memoryDc, ref src, 0, ref blend, UlwAlpha);
-            // 位置/尺寸交给 UpdateLayeredWindow，这里只保证「可见」，**不动 z 序**（SWP_NOZORDER）——
-            // z 序由 EnsureZOrder 统一管，否则每帧一次 TOPMOST 就又变成霸屏了。
-            SetWindowPos(Handle, IntPtr.Zero, rect.Left, rect.Top, size.cx, size.cy,
-                SwpNoZOrder | SwpNoActivate | SwpShowWindow);
+        _canvasGraphics.Flush(FlushIntention.Sync);
+        SIZE size = new SIZE { cx = _canvas.Width, cy = _canvas.Height };
+        POINT dst = new POINT { x = rect.Left, y = rect.Top };
+        POINT src = new POINT();
+        BLENDFUNCTION blend = new BLENDFUNCTION { SourceAlpha = (byte)alpha, AlphaFormat = 1 };
+        if (UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, _canvasDc, ref src, 0, ref blend, UlwAlpha))
             _lastRect = rect;
-        }
-        finally
-        {
-            SelectObject(memoryDc, old);
-            DeleteObject(hBitmap);
-            DeleteDC(memoryDc);
-            ReleaseDC(IntPtr.Zero, screenDc);
-        }
     }
 
     // ------------------------------------------------------------------ 跟随目标窗口
@@ -1027,8 +1042,10 @@ internal sealed class DanmakuOverlayForm : Form
     // ------------------------------------------------------------------ 收件箱
     private void DrainInbox()
     {
-        for (int guard = 0; guard < 5000; guard++)
+        long start = Stopwatch.GetTimestamp();
+        for (int guard = 0; guard < 32; guard++)
         {
+            if (guard > 0 && Stopwatch.GetTimestamp() - start >= Stopwatch.Frequency / 500) break;
             object message;
             lock (_gate)
             {
@@ -1165,8 +1182,8 @@ internal sealed class DanmakuOverlayForm : Form
 
     private static string FontLabelOf(int percent)
     {
-        int index = NearestIndex(FontSteps, percent);
-        return FontLabels[index] + "（" + FontSteps[index] + "%）";
+        int index = Array.IndexOf(FontSteps, percent);
+        return index < 0 ? percent + "%" : FontLabels[index] + "（" + percent + "%）";
     }
 
     private static string AreaLabelOf(int percent)
@@ -1482,8 +1499,7 @@ internal sealed class DanmakuOverlayForm : Form
         {
             if (_tick != null) { _tick.Stop(); _tick.Dispose(); }
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
-            if (_canvasGraphics != null) _canvasGraphics.Dispose();
-            if (_canvas != null) _canvas.Dispose();
+            ReleaseCanvas();
             if (_targetProcess != null) _targetProcess.Dispose();
             if (LiveHub.OverlayMessage == new Action<string>(_renderer.ShowTransient)) LiveHub.OverlayMessage = null;
             _renderer.Dispose();

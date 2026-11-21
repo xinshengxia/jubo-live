@@ -87,7 +87,7 @@ internal static class PlatformLogin
         {
             if (platform != null)
             {
-                if (File.Exists(path)) result = File.ReadAllText(path, Encoding.UTF8).Trim();
+                if (File.Exists(path)) result = PlatformCredentialStorage.ReadText(path).Trim();
             }
         }
         catch (Exception) { }
@@ -139,7 +139,7 @@ internal static class PlatformLogin
                 content = CredentialCookies.RawHeader(records);
             }
             string aclNote;
-            LastAcl = LiveHub.AtomicWritePrivateText(path, content, out aclNote);
+            LastAcl = PlatformCredentialStorage.WriteText(path, content, out aclNote);
             LastAclNote = aclNote;
             if (!SaveStructured(platform, path, cdpJson)) throw new IOException("结构化 cookie 未能保存");
             PlatformHealth.Record(platform.Id, "login", "saved-unverified");

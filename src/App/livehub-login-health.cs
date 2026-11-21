@@ -66,7 +66,9 @@ internal static class LoginHealth
         try
         {
             string path = CookiePath(platform), side = CredentialCookies.SidecarPath(path);
-            string raw = ReadBounded(path), json = ReadBounded(side);
+            string raw = File.Exists(path) ? PlatformCredentialStorage.ReadText(path) : "";
+            string json = File.Exists(side) ? PlatformCredentialStorage.ReadText(side) : "";
+            if (raw.Length > 2 * 1024 * 1024 || json.Length > 2 * 1024 * 1024) throw new InvalidDataException();
             evidence.Stamp = Hash("login-check/2\n" + path + "\n" + raw + "\n" + json);
             if (raw.Length == 0 && json.Length == 0) return evidence;
             evidence.Records = platform == "bili" ? new List<CookieRecord>() : CredentialCookies.Load(path);

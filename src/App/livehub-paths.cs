@@ -258,6 +258,33 @@ internal static partial class LiveHub
     }
 
     /// <summary>界面用：当前生效的播放器路径（tool = "mpv" / "potplayer"）。</summary>
+    internal static string SelectedToolExecutable(string tool, string path)
+    {
+        if (string.Equals(Path.GetExtension(path), ".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            object shell = null, shortcut = null;
+            try
+            {
+                var type = Type.GetTypeFromProgID("WScript.Shell", true);
+                shell = Activator.CreateInstance(type);
+                shortcut = type.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { path });
+                path = Convert.ToString(shortcut.GetType().InvokeMember("TargetPath", System.Reflection.BindingFlags.GetProperty, null, shortcut, null));
+            }
+            finally
+            {
+                if (shortcut != null) System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shortcut);
+                if (shell != null) System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+            }
+            string name = Path.GetFileName(path).ToLowerInvariant();
+            bool matches = tool == "mpv" ? name == "mpv.exe" : tool == "yt-dlp" ? name == "yt-dlp.exe"
+                : name == "potplayermini64.exe" || name == "potplayer64.exe" || name == "potplayermini.exe";
+            if (!matches) throw new InvalidOperationException("请选择直接指向对应播放器或 yt-dlp 的快捷方式。");
+        }
+        if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase) || !LooksLikeExecutable(path))
+            throw new InvalidOperationException("未找到有效的程序，请重新选择。");
+        return Path.GetFullPath(path);
+    }
+
     internal static string CurrentToolPath(string tool)
     {
         return tool == "yt-dlp" ? YtDlp : tool == "mpv" ? Mpv : PotPlayer;

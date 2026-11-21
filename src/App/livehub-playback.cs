@@ -56,8 +56,12 @@ internal static partial class LiveHub
     {
         // 会话号在这里兜底生成：中转 URL 拿它当令牌，状态文件也按它命名，必须早于任何拼串
         if (target.SessionId == null) target.SessionId = NewSessionId();
-        if (allowNetwork && target.Platform == "bili" && !File.Exists(YtDlp))
-            throw new FileNotFoundException("B站播放需要 yt-dlp.exe。请从使用说明中的 yt-dlp 官方发布页下载，再到「播放器与画质」选择 yt-dlp 的程序路径。", YtDlp);
+        if (allowNetwork)
+        {
+            var preferences = DanmakuConfig.Load(DanmakuHost.ConfigPath());
+            target.MonitorRoom = preferences.MonitorPlaybackRoom;
+            target.RelayBiliFlv = target.Platform == "bili" && preferences.RelayBiliFlv;
+        }
         if (allowNetwork && allowSideEffects && target.Platform == "bili")
         {
             string note;
@@ -98,17 +102,60 @@ internal static partial class LiveHub
         // Check the required audio output before starting a relay. An external
         // mpv without OpenAL must fail actionably rather than play without sound.
         string openAlConfig = null;
+        string executable = plan.FileName;
+        var style = DanmakuConfig.Load(DanmakuHost.ConfigPath());
         if (plan.Player == "mpv")
         {
             openAlConfig = RequireMpvOpenAlConfiguration();
             RequireMpvOpenAl(plan.FileName);
+            if (style.CustomMpvStyle)
+            {
+                string directory = Path.Combine(PlayerStyleDirectory(), "mpv");
+                if (!File.Exists(Path.Combine(directory, "mpv.conf")))
+                    throw new FileNotFoundException("缺少 ModernZ 外观资源，请重新解压程序。");
+                arguments = QuoteWindowsArg("--config-dir=" + directory) + " " + arguments;
+            }
         }
+        else if (style.CustomPotPlayerStyle) executable = PrepareStyledPotPlayer(executable);
         if (plan.NeedsRelay)
         {
             int port = StartRelay(plan.Target);
             arguments = arguments.Replace(RelayPortToken, port.ToString());
         }
-        return BuildPlayerProcessStartInfo(plan.Player, plan.FileName, arguments, openAlConfig);
+        var start = BuildPlayerProcessStartInfo(plan.Player, executable, arguments, openAlConfig);
+        if (plan.Player == "mpv" && style.CustomMpvStyle) start.EnvironmentVariables["JUBO_THUMBFAST_MPV"] = executable;
+        if (plan.Player == "mpv" && plan.Target.Platform == "bili" && !plan.NeedsRelay)
+        {
+            start.EnvironmentVariables["JUBO_BILI_RESOLVER"] = Application.ExecutablePath;
+            start.EnvironmentVariables["JUBO_BILI_ROOM"] = plan.Target.Room;
+            start.EnvironmentVariables["JUBO_BILI_QUALITY"] = NormalizeQuality(plan.Target.Quality);
+            start.EnvironmentVariables["JUBO_BILI_COOKIE_FILE"] = Cookie ?? "";
+            if (File.Exists(YtDlp)) start.EnvironmentVariables["JUBO_BILI_YTDLP"] = YtDlp;
+            else start.EnvironmentVariables.Remove("JUBO_BILI_YTDLP");
+        }
+        return start;
+    }
+
+    private static string PlayerStyleDirectory()
+    {
+        return Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "assets", "player-styles");
+    }
+
+    private static string PrepareStyledPotPlayer(string player)
+    {
+        string script = Path.Combine(PlayerStyleDirectory(), "Prepare-PotPlayer.ps1");
+        if (!File.Exists(script)) throw new FileNotFoundException("缺少 Fluent Glass 生成器。", script);
+        string shell = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+        int exit; bool truncated;
+        var prepare = new ProcessStartInfo(shell, "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "
+            + QuoteWindowsArg(script) + " -Player " + QuoteWindowsArg(player));
+        // When launched from pwsh, its inherited module path can hide Windows PowerShell's Get-FileHash.
+        prepare.EnvironmentVariables["PSModulePath"] = Path.Combine(Path.GetDirectoryName(shell), "Modules")
+            + ";" + Environment.GetEnvironmentVariable("PSModulePath");
+        string path = CaptureProcessOutput(prepare, 660000, 8192, out exit, out truncated).Trim();
+        if (exit != 0 || truncated || !Path.IsPathRooted(path) || !File.Exists(path))
+            throw new InvalidOperationException("Fluent Glass 准备失败。请检查 64 位 PotPlayer、默认皮肤及 Python 3.10+，或切回沿用播放器设置。");
+        return path;
     }
 
     private static ProcessStartInfo BuildStart(Target target, string player)
@@ -275,24 +322,29 @@ internal static partial class LiveHub
         string mediaTitle = null;
         if (target.Platform == "bili")
         {
-            // B站：交给 mpv 的 ytdl_hook 调 yt-dlp（便携包里 yt-dlp 在旁边，用 script-opts 指给它）
+            // 每次打开原房间地址先尝试平台接口。保留 ytdl_hook 参数供回退使用。
             string anchor = allowNetwork ? FetchBiliAnchor(target.Room) : null;
             string roomTitle = allowNetwork ? FetchBiliRoomTitle(target.Room) : null;
             string baseTitle = JoinTitle(anchor, roomTitle, "B站直播 " + target.Room);
             mediaTitle = CreatePlaybackTitleInfo(baseTitle, roomTitle).RoomTitle;
             string baseFile = allowSideEffects ? WriteBaseHint(target, baseTitle) : null;
+            string nativeScript = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "assets", "playback", "bili-native.lua");
+            plan.NeedsRelay = allowNetwork && target.RelayBiliFlv && TryBiliPlaybackUrl(target.Room, target.Quality, Cookie, true) != null;
             string args = MpvWindowArgs + MpvBufferArgs(target)
+                + (plan.NeedsRelay ? " --ytdl=no" : " " + QuoteWindowsArg("--script=" + nativeScript.Replace('\\', '/')))
                 + " " + QuoteWindowsArg("--script=" + LiveTitleScript.Replace('\\', '/'));
             if (File.Exists(LiveResyncScript)) args += " " + QuoteWindowsArg("--script=" + LiveResyncScript.Replace('\\', '/'));
             args += " " + QuoteWindowsArg("--script-opts=" + YtdlHookOpts()
+                + (plan.NeedsRelay ? ",live_title_relay_file=" + MpvListValue(SessionRelayStatePath(target)) : "")
                 + ",live_title_state_file=" + MpvListValue(SessionRoomStatePath(target))
                 + (File.Exists(LiveResyncScript) ? ",live_title_autoreplay=yes" : "")
                 + (baseFile != null ? ",live_title_base_file=" + MpvListValue(baseFile) : ""));
             args += " --title=" + QuoteWindowsArg(SafeTitle(baseTitle))
                 + " --stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=30"
                 + " --ytdl-format=\"" + BiliFormat(target, false) + "\"";
-            if (File.Exists(Cookie)) args += " " + QuoteWindowsArg("--ytdl-raw-options=cookies=" + MpvListValue(Cookie));
-            args += " \"" + target.Url + "\"";
+            if (PlatformCredentialStorage.ProtectedMode(Cookie)) args += " --ytdl=no";
+            else if (File.Exists(Cookie)) args += " " + QuoteWindowsArg("--ytdl-raw-options=cookies=" + MpvListValue(Cookie));
+            args += " " + QuoteWindowsArg(plan.NeedsRelay ? RelayUrl(target, RelayPortToken) : target.Url);
             plan.Arguments = args;
         }
         else if (target.Platform == "huya")
@@ -407,11 +459,14 @@ internal static partial class LiveHub
         string douyinProbe = null;   // 抖音：本次解析出的上游地址，直接拿它当画质探针，省一次抓页面
         if (target.Platform == "bili")
         {
-            if (!File.Exists(YtDlp)) throw new FileNotFoundException("找不到 yt-dlp", YtDlp);
-            string args = "-g --no-warnings -f \"" + BiliFormat(target, true) + "\"";
-            if (File.Exists(Cookie)) args += " --cookies \"" + Cookie + "\"";
-            args += " \"" + target.Url + "\"";
-            url = FirstUrl(RunCapture(YtDlp, args, 40000));
+            url = TryBiliPlaybackUrl(target.Room, target.Quality, Cookie, target.RelayBiliFlv);
+            if (target.RelayBiliFlv && url != null) plan.NeedsRelay = true;
+            else if (target.RelayBiliFlv) url = TryBiliPlaybackUrl(target.Room, target.Quality, Cookie);
+            if (url == null)
+            {
+                if (!File.Exists(YtDlp)) throw new FileNotFoundException("B站接口未返回可播地址，请检查房态或配置 yt-dlp 备用解析器。", YtDlp);
+                url = ResolveBiliWithYtdlp(target, YtDlp, Cookie);
+            }
             string anchor = FetchBiliAnchor(target.Room);
             if (allowSideEffects) WriteBaseHint(target, anchor);
             string roomTitle = FetchBiliRoomTitle(target.Room);
@@ -449,7 +504,19 @@ internal static partial class LiveHub
         if (info != null && info.Kbps <= 0 && douyuKbps > 0) info.Kbps = douyuKbps;
         title = ComposeTitle(baseTitle, info);
         probeUrl = streamProbe;   // 出参：--streaminfo 拿它做画质探针（不再对着本地中转地址探）
-        return url;
+        return target.Platform == "bili" && plan.NeedsRelay ? RelayUrl(target, RelayPortToken) : url;
+    }
+
+    private static string ResolveBiliWithYtdlp(Target target, string tool, string stored)
+    {
+        using (var cookie = new ResolverCookie(stored))
+        {
+            string args = "--ignore-config -g --no-warnings -f " + QuoteWindowsArg(BiliFormat(target, true));
+            if (cookie.FileName != null) args += " --cookies " + QuoteWindowsArg(cookie.FileName);
+            int exit; bool truncated;
+            string url = FirstUrl(RunCaptureBounded(tool, args + " " + QuoteWindowsArg(target.Url), 40000, 65536, out exit, out truncated));
+            return exit == 0 && !truncated && IsSafeRemoteHttpUrl(url) ? url : null;
+        }
     }
 
     private sealed class StreamInfo

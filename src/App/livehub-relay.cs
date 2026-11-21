@@ -151,7 +151,7 @@ internal static partial class LiveHub
 
     private static void StartRoomWatcher(Target target, Process player)
     {
-        if (target.Platform != "bili" || target.SessionId == null) return;
+        if (!target.MonitorRoom || target.Platform != "bili" || target.SessionId == null) return;
         try
         {
             var start = new ProcessStartInfo(Application.ExecutablePath,
@@ -372,6 +372,7 @@ internal static partial class LiveHub
     // 中转进程主体：先监听（PotPlayer 可以立刻连上排队），再解析上游地址，然后逐个连接转发
     private static void RunRelay(string platform, string room, int port, string statusFile)
     {
+        relayWaitAfterOffline = DanmakuConfig.Load(DanmakuHost.ConfigPath()).WaitAfterOffline;
         RelayLogFile = Path.Combine(RuntimeDir, RelaySessionId == null
             ? "relay-" + platform + "-" + room + ".log"
             : "session-" + RelaySessionId + ".log");
@@ -453,6 +454,8 @@ internal static partial class LiveHub
     // 中转主体：把上游字节流喂给播放器；**上游断了就重新解析地址、重连，接着喂同一条播放器连接**，
     // 这样 CDN 定期掐连接（实测斗鱼就是这种情况：看一两分钟断一次）在播放器看来是无感的。
     private delegate string RelayResolver(out bool offline);
+    private static bool relayWaitAfterOffline = true;
+    private static volatile bool relayTerminalOffline;
 
     private static void Pump(TcpClient client, string platform, string room, RelayResolver resolveUpstream)
     {
@@ -470,6 +473,7 @@ internal static partial class LiveHub
             RejectRelayRequest(output, "403 Forbidden");
             return;
         }
+        if (relayTerminalOffline) { RejectRelayRequest(output, "410 Gone"); return; }
         // 立刻回响应头（探测连接也要马上有响应），再去连上游
         // 形状照抄 B站 CDN（实测 PotPlayer 认）：无长度、无分块、Connection: close，裸字节流
         byte[] head = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\n"
@@ -502,12 +506,19 @@ internal static partial class LiveHub
         string finalState = "RECONNECTING";
         while (!budget.Exhausted)
         {
+            if (relayTerminalOffline) return;
             if (ClientGone(client)) { RelayLog("播放器断开，结束"); return; }
             bool offline;
             string upstream = resolveUpstream(out offline);
             if (ClientGone(client)) { RelayLog("播放器断开，结束"); return; }
             if (upstream == null && offline)
             {
+                if (!relayWaitAfterOffline)
+                {
+                    relayTerminalOffline = true;
+                    PublishRelayState(platform, room, "OFFLINE");
+                    return;
+                }
                 // 主播下播：**不要**断掉播放器连接——挂在这里等重开，播放器那边由状态文件显示「已下播」
                 if (publishedState != "OFFLINE")
                 {
@@ -775,6 +786,11 @@ internal static partial class LiveHub
                         request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0";
                         request.Referer = "https://www.huya.com/";
                         request.Headers["Origin"] = "https://www.huya.com";
+                    }
+                    else if (platform == "bili")
+                    {
+                        request.UserAgent = "Mozilla/5.0";
+                        request.Referer = "https://live.bilibili.com/";
                     }
                     else if (platform == "douyin")
                     {
@@ -1179,6 +1195,13 @@ internal static partial class LiveHub
         Target target = Parse(platform + ":" + room, "bili");
         if (target == null) return null;
         target.Quality = RelayQuality;
+        if (platform == "bili")
+        {
+            string flv = TryBiliPlaybackUrl(room, RelayQuality, Cookie, true);
+            if (flv == null) offline = RoomState(platform, room) == RoomStateKind.Offline;
+            PlatformHealth.ResolutionResult(platform, flv, offline);
+            return flv;
+        }
 
         PlatformHealth.SetRoom(platform, room);
         PlatformHealth.Record(platform, "playback", "connecting");

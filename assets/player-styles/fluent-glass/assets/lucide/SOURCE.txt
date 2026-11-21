@@ -1,0 +1,5 @@
+Lucide static 0.468.0
+https://www.npmjs.com/package/lucide-static/v/0.468.0
+Tarball: https://registry.npmjs.org/lucide-static/-/lucide-static-0.468.0.tgz
+Integrity: sha512-JvpWui2umxRyEVMoETfMzb+qKqibV/sdoqJbKmW1JLdkuhXluJKoO6NqCbvCK/vAbUuH5bTEFD4T6uECsrNcnA==
+Original SVGs unchanged. See LICENSE.

@@ -1,0 +1,4 @@
+ModernZ by Samillion and contributors, derived from mpv OSC and ModernX.
+Source: https://github.com/Samillion/ModernZ
+Script: LGPL-2.1; see ModernZ-LGPL-2.1.txt and retained script header.
+Icon font includes Material Symbols (Google, Apache-2.0) and Fluent System Icons (Microsoft, MIT), with modifications as described in upstream-README.md. Original license texts are included here.

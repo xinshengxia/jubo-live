@@ -285,6 +285,19 @@ internal static partial class LiveHub
             }
             Add(body, grid);
             Add(body, Label("检测超时、网页核验或格式变化不会直接判定登录失效。", false));
+            var storageNote = Label("平台凭据可使用当前 Windows 用户的 DPAPI 加密。回退旧版前，可在此还原格式。", false);
+            var storageActions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true };
+            Action<string> storage = delegate(string mode)
+            {
+                if (mode == "restore" && MessageBox.Show(owner, "还原后，当前平台登录文件可由旧版及外部工具直接读取。继续？",
+                    "还原旧版凭据格式", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+                try { string summary = PlatformCredentialStorage.Configure(mode);
+                    storageNote.Text = (mode == "encrypt" ? "已启用当前用户加密。" : "已还原旧版格式。") + " " + summary; }
+                catch (Exception ex) { storageNote.Text = "操作失败：" + ex.GetType().Name; }
+            };
+            storageActions.Controls.Add(AntdButton("加密平台凭据", "workbenchEncryptCredentials", delegate { storage("encrypt"); }));
+            storageActions.Controls.Add(AntdButton("还原旧版格式", "workbenchRestoreCredentials", delegate { storage("restore"); }));
+            Add(body, storageNote); Add(body, storageActions);
             System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 1500 };
             timer.Tick += delegate { if (!owner.IsDisposed && owner.Visible && page.Visible) refresh(); };
             EventHandler shown = delegate { if (page.Visible) refresh(); timer.Start(); };

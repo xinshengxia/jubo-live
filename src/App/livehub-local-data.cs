@@ -144,8 +144,10 @@ internal static class LocalData
                 if (info == null) return "未知平台";
                 cookie = PlatformLogin.CookiesPath(info);
             }
-            DeleteFile(cookie, failures);
-            DeleteFile(cookie + ".json", failures);
+            PlatformCredentialStorage.WithLock(delegate {
+                DeleteFile(cookie, failures);
+                DeleteFile(cookie + ".json", failures);
+            });
             if (platform != "bili")
             {
                 DeleteProfile(Path.Combine(LiveHub.RuntimeDir, platform + "-login-profile"), failures);

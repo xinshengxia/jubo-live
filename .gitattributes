@@ -2,3 +2,5 @@
 licenses/** -text -whitespace
 # Repository-owned Lua scripts are hash-locked release assets on Windows too.
 *.lua text eol=lf
+# Preserve the bundled style recipe and upstream file hashes across checkouts.
+assets/player-styles/** -text -whitespace

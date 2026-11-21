@@ -118,6 +118,11 @@ internal sealed partial class DanmakuConfig
     /// 抗振铃用于减轻画面缩放时的边缘白边，实际 GPU 开销与设备和素材有关。
     /// 默认视频输出驱动也随 mpv 构建与用户配置变化，运行时可查 current-vo。
     public string MpvQuality = "off";
+    public bool CustomMpvStyle = false;
+    public bool CustomPotPlayerStyle = false;
+    public bool WaitAfterOffline = true;
+    public bool MonitorPlaybackRoom = true;
+    public bool RelayBiliFlv = false;
 
     /// 旧字段（布尔开关），已废弃，只为兼容老配置保留：
     /// 以前开过「画质增强」的用户，Normalize 时自动迁移到 high。
