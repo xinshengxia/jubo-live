@@ -575,6 +575,7 @@ internal sealed class ModernButton : Button
     private bool _pressed;
     private bool _selected, _tab;
     private Kind _kind = Kind.Secondary;
+    public bool ShowUpdateIcon { get; set; }
 
     public ModernButton()
     {
@@ -674,8 +675,32 @@ internal sealed class ModernButton : Button
             {
                 using (Pen pen = new Pen(border)) g.DrawPath(pen, path);
             }
+            var alignment = TextFormatFlags.HorizontalCenter;
+            if (ShowUpdateIcon)
+            {
+                int size = DpiLayout.S(this, 20), left = DpiLayout.S(this, 10);
+                GraphicsState saved = g.Save();
+                try
+                {
+                    g.TranslateTransform(left, (Height - size) / 2f);
+                    g.ScaleTransform(size / 24f, size / 24f);
+                    using (Pen line = new Pen(Enabled ? ModernTheme.Accent : fore, 2f))
+                    {
+                        line.StartCap = line.EndCap = LineCap.Round;
+                        line.LineJoin = LineJoin.Round;
+                        g.DrawArc(line, 4, 4, 16, 16, 192, 138);
+                        g.DrawLines(line, new[] { new Point(19, 3), new Point(19, 8), new Point(14, 8) });
+                        g.DrawArc(line, 4, 4, 16, 16, 12, 138);
+                        g.DrawLines(line, new[] { new Point(5, 21), new Point(5, 16), new Point(10, 16) });
+                    }
+                }
+                finally { g.Restore(saved); }
+                int textLeft = left + size + DpiLayout.S(this, 6);
+                rect = new Rectangle(textLeft, rect.Top, Math.Max(1, rect.Right - textLeft - left), rect.Height);
+                alignment = TextFormatFlags.Left;
+            }
             TextRenderer.DrawText(g, Text, Font, rect, fore,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                alignment | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
     }
 

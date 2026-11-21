@@ -147,6 +147,7 @@ internal static partial class LiveHub
                 workbenchSettingsGroup = WorkbenchLabel("workbenchSettingsGroup", "设置与账号", true);
                 getUpdate = WorkbenchButton("workbenchCheckAppUpdate", "检查更新", CheckForUpdates);
                 getUpdate.Style = ModernButton.Kind.Secondary;
+                getUpdate.ShowUpdateIcon = true;
                 WorkbenchFont(getUpdate, 12, FontStyle.Regular);
                 workbenchSidebarFooter.Controls.Add(getUpdate);
                 workbenchChromeIcon = new WorkbenchBrandMark { Name = "workbenchChromeIcon" };
