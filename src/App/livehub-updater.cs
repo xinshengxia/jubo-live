@@ -59,11 +59,31 @@ internal static partial class LiveHub
             checkAgain = WorkbenchButton("updateCheck", "重新检查", delegate { RunUpdate(false); });
             installUpdate = WorkbenchButton("updateInstall", "更新", delegate { RunUpdate(true); });
             localUpdate = WorkbenchButton("updateOffline", "从本地安装…", PickUpdatePackage);
+            var offlineTitle = WorkbenchLabel("offlineTitle", "离线安装包", false);
+            WorkbenchFont(offlineTitle, 15, System.Drawing.FontStyle.Bold);
+            string root = Path.GetDirectoryName(Application.ExecutablePath);
+            string packageMarker = Path.Combine(root, "portable.marker");
+            string packageType = "lite";
+            try {
+                bool full = File.Exists(packageMarker) ? File.ReadAllText(packageMarker).IndexOf("full", StringComparison.OrdinalIgnoreCase) >= 0
+                    : !Path.GetFileName(Application.ExecutablePath).Equals("看直播-mpv.exe", StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(Path.Combine(root, "bin", "mpv", "mpv.exe"));
+                if (full) packageType = "full";
+            } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            var help = WorkbenchLabel("offlineInstructions",
+                "从 C# 版同一次发布的附件下载两个文件，也可从另一台电脑拷来。\r\n"
+                + "先选以 win-x64-" + packageType + ".zip 结尾的安装包（无需解压），再选签名清单 channel.json。", true);
+            help.AutoEllipsis = false;
+            var releases = WorkbenchButton("offlineReleases", "打开发布页", delegate {
+                try { Process.Start(new ProcessStartInfo("https://github.com/xinshengxia/jubo-live/releases/latest") { UseShellExecute = true }); }
+                catch (System.ComponentModel.Win32Exception ex) { updateResult.Text = "无法打开浏览器：" + ex.Message; }
+            });
+            releases.Style = ModernButton.Kind.Subtle;
             cancelUpdate = WorkbenchButton("updateCancel", "取消安装", delegate {
                 try { Directory.CreateDirectory(UpdateRequest); File.WriteAllText(Path.Combine(UpdateRequest, "cancel"), "cancel"); cancelUpdate.Enabled = false; }
                 catch (IOException ex) { updateResult.Text = ex.Message; }
             });
-            page.Controls.AddRange(new Control[] { heading, updateResult, auto, checkAgain, installUpdate, localUpdate, cancelUpdate });
+            page.Controls.AddRange(new Control[] { heading, updateResult, auto, checkAgain, installUpdate, localUpdate, cancelUpdate, offlineTitle, help, releases });
             page.Layout += delegate {
                 int x = Px(18), width = Math.Max(Px(160), page.ClientSize.Width - x * 2);
                 heading.SetBounds(x, Px(16), width, Px(32));
@@ -71,8 +91,11 @@ internal static partial class LiveHub
                 checkAgain.SetBounds(x, Px(132), Px(90), Px(34));
                 installUpdate.SetBounds(x + Px(100), Px(132), Px(84), Px(34));
                 cancelUpdate.Bounds = installUpdate.Bounds;
-                localUpdate.SetBounds(x + Px(194), Px(132), Px(118), Px(34));
-                auto.SetBounds(x, Px(188), width, Px(32));
+                auto.SetBounds(x, Px(174), width, Px(32));
+                offlineTitle.SetBounds(x, Px(223), width, Px(25));
+                help.SetBounds(x, Px(253), width, Px(68));
+                localUpdate.SetBounds(x, Px(327), Px(118), Px(34));
+                releases.SetBounds(x + Px(128), Px(327), Px(100), Px(34));
             };
             SyncUpdateButtons();
         }
@@ -95,10 +118,11 @@ internal static partial class LiveHub
 
         private void PickUpdatePackage()
         {
-            using (var pick = new OpenFileDialog { Title = "选择正式版 ZIP 安装包", Filter = "ZIP 文件|*.zip" }) {
+            using (var pick = new OpenFileDialog { Title = "第 1 步，共 2 步 · 选择 C# 正式版 ZIP 安装包", Filter = "ZIP 文件|*.zip" }) {
                 if (pick.ShowDialog(form) != DialogResult.OK) return;
                 string zip = pick.FileName;
-                pick.Title = "选择与 ZIP 配套的签名清单"; pick.Filter = "签名清单|*.json"; pick.FileName = "channel.json";
+                pick.InitialDirectory = Path.GetDirectoryName(zip);
+                pick.Title = "第 2 步，共 2 步 · 选择同一版本的 channel.json"; pick.Filter = "签名清单|*.json"; pick.FileName = "channel.json";
                 if (pick.ShowDialog(form) == DialogResult.OK) RunUpdate(true, zip, pick.FileName);
             }
         }

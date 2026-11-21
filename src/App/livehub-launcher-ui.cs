@@ -64,7 +64,8 @@ internal static partial class LiveHub
     /// <summary>启动器主窗口：建窗 → 进消息循环。</summary>
     private static void ShowDialog()
     {
-        Application.Run(BuildLauncherForm());
+        Form launcher = BuildLauncherForm();
+        ((LauncherUi)launcher.Tag).Run();
     }
 
     /// <summary>建好启动器窗体（全部控件 + 事件接线 + 首次布局），**不进消息循环**。</summary>
@@ -1596,7 +1597,6 @@ internal static partial class LiveHub
         /// <summary>建窗并进入消息循环（原 ShowDialog 的最后两步）。</summary>
         internal void Run()
         {
-            Build();
             form.Shown += delegate { updateChecksActive = true; PollUpdater(); };
             Application.Run(form);
         }
