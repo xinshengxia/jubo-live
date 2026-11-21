@@ -59,7 +59,7 @@ internal static partial class LiveHub
         private ComboBox workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance;
         private ComboBox mpvStyle, potStyle;
         private ComboBox waitAfterOffline, monitorRoom, biliRelay;
-        private ModernButton getMpv, getYtdlp;
+        private ModernButton getMpv, getYtdlp, getUpdate;
         private System.Threading.CancellationTokenSource toolDownload;
         private readonly List<Label> workbenchPlayerCaptions = new List<Label>();
         private LookupUi workbenchLookup;
@@ -473,7 +473,8 @@ internal static partial class LiveHub
                 catch (Exception ex) { status.Text = "打开下载页失败：" + ex.Message; }
             });
             getYtdlp = WorkbenchButton("workbenchGetYtdlp", "下载备用 yt-dlp", FetchYtdlp);
-            workbenchPlayerCard.Controls.AddRange(new Control[] { getMpv, getYtdlp });
+            getUpdate = WorkbenchButton("workbenchCheckAppUpdate", "检查更新", CheckForUpdates);
+            workbenchPlayerCard.Controls.AddRange(new Control[] { getMpv, getYtdlp, getUpdate });
             form.FormClosed += delegate { if (toolDownload != null) toolDownload.Cancel(); };
             workbenchQuality = WorkbenchPreference("workbenchPlayerQuality", qualityBox, null);
             workbenchBuffer = WorkbenchPreference("workbenchPlayerBuffer", bufferBox, null);
@@ -1151,7 +1152,9 @@ internal static partial class LiveHub
             int toolWidth = Math.Min(Px(150), (inner - Px(8)) / 2);
             getMpv.SetBounds(pad, workbenchPlayerHelp.Bottom + Px(6), toolWidth, Px(32));
             getYtdlp.SetBounds(getMpv.Right + Px(8), getMpv.Top, toolWidth, Px(32));
-            workbenchPlayerCard.SetBounds(0, 0, width, getMpv.Bottom + Px(12));
+            if (inner >= Px(420)) getUpdate.SetBounds(getYtdlp.Right + Px(8), getMpv.Top, Math.Min(Px(136), inner - 2 * toolWidth - Px(16)), Px(32));
+            else getUpdate.SetBounds(pad, getMpv.Bottom + Px(5), toolWidth, Px(32));
+            workbenchPlayerCard.SetBounds(0, 0, width, getUpdate.Bottom + Px(12));
             int columns = inner >= Px(760) ? 4 : inner >= Px(600) ? 3 : 2;
             int gap = Px(16), cell = (inner - gap * (columns - 1)) / columns;
             ComboBox[] boxes = { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance, mpvStyle, potStyle, waitAfterOffline, monitorRoom, biliRelay };

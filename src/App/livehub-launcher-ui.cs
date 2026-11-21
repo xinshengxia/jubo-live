@@ -612,6 +612,7 @@ internal static partial class LiveHub
         watchTimer.Interval = 2000;
         watchTimer.Tick += delegate
         {
+            PollUpdater();
             RefreshLoginSummaries();
             if (Application.MessageLoop) foreach (string p in platforms) LoginHealth.RequestCheck(p, false);
             foreach (PlaybackSession session in sessions)
@@ -1596,6 +1597,7 @@ internal static partial class LiveHub
         internal void Run()
         {
             Build();
+            form.Shown += delegate { updateChecksActive = true; PollUpdater(); };
             Application.Run(form);
         }
     }

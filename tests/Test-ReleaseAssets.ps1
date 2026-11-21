@@ -63,7 +63,7 @@ foreach ($style in $styleSources) {
         }
     }
 }
-foreach ($name in @('assets/player-styles/Prepare-PotPlayer.ps1','assets/player-styles/mpv/mpv.conf','assets/playback/bili-native.lua','assets/playback/session-metrics.lua')) {
+foreach ($name in @('assets/player-styles/Prepare-PotPlayer.ps1','assets/player-styles/mpv/mpv.conf','assets/playback/bili-native.lua','assets/playback/session-metrics.lua','assets/updater/Start-Update.ps1','assets/updater/Core.ps1','assets/updater/Install.ps1','assets/updater/channel-key.xml')) {
     if (!$included.ContainsKey($name)) { throw "FAIL: 默认运行包遗漏 $name" }
 }
 foreach ($required in @('THIRD_PARTY_NOTICES.md','licenses/SOURCES.json','licenses/douyinLive-LICENSE.txt',
@@ -152,3 +152,5 @@ foreach ($case in @('tree','member','omitted','stale-script')) {
     if (-not $rejected) { throw ('FAIL: inconsistent locked bundle accepted: ' + $case) }
 }
 Write-Output 'PASS: valid locked bundle accepted; modified tree, member and missing component rejected'
+
+& (Join-Path $Source 'tests/Test-AppUpdater.ps1') -Source $Source -Workspace (Join-Path $Workspace 'updater-contract')
