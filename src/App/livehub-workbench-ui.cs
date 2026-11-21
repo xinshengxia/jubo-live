@@ -26,13 +26,13 @@ internal static partial class LiveHub
         // 观看会话页的同步基线/中继计数（只读）与「标记音画异常」入口。
         private Label workbenchSessionSync;
         private Button avSyncMark = new ModernButton();
-        private WorkbenchStrip workbenchChrome, workbenchSidebar;
+        private WorkbenchStrip workbenchChrome, workbenchSidebar, workbenchSidebarFooter;
         private Label workbenchTitle, workbenchSubtitle, workbenchBrand;
         private WorkbenchBrandMark workbenchBrandMark, workbenchChromeIcon;
         private Label workbenchChromeBrand, workbenchChromeHint;
         private TrafficDot workbenchChromeMin, workbenchChromeMax, workbenchChromeClose;
-        private Label workbenchWatchGroup, workbenchSettingsGroup, workbenchFooterHint, workbenchSessionsEmpty;
-        private WorkbenchGlyph workbenchFooterIcon, workbenchHomeIcon, workbenchHomeAvatar;
+        private Label workbenchWatchGroup, workbenchSettingsGroup, workbenchSessionsEmpty;
+        private WorkbenchGlyph workbenchHomeIcon, workbenchHomeAvatar;
         private WorkbenchFillStrip workbenchPlatformStrip, recentPlatformStrip;
         private readonly List<Label> workbenchScopeLabels = new List<Label>();
         private Label workbenchLaunchHint, workbenchFavoritesHint, workbenchRecentHint, workbenchSessionHint;
@@ -129,11 +129,12 @@ internal static partial class LiveHub
                 // sidebar (own surface tone, hairline right border) and content.
                 workbenchChrome = new WorkbenchStrip { Name = "workbenchChrome", Edge = WorkbenchStrip.EdgeKind.Bottom };
                 workbenchSidebar = new WorkbenchStrip { Name = "workbenchSidebar", Edge = WorkbenchStrip.EdgeKind.Right, AutoScroll = true };
+                workbenchSidebarFooter = new WorkbenchStrip { Name = "workbenchSidebarFooter", Edge = WorkbenchStrip.EdgeKind.Right };
                 workbenchContent = new WorkbenchPanel { Name = "workbenchContent" };
                 workbenchHost = new WorkbenchPanel { Name = "workbenchPageHost" };
                 workbenchFooter = new WorkbenchPanel { Name = "workbenchFooter" };
                 workbenchModels = new WorkbenchPanel { Name = "workbenchModels", Visible = false };
-                form.Controls.Add(workbenchChrome); form.Controls.Add(workbenchSidebar);
+                form.Controls.Add(workbenchChrome); form.Controls.Add(workbenchSidebar); form.Controls.Add(workbenchSidebarFooter);
                 form.Controls.Add(workbenchContent); form.Controls.Add(workbenchModels);
                 workbenchTitle = WorkbenchLabel("workbenchTitle", "我的收藏", false);
                 WorkbenchFont(workbenchTitle, 23, FontStyle.Bold);
@@ -144,7 +145,10 @@ internal static partial class LiveHub
                 workbenchBrand = WorkbenchLabel("workbenchBrand", "看直播", false); WorkbenchFont(workbenchBrand, 19, FontStyle.Bold);
                 workbenchWatchGroup = WorkbenchLabel("workbenchWatchGroup", "观看", true);
                 workbenchSettingsGroup = WorkbenchLabel("workbenchSettingsGroup", "设置与账号", true);
-                workbenchFooterHint = WorkbenchLabel("workbenchFooterHint", "本地播放器 · 四平台", true);
+                getUpdate = WorkbenchButton("workbenchCheckAppUpdate", "检查更新", CheckForUpdates);
+                getUpdate.Style = ModernButton.Kind.Secondary;
+                WorkbenchFont(getUpdate, 12, FontStyle.Regular);
+                workbenchSidebarFooter.Controls.Add(getUpdate);
                 workbenchChromeIcon = new WorkbenchBrandMark { Name = "workbenchChromeIcon" };
                 workbenchChromeBrand = WorkbenchLabel("workbenchChromeBrand", "看直播", true);
                 workbenchChromeHint = WorkbenchLabel("workbenchChromeHint", "本地播放器 · 四平台", true);
@@ -156,10 +160,8 @@ internal static partial class LiveHub
                 enhanceTip.SetToolTip(workbenchChromeMax, "最大化 / 还原");
                 enhanceTip.SetToolTip(workbenchChromeClose, "关闭");
                 form.SizeChanged += delegate { workbenchChromeMax.Restore = form.WindowState == FormWindowState.Maximized; };
-                workbenchFooterIcon = new WorkbenchGlyph { Name = "workbenchFooterIcon", Tiled = false, IconSize = 16, Glyph = "drive" };
                 WorkbenchFont(workbenchWatchGroup, 10, FontStyle.Regular);
                 WorkbenchFont(workbenchSettingsGroup, 10, FontStyle.Regular);
-                WorkbenchFont(workbenchFooterHint, 11, FontStyle.Regular);
                 WorkbenchFont(workbenchChromeBrand, 11, FontStyle.Regular);
                 WorkbenchFont(workbenchChromeHint, 11, FontStyle.Regular);
                 workbenchChrome.Controls.AddRange(new Control[] { workbenchChromeIcon, workbenchChromeBrand, workbenchChromeHint, workbenchChromeMin, workbenchChromeMax, workbenchChromeClose });
@@ -171,7 +173,7 @@ internal static partial class LiveHub
                     drag.DoubleClick += delegate { WorkbenchWindowDrag.ToggleMaximize(form); };
                 }
                 workbenchSidebar.Controls.AddRange(new Control[] { workbenchBrandMark, workbenchBrand,
-                    workbenchWatchGroup, workbenchSettingsGroup, workbenchFooterIcon, workbenchFooterHint });
+                    workbenchWatchGroup, workbenchSettingsGroup });
                 string[] keys = { "favorites", "recent", "lookup", "sessions", "players", "danmaku", "accounts", "data" };
                 string[] titles = { "我的收藏", "最近播放", "查找主播", "观看会话", "播放器与画质", "弹幕与 SC 设置", "账号与登录", "本地数据 / 平台状态" };
                 string[] glyphs = { "star", "history", "search", "monitor", "settings", "chat", "user", "folder" };
@@ -473,8 +475,7 @@ internal static partial class LiveHub
                 catch (Exception ex) { status.Text = "打开下载页失败：" + ex.Message; }
             });
             getYtdlp = WorkbenchButton("workbenchGetYtdlp", "下载备用 yt-dlp", FetchYtdlp);
-            getUpdate = WorkbenchButton("workbenchCheckAppUpdate", "检查更新", CheckForUpdates);
-            workbenchPlayerCard.Controls.AddRange(new Control[] { getMpv, getYtdlp, getUpdate });
+            workbenchPlayerCard.Controls.AddRange(new Control[] { getMpv, getYtdlp });
             form.FormClosed += delegate { if (toolDownload != null) toolDownload.Cancel(); };
             workbenchQuality = WorkbenchPreference("workbenchPlayerQuality", qualityBox, null);
             workbenchBuffer = WorkbenchPreference("workbenchPlayerBuffer", bufferBox, null);
@@ -836,7 +837,10 @@ internal static partial class LiveHub
                 int pad = Px(width < Px(900) ? 20 : 24);
                 workbenchChrome.SetBounds(0, 0, width, chromeHeight);
                 int shellHeight = Math.Max(Px(160), height - chromeHeight);
-                workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight);
+                int footerHeight = Px(56);
+                workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight - footerHeight);
+                workbenchSidebarFooter.SetBounds(0, height - footerHeight, sidebar, footerHeight);
+                getUpdate.SetBounds(Px(8), Px(8), sidebar - Px(16), Px(36));
                 workbenchContent.SetBounds(sidebar, chromeHeight, Math.Max(Px(300), width - sidebar), shellHeight);
                 int dot = Px(30), dotGap = Px(4);
                 int dotY = Math.Max(0, (chromeHeight - dot) / 2);
@@ -859,11 +863,7 @@ internal static partial class LiveHub
                     workbenchNavigation[key].SetBounds(Px(8), navY, Math.Max(Px(80), sidebarWidth - Px(16)), navHeight);
                     navY += navHeight + Px(4); index++;
                 }
-                int footerTop = Math.Max(navY + Px(14), shellHeight - Px(56));
-                workbenchFooterIcon.SetBounds(Px(12), footerTop + Px(3), Px(16), Px(16));
-                workbenchFooterHint.SetBounds(Px(34), footerTop, Math.Max(Px(54), sidebarWidth - Px(42)), Px(20));
-                workbenchSidebar.AutoScrollMinSize = new Size(0,
-                    Math.Max(workbenchFooterHint.Bottom, workbenchFooterIcon.Bottom) + Px(10));
+                workbenchSidebar.AutoScrollMinSize = new Size(0, navY + Px(8));
                 int inner = Math.Max(Px(240), workbenchContent.ClientSize.Width - pad * 2);
                 int contentHeight = workbenchContent.ClientSize.Height;
                 // 标题与副标题原来是竖排（host 从 y=99 起）；改成同一行横排后页面从 50 起，
@@ -1152,9 +1152,7 @@ internal static partial class LiveHub
             int toolWidth = Math.Min(Px(150), (inner - Px(8)) / 2);
             getMpv.SetBounds(pad, workbenchPlayerHelp.Bottom + Px(6), toolWidth, Px(32));
             getYtdlp.SetBounds(getMpv.Right + Px(8), getMpv.Top, toolWidth, Px(32));
-            if (inner >= Px(420)) getUpdate.SetBounds(getYtdlp.Right + Px(8), getMpv.Top, Math.Min(Px(136), inner - 2 * toolWidth - Px(16)), Px(32));
-            else getUpdate.SetBounds(pad, getMpv.Bottom + Px(5), toolWidth, Px(32));
-            workbenchPlayerCard.SetBounds(0, 0, width, getUpdate.Bottom + Px(12));
+            workbenchPlayerCard.SetBounds(0, 0, width, getMpv.Bottom + Px(12));
             int columns = inner >= Px(760) ? 4 : inner >= Px(600) ? 3 : 2;
             int gap = Px(16), cell = (inner - gap * (columns - 1)) / columns;
             ComboBox[] boxes = { workbenchQuality, workbenchBuffer, workbenchDanmaku, workbenchEnhance, mpvStyle, potStyle, waitAfterOffline, monitorRoom, biliRelay };

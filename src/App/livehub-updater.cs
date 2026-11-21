@@ -60,7 +60,7 @@ internal static partial class LiveHub
                     && version > CurrentVersion && announcedVersion != version.ToString() && currentLaunch == null)
                 {
                     announcedVersion = version.ToString(); getUpdate.Text = "更新 " + announcedVersion;
-                    status.Text = "发现新版 " + announcedVersion + "，可到「播放器与画质」点击更新。";
+                    status.Text = "发现新版 " + announcedVersion + "，可点主界面左下角的按钮更新。";
                 }
                 if (updateTicket == null || !form.Enabled || currentLaunch != null || closingSession) return;
                 string request = Path.Combine(UpdateCache,"requests",updateTicket);
