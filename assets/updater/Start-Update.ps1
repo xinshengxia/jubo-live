@@ -1,4 +1,4 @@
-﻿param([ValidateSet('Auto','Dialog','Check','Install')][string]$Mode='Dialog',[Parameter(Mandatory)][ValidateSet('cs','rust')][string]$Product)
+﻿param([ValidateSet('Auto','Check','Install')][string]$Mode='Check',[Parameter(Mandatory)][ValidateSet('cs','rust')][string]$Product)
 $ErrorActionPreference='Stop'
 $env:PSModulePath=(Join-Path $PSHOME 'Modules')+';'+$env:PSModulePath
 . (Join-Path $PSScriptRoot 'Core.ps1')
@@ -36,6 +36,7 @@ if($Product -eq 'cs' -and !$devLayout){
 function Set-ProgressText([string]$text){Write-AtomicText (Join-Path $requestDir 'status.txt') $text}
 function Check-Now {
     $r=Get-Catalog
+    Write-AtomicText (Join-Path $requestDir 'version.txt') ([string]$r.version)
     if([version]$r.version -gt [version]$currentVersion){return "发现新版 $($r.version)。点击更新即可下载并安装。"}
     if([version]$r.version -lt [version]$currentVersion){return "当前版本 $currentVersion 高于渠道版本 $($r.version)。"}
     return "当前已是最新正式版 $currentVersion。"
@@ -51,7 +52,12 @@ if($Mode -eq 'Auto'){
 [IO.Directory]::CreateDirectory($requestDir)|Out-Null
 if($Mode -eq 'Check' -or $Mode -eq 'Install'){
     if($Mode -eq 'Install'){$script:ownedPayload=$null;$script:ownedDownload=$null}
-    try{if($Mode -eq 'Check'){Set-ProgressText (Check-Now)}else{Apply-Update}}
+    try{
+        if($Mode -eq 'Install' -and !$env:JUBO_UPDATE_OWNER_START){
+            $owner=Get-Process -Id $ownerId -ErrorAction Stop
+            $env:JUBO_UPDATE_OWNER_START=$owner.StartTime.ToUniversalTime().Ticks.ToString()
+        }
+        if($Mode -eq 'Check'){Set-ProgressText (Check-Now)}else{Apply-Update}}
     catch{Set-ProgressText ('操作失败：'+$_.Exception.Message);exit 1}
     finally {
         foreach($tempPath in @($script:ownedPayload,$script:ownedDownload)){
@@ -70,69 +76,3 @@ if($Mode -eq 'Check' -or $Mode -eq 'Install'){
     }
     exit 0
 }
-if($Mode -eq 'Dialog'){
-    $owner=Get-Process -Id $ownerId -ErrorAction Stop
-    $env:JUBO_UPDATE_OWNER_START=$owner.StartTime.ToUniversalTime().Ticks.ToString()
-}
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[Windows.Forms.Application]::EnableVisualStyles()
-$form=[Windows.Forms.Form]::new();$form.Text='看直播 · 检查更新';$form.StartPosition='CenterScreen';$form.AutoScaleMode='Dpi';$form.ClientSize=[Drawing.Size]::new(492,228)
-$form.FormBorderStyle='FixedDialog';$form.MaximizeBox=$false
-$form.Font=[Drawing.Font]::new('Microsoft YaHei UI',9)
-$who=if($Product -eq 'cs'){'C#'}else{'Rust'}
-$heading=[Windows.Forms.Label]::new();$heading.Text="看直播 $who · 当前版本 $currentVersion";$heading.SetBounds(18,16,455,27);$form.Controls.Add($heading)
-$auto=[Windows.Forms.CheckBox]::new();$auto.Text='自动检查正式版更新';$auto.Checked=!(Test-Path $disable);$auto.SetBounds(18,48,440,25);$form.Controls.Add($auto)
-$auto.Add_CheckedChanged({try{if($auto.Checked){if(Test-Path $disable){[IO.File]::Delete($disable)}}else{Write-AtomicText $disable 'off'}}catch{$status.Text='无法保存自动检查设置。'}})
-$status=[Windows.Forms.Label]::new();$status.SetBounds(18,84,455,78);$status.Text='准备检查更新…';$form.Controls.Add($status)
-function Add-Button([string]$label,[int]$x,[int]$width){
-    $b=[Windows.Forms.Button]::new();$b.Text=$label;$b.SetBounds($x,173,$width,34);$form.Controls.Add($b);return $b
-}
-$check=Add-Button '检查更新' 18 100;$install=Add-Button '更新' 127 85;$offline=Add-Button '从本地安装…' 221 128
-$done=Add-Button '关闭' 365 100;$install.Enabled=$false
-$script:work=$null;$script:action='';$script:finished=$false
-function Start-Worker([string]$action,[string]$zip='',[string]$signed=''){
-    if($script:work -and !$script:work.HasExited){
-        if($script:action -eq 'Check' -and $action -eq 'Install' -and $zip){$script:work.Kill();$script:work.WaitForExit();$script:work.Dispose();$script:work=$null}
-        else{return}
-    }
-    foreach($n in 'ready','cancel','idle-ok','status.txt'){ $file=Join-Path $requestDir $n;if(Test-Path -LiteralPath $file){[IO.File]::Delete($file)} }
-    $si=[Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'powershell.exe'))
-    $si.Arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File '+(Quote-Argument $script:ownScript)+' -Mode '+$action+' -Product '+$Product
-    $si.UseShellExecute=$false;$si.CreateNoWindow=$true;$si.EnvironmentVariables['JUBO_UPDATE_OFFLINE_ZIP']=$zip;$si.EnvironmentVariables['JUBO_UPDATE_OFFLINE_CATALOG']=$signed
-    $script:work=[Diagnostics.Process]::Start($si);$script:action=$action
-    $check.Enabled=$install.Enabled=$false;$offline.Enabled=($action -eq 'Check')
-    $status.Text=if($action -eq 'Install'){'正在准备更新…'}else{'正在检查，直连失败会尝试备用线路…'}
-}
-$script:ownScript=$PSCommandPath
-$check.Add_Click({Start-Worker 'Check'})
-$install.Add_Click({Start-Worker 'Install'})
-$offline.Add_Click({
-    $pick=[Windows.Forms.OpenFileDialog]::new()
-    try{
-        $pick.Title='选择本版本的正式 ZIP 包';$pick.Filter='ZIP 文件|*.zip';if($pick.ShowDialog($form) -ne 'OK'){return};$zip=$pick.FileName
-        $pick.Title='选择与 ZIP 配套的签名清单 channel.json';$pick.FileName='channel.json';$pick.Filter='签名清单|*.json';if($pick.ShowDialog($form) -ne 'OK'){return}
-        Start-Worker 'Install' $zip $pick.FileName
-    }finally{$pick.Dispose()}
-})
-$done.Add_Click({$form.Close()})
-$form.Add_FormClosing({param($sender,$closingArgs)
-    if($script:work -and !$script:work.HasExited -and $script:action -eq 'Install'){
-        if(Test-Path (Join-Path $requestDir 'idle-ok')){$closingArgs.Cancel=$true;return}
-        Write-AtomicText $cancelFile 'cancel'
-    }
-})
-$timer=[Windows.Forms.Timer]::new();$timer.Interval=500
-$timer.Add_Tick({
-    if(!$script:work){return}
-    $file=Join-Path $requestDir 'status.txt'
-    if([IO.File]::Exists($file)){try{$status.Text=[IO.File]::ReadAllText($file)}catch [IO.IOException]{}}
-    if($script:work.HasExited){
-        $success=$script:work.ExitCode -eq 0;$script:work.Dispose();$script:work=$null
-        $check.Enabled=$offline.Enabled=$true;$install.Enabled=$false
-        if($script:action -eq 'Install' -and $success){$form.Close();return}
-        try{if(Test-Path $catalogPath){$record=Read-SignedCatalog ([IO.File]::ReadAllText($catalogPath));$install.Enabled=([version]$record.version -gt [version]$currentVersion)}}catch{$install.Enabled=$false}
-    }
-})
-$form.Add_Shown({$timer.Start();Start-Worker 'Check'})
-try{[void]$form.ShowDialog()}finally{$timer.Dispose();$form.Dispose()}

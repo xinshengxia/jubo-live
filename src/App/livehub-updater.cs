@@ -12,11 +12,15 @@ internal static partial class LiveHub
         private bool updateChecksActive, updateClosing;
         private DateTime nextAutoCheck;
         private string updateTicket, announcedVersion;
-        private Process updateDialog;
+        private Process updateWorker;
+        private bool installingUpdate, newerVersion;
+        private Label updateResult;
+        private ModernButton checkAgain, installUpdate, localUpdate, cancelUpdate;
+        private string UpdateRequest { get { return Path.Combine(UpdateCache, "requests", updateTicket); } }
         private static string UpdateCache { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JuboLive", "Updates", "cs"); } }
         private static Version CurrentVersion { get { return typeof(LiveHub).Assembly.GetName().Version; } }
 
-        private Process OpenUpdater(string mode, string ticket)
+        private Process OpenUpdater(string mode, string ticket, string zip = "", string catalog = "")
         {
             string path = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "assets", "updater", "Start-Update.ps1");
             var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
@@ -26,21 +30,107 @@ internal static partial class LiveHub
             info.EnvironmentVariables["JUBO_UPDATE_VERSION"] = CurrentVersion.ToString(3);
             using (var owner = Process.GetCurrentProcess()) info.EnvironmentVariables["JUBO_UPDATE_OWNER"] = owner.Id.ToString();
             info.EnvironmentVariables["JUBO_UPDATE_TICKET"] = ticket;
+            info.EnvironmentVariables["JUBO_UPDATE_OFFLINE_ZIP"] = zip;
+            info.EnvironmentVariables["JUBO_UPDATE_OFFLINE_CATALOG"] = catalog;
+            info.EnvironmentVariables.Remove("JUBO_UPDATE_OWNER_START");
             var original = Environment.GetCommandLineArgs();
             info.EnvironmentVariables["JUBO_UPDATE_ARGS"] = new JavaScriptSerializer().Serialize(new ArraySegment<string>(original, 1, original.Length - 1).ToArray());
             return Process.Start(info);
         }
 
+        private void BuildUpdatesPage()
+        {
+            var page = new WorkbenchPanel { Name = "workbenchPage_updates", AutoScroll = true, Visible = false };
+            workbenchPages.Add("updates", page);
+            workbenchHost.Controls.Add(page);
+            var heading = WorkbenchLabel("updateVersion", "看直播 C#  ·  当前版本 " + CurrentVersion.ToString(3), false);
+            WorkbenchFont(heading, 17, System.Drawing.FontStyle.Bold);
+            updateResult = WorkbenchLabel("updateResult", "准备检查正式版更新。", false);
+            updateResult.AutoEllipsis = false;
+            var auto = new ModernCheckBox { Text = "自动检查正式版更新", Checked = !File.Exists(Path.Combine(UpdateCache, "auto-off")) };
+            auto.Click += delegate {
+                try {
+                    Directory.CreateDirectory(UpdateCache);
+                    string marker = Path.Combine(UpdateCache, "auto-off");
+                    if (auto.Checked) { File.Delete(marker); nextAutoCheck = DateTime.MinValue; }
+                    else File.WriteAllText(marker, "off");
+                } catch (Exception ex) { auto.Checked = !File.Exists(Path.Combine(UpdateCache, "auto-off")); updateResult.Text = "无法保存设置：" + ex.Message; }
+            };
+            checkAgain = WorkbenchButton("updateCheck", "重新检查", delegate { RunUpdate(false); });
+            installUpdate = WorkbenchButton("updateInstall", "更新", delegate { RunUpdate(true); });
+            localUpdate = WorkbenchButton("updateOffline", "从本地安装…", PickUpdatePackage);
+            cancelUpdate = WorkbenchButton("updateCancel", "取消安装", delegate {
+                try { Directory.CreateDirectory(UpdateRequest); File.WriteAllText(Path.Combine(UpdateRequest, "cancel"), "cancel"); cancelUpdate.Enabled = false; }
+                catch (IOException ex) { updateResult.Text = ex.Message; }
+            });
+            page.Controls.AddRange(new Control[] { heading, updateResult, auto, checkAgain, installUpdate, localUpdate, cancelUpdate });
+            page.Layout += delegate {
+                int x = Px(18), width = Math.Max(Px(160), page.ClientSize.Width - x * 2);
+                heading.SetBounds(x, Px(16), width, Px(32));
+                updateResult.SetBounds(x, Px(56), width, Px(66));
+                checkAgain.SetBounds(x, Px(132), Px(90), Px(34));
+                installUpdate.SetBounds(x + Px(100), Px(132), Px(84), Px(34));
+                cancelUpdate.Bounds = installUpdate.Bounds;
+                localUpdate.SetBounds(x + Px(194), Px(132), Px(118), Px(34));
+                auto.SetBounds(x, Px(188), width, Px(32));
+            };
+            SyncUpdateButtons();
+        }
+
+        private void SyncUpdateButtons()
+        {
+            checkAgain.Enabled = updateWorker == null;
+            installUpdate.Visible = !installingUpdate;
+            installUpdate.Enabled = newerVersion && updateWorker == null;
+            cancelUpdate.Visible = installingUpdate;
+            cancelUpdate.Enabled = installingUpdate;
+            localUpdate.Enabled = !installingUpdate;
+        }
+
         private void CheckForUpdates()
         {
-            try
-            {
-                if (updateDialog != null && !updateDialog.HasExited) { status.Text = "检查更新窗口已打开。"; return; }
-                if (updateDialog != null) updateDialog.Dispose();
-                updateTicket = Guid.NewGuid().ToString("N");
-                updateDialog = OpenUpdater("Dialog", updateTicket);
+            SelectWorkbenchPage("updates");
+            if (updateWorker == null) RunUpdate(false);
+        }
+
+        private void PickUpdatePackage()
+        {
+            using (var pick = new OpenFileDialog { Title = "选择正式版 ZIP 安装包", Filter = "ZIP 文件|*.zip" }) {
+                if (pick.ShowDialog(form) != DialogResult.OK) return;
+                string zip = pick.FileName;
+                pick.Title = "选择与 ZIP 配套的签名清单"; pick.Filter = "签名清单|*.json"; pick.FileName = "channel.json";
+                if (pick.ShowDialog(form) == DialogResult.OK) RunUpdate(true, zip, pick.FileName);
             }
-            catch (Exception ex) { status.Text = "打开更新窗口失败：" + ex.Message; }
+        }
+
+        private void RunUpdate(bool install, string zip = "", string catalog = "")
+        {
+            if (installingUpdate || (updateWorker != null && zip.Length == 0)) return;
+            if (updateWorker != null) { updateWorker.Dispose(); updateWorker = null; }
+            newerVersion = false;
+            updateTicket = Guid.NewGuid().ToString("N");
+            try {
+                updateWorker = OpenUpdater(install ? "Install" : "Check", updateTicket, zip, catalog);
+                installingUpdate = install;
+                updateResult.Text = install ? "正在准备安装并校验签名…" : "正在检查更新，直连失败会尝试备用线路…";
+            } catch (Exception ex) { updateResult.Text = "无法启动更新任务：" + ex.Message; }
+            SyncUpdateButtons();
+        }
+
+        private void ReadUpdateProgress()
+        {
+            if (updateWorker == null) return;
+            bool finished = updateWorker.HasExited;
+            string progress = Path.Combine(UpdateRequest, "status.txt");
+            if (File.Exists(progress)) updateResult.Text = File.ReadAllText(progress);
+            if (!finished) return;
+            string verified = Path.Combine(UpdateRequest, "version.txt");
+            Version version;
+            newerVersion = !installingUpdate && updateWorker.ExitCode == 0 && File.Exists(verified)
+                && Version.TryParse(File.ReadAllText(verified).Trim(), out version) && version > CurrentVersion;
+            if (!File.Exists(progress)) updateResult.Text = "更新任务已停止。请重新检查。";
+            updateWorker.Dispose(); updateWorker = null; installingUpdate = false;
+            SyncUpdateButtons();
         }
 
         private void PollUpdater()
@@ -48,6 +138,7 @@ internal static partial class LiveHub
             if (!updateChecksActive || updateClosing) return;
             try
             {
+                ReadUpdateProgress();
                 if (DateTime.UtcNow >= nextAutoCheck)
                 {
                     nextAutoCheck = DateTime.UtcNow.AddHours(12);
@@ -62,7 +153,7 @@ internal static partial class LiveHub
                     announcedVersion = version.ToString(); getUpdate.Text = "更新 " + announcedVersion;
                     status.Text = "发现新版 " + announcedVersion + "，可点主界面左下角的按钮更新。";
                 }
-                if (updateTicket == null || !form.Enabled || currentLaunch != null || closingSession) return;
+                if (!installingUpdate || !form.Enabled || currentLaunch != null || closingSession) return;
                 string request = Path.Combine(UpdateCache,"requests",updateTicket);
                 if (!File.Exists(Path.Combine(request,"ready")) || File.Exists(Path.Combine(request,"cancel"))) return;
                 foreach (var session in sessions)

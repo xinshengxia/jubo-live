@@ -684,7 +684,7 @@ internal sealed class ModernButton : Button
                 {
                     g.TranslateTransform(left, (Height - size) / 2f);
                     g.ScaleTransform(size / 24f, size / 24f);
-                    using (Pen line = new Pen(Enabled ? ModernTheme.Accent : fore, 2f))
+                    using (Pen line = new Pen(Enabled && Style != Kind.Primary ? ModernTheme.Accent : fore, 2f))
                     {
                         line.StartCap = line.EndCap = LineCap.Round;
                         line.LineJoin = LineJoin.Round;

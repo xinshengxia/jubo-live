@@ -189,6 +189,7 @@ internal static partial class LiveHub
                     page.HandleCreated += delegate { ModernTheme.ApplyScrollbarTheme(page); };
                     workbenchPages.Add(key, page); workbenchHost.Controls.Add(page);
                 }
+                BuildUpdatesPage();
                 status.Parent = workbenchFooter; status.AutoEllipsis = true;
                 WorkbenchFont(status, 11, FontStyle.Regular);
                 workbenchFooter.Paint += delegate(object sender, PaintEventArgs e)
@@ -562,7 +563,8 @@ internal static partial class LiveHub
             workbenchPage = key;
             foreach (KeyValuePair<string, Panel> pair in workbenchPages) pair.Value.Visible = pair.Key == key;
             foreach (KeyValuePair<string, WorkbenchNavigationButton> pair in workbenchNavigation) pair.Value.Selected = pair.Key == key;
-            workbenchTitle.Text = workbenchNavigation[key].Text;
+            getUpdate.Style = key == "updates" ? ModernButton.Kind.Primary : ModernButton.Kind.Secondary;
+            workbenchTitle.Text = key == "updates" ? "检查更新" : workbenchNavigation[key].Text;
             string subtitle = key == "favorites" ? "喜欢的主播，打开就能看。"
                 : key == "recent" ? "选择熟悉的播放器，从最近的房间继续。"
                 : key == "lookup" ? "查询、核验、收藏，找到喜欢的主播。"
@@ -570,6 +572,7 @@ internal static partial class LiveHub
                 : key == "players" ? "选择程序路径，管理画质和播放偏好。"
                 : key == "danmaku" ? "显示、过滤、SC 与更多覆盖层设置。"
                 : key == "accounts" ? "四个平台的登录与 Cookie 状态，一处管理。"
+                : key == "updates" ? "查看正式版并管理更新。"
                 : "浏览本地数据，查看解析、取流和弹幕运行状态。";
             workbenchSubtitle.Text = subtitle;
             if (key == "accounts") RefreshLoginSummaries();
@@ -586,6 +589,7 @@ internal static partial class LiveHub
                     : key == "players" ? "两种播放器分别指定路径；画质增强仅对 mpv 生效。"
                     : key == "danmaku" ? "编辑后保存，运行中的覆盖层会读取更新。"
                     : key == "accounts" ? "登录与 Cookie 检测按平台独立管理。"
+                    : key == "updates" ? "安装更新会等待当前观看会话结束。"
                     : "只读查看本地数据；清理仅作用于缓存和日志。";
                 status.ForeColor = ModernTheme.TextSecondary; status.Text = workbenchIdleHint;
             }
