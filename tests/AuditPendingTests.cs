@@ -629,6 +629,10 @@ internal static partial class HardeningTests
             object session = Activator.CreateInstance(sessionType, true);
             sessionType.GetField("Target").SetValue(session, target);
             sessionType.GetField("Player").SetValue(session, "mpv");
+            sessionType.GetField("PlayerProcessId").SetValue(session, 42);
+            string metricState = (string)Call("SessionRoomStatePath", target);
+            long stamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            File.WriteAllText(metricState + ".metrics0", "v1 " + stamp + " 42 -1.4 0 31 1.8\n");
             object[] args = { session, null };
             bool written = (bool)Call("TryMarkAvSyncIssue", args);
             Check(written && args[1] is string, "同步诊断：标记音画异常返回结果");
@@ -639,6 +643,7 @@ internal static partial class HardeningTests
                 string log = File.ReadAllText(logPath, Encoding.UTF8);
                 Check(log.Contains("音画异常标记") && log.Contains("reconnects:3")
                     && log.Contains("discarded_epoch_tail:75"), "同步诊断：记录会话与中继计数");
+                Check(log.Contains("-1.40 ms") && log.Contains("解码 0 / 输出 31") && log.Contains("1.80 s"), "异常标记保存播放采样");
                 Check(log.IndexOf("http://", StringComparison.OrdinalIgnoreCase) < 0
                     && log.IndexOf("https://", StringComparison.OrdinalIgnoreCase) < 0
                     && log.IndexOf("cookie", StringComparison.OrdinalIgnoreCase) < 0,

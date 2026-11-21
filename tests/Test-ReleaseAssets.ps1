@@ -63,7 +63,7 @@ foreach ($style in $styleSources) {
         }
     }
 }
-foreach ($name in @('assets/player-styles/Prepare-PotPlayer.ps1','assets/player-styles/mpv/mpv.conf','assets/playback/bili-native.lua')) {
+foreach ($name in @('assets/player-styles/Prepare-PotPlayer.ps1','assets/player-styles/mpv/mpv.conf','assets/playback/bili-native.lua','assets/playback/session-metrics.lua')) {
     if (!$included.ContainsKey($name)) { throw "FAIL: 默认运行包遗漏 $name" }
 }
 foreach ($required in @('THIRD_PARTY_NOTICES.md','licenses/SOURCES.json','licenses/douyinLive-LICENSE.txt',

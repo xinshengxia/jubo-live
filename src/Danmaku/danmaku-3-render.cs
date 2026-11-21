@@ -950,6 +950,18 @@ internal sealed partial class DanmakuRenderer : IDisposable
         foreach (FlyingDanmaku flying in _flying) flying.VisualDirty = true;
     }
 
+    // Normal danmaku and live event bands are laid out inside _areaHeight. Paid cards
+    // and transient notices can extend below it. Keep layout in full player coordinates.
+    internal int OverlaySurfaceHeight
+    {
+        get { return (_superChats.Count > 0 && _config.ScMode != "off") || (TransientText != null && Now < TransientUntil)
+            ? _height : Math.Min(_height, _areaHeight + 2); }
+    }
+    internal bool HasOverlayContent
+    {
+        get { return _flying.Count > 0 || (_superChats.Count > 0 && _config.ScMode != "off")
+            || _events.Count > 0 || _liveStatus.Count > 0 || (TransientText != null && Now < TransientUntil); }
+    }
     public int ActiveCount { get { return _flying.Count; } }
     public void Dispose()
     {

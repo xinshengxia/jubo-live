@@ -59,6 +59,8 @@ internal static partial class LiveHub
         public DateTime PlayerStartedUtc;
         public RoomStateKind LiveState = RoomStateKind.Unknown;
         public bool Polling;
+        public long PotStatusAt;
+        public string PotStatus;
         public DateTime LastPoll;
         public bool Ended;
     }

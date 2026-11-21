@@ -115,6 +115,7 @@ internal static partial class LiveHub
             line.Append(" room=").Append(session.Target.Room);
             line.Append(" player=").Append(session.Player == "potplayer" ? "potplayer" : "mpv");
             line.Append(" sync=").Append(SafeLogField(PlaybackSyncSummary(session.Player, session.Target)));
+            line.Append(" 播放器采样=").Append(PlayerMetricsSummary(session, true));
             line.Append(" relay=");
             if (diag.Count == 0) line.Append("none");
             else
@@ -134,7 +135,7 @@ internal static partial class LiveHub
                 message = "音画异常标记写入失败：本地日志不可写。";
                 return false;
             }
-            message = "已记录音画异常标记（时间、会话、同步基线与中继计数）。";
+            message = "已记录音画异常标记（时间、会话、播放器采样与中继计数）。";
             return true;
         }
         catch (Exception ex)
@@ -173,7 +174,12 @@ internal static partial class LiveHub
             }
             string sync = PlaybackSyncSummary(session.Player, session.Target);
             string relay = RelayDiagSummary(ReadRelayDiagText(session.Target));
-            workbenchSessionSync.Text = "同步基线：" + sync + "\r\n中继：" + relay;
+            string text = PlayerMetricsSummary(session) + "\r\n同步基线：" + sync + "\r\n中继：" + relay;
+            if (workbenchSessionSync.Text != text)
+            {
+                workbenchSessionSync.Text = text;
+                if (workbenchReady && workbenchPage == "sessions") LayoutWorkbenchSessions();
+            }
         }
 
         private void MarkSelectedAvSyncIssue()

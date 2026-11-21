@@ -797,13 +797,19 @@ internal sealed class DanmakuOverlayForm : Form
 
         int width = rect.Right - rect.Left;
         int height = rect.Bottom - rect.Top;
-        EnsureCanvas(width, height);
         _renderer.SetDisplayDpi(DpiForm.WindowDpi(this));
         _renderer.Resize(width, height);
-
-        _canvasGraphics.Clear(Color.Transparent);
-        _renderer.Draw(_canvasGraphics);
-        Blit(rect);
+        int surfaceHeight = ShotPath == null ? _renderer.OverlaySurfaceHeight : height;
+        bool blank = !_renderer.HasOverlayContent;
+        bool needsBlit = !blank || !_submittedBlank || _canvas == null || _canvas.Width != width
+            || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top;
+        if (needsBlit)
+        {
+            EnsureCanvas(width, surfaceHeight);
+            _canvasGraphics.Clear(Color.Transparent);
+            _renderer.Draw(_canvasGraphics);
+            _submittedBlank = Blit(rect) && blank;
+        }
         EnsureZOrder();
 
         if (!_loggedFirstBlit)
@@ -867,6 +873,7 @@ internal sealed class DanmakuOverlayForm : Form
     }
 
     private bool _loggedFirstBlit;
+    private bool _submittedBlank;
     private DateTime _lastTopmostAt = DateTime.MinValue;
     private bool _wasTopmost;
 
@@ -944,7 +951,7 @@ internal sealed class DanmakuOverlayForm : Form
         return config.SolidText ? 255 : (int)Math.Round(255.0 * config.OpacityPercent / 100.0);
     }
 
-    private void Blit(RECT rect)
+    private bool Blit(RECT rect)
     {
         int alpha = LayerAlpha(_config);
         if (alpha < 1) alpha = 1;
@@ -955,8 +962,9 @@ internal sealed class DanmakuOverlayForm : Form
         POINT dst = new POINT { x = rect.Left, y = rect.Top };
         POINT src = new POINT();
         BLENDFUNCTION blend = new BLENDFUNCTION { SourceAlpha = (byte)alpha, AlphaFormat = 1 };
-        if (UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, _canvasDc, ref src, 0, ref blend, UlwAlpha))
-            _lastRect = rect;
+        if (!UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, _canvasDc, ref src, 0, ref blend, UlwAlpha)) return false;
+        _lastRect = rect;
+        return true;
     }
 
     // ------------------------------------------------------------------ 跟随目标窗口

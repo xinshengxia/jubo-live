@@ -401,7 +401,7 @@ internal static partial class LiveHub
             stopSession.Name = "workbenchStopSession"; stopSession.Text = "停止此会话";
             resyncSession.Name = "workbenchResyncSession"; resyncSession.Text = "重新同步";
             avSyncMark.Name = "workbenchAvSyncMark"; avSyncMark.Text = "标记音画异常";
-            enhanceTip.SetToolTip(avSyncMark, "把时间、选中会话与当前中继时间线计数写入本地诊断日志；不记录直播地址或 Cookie。");
+            enhanceTip.SetToolTip(avSyncMark, "记录选中会话的最新播放器采样和中继计数。");
             foreach (Button action in new[] { reopen, resyncSession, stopSession, avSyncMark })
             {
                 action.AutoSize = false;
@@ -1106,7 +1106,7 @@ internal static partial class LiveHub
             if (workbenchSessionSync != null)
             {
                 // 两行摘要（同步基线 / 中继计数）；窄窗口允许折成三行，列表仍由页面滚动兜底。
-                int syncHeight = Math.Max(Px(36), Math.Min(Px(84), TextRenderer.MeasureText(workbenchSessionSync.Text,
+                int syncHeight = Math.Max(Px(36), Math.Min(Px(144), TextRenderer.MeasureText(workbenchSessionSync.Text,
                     workbenchSessionSync.Font, new Size(Math.Max(Px(100), width), int.MaxValue),
                     TextFormatFlags.WordBreak).Height + Px(2)));
                 workbenchSessionSync.SetBounds(0, y, width, syncHeight);

@@ -418,6 +418,8 @@ internal static partial class LiveHub
             args += " \"" + RelayUrl(target, RelayPortToken) + "\"";
             plan.Arguments = args;
         }
+        string metricsScript = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "assets", "playback", "session-metrics.lua");
+        plan.Arguments = QuoteWindowsArg("--script=" + metricsScript.Replace('\\', '/')) + " " + plan.Arguments;
         AddMpvMediaTitle(plan, mediaTitle, allowSideEffects);
         return plan;
     }
