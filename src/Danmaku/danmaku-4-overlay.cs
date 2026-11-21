@@ -492,10 +492,7 @@ internal sealed class DanmakuOverlayForm : Form
         {
             // 只有 SC 卡片那几块矩形吃鼠标；其余一律 HTTRANSPARENT 放行给下面的播放器。
             // 这就是「覆盖层不再整窗穿透、但也不挡播放器操作」的实现方式。
-            int packed = m.LParam.ToInt32();
-            POINT point = new POINT();
-            point.x = (short)(packed & 0xFFFF);
-            point.y = (short)((packed >> 16) & 0xFFFF);
+            POINT point = MessagePoint(m.LParam);
             ScreenToClient(Handle, ref point);
             // 放行判据 = **能点 或 需要滚**。以前只看 ScClickable，
             // 于是关掉点击后滚轮也一起失效了（用户实测反馈）—— 两件事该分开：
@@ -534,17 +531,13 @@ internal sealed class DanmakuOverlayForm : Form
             // 滚动条：按下就开始拖（命中轨道会先把滑块跳过去）。吃掉了就不再当点击处理。
             // ⚠️ 2026-09-28 新增：之前滚动条只是画出来的装饰、不参与命中，
             //    用户只能靠滚轮；现在可以按住拖动（用户要求「有个滚动条，我可以控制滚动看」）。
-            POINT downPoint;
-            if (GetCursorPos(out downPoint))
+            POINT downPoint = MessagePoint(m.LParam);
+            if ((_config.ScClickable || _renderer.SuperChatScrollable)
+                && _renderer.ScBarMouseDown(downPoint.x, downPoint.y))
             {
-                ScreenToClient(Handle, ref downPoint);
-                if ((_config.ScClickable || _renderer.SuperChatScrollable)
-                    && _renderer.ScBarMouseDown(downPoint.x, downPoint.y))
-                {
-                    _scBarDragged = true;
-                    Capture = true;        // 拖出窗口范围也能继续拖
-                    return;
-                }
+                _scBarDragged = true;
+                Capture = true;
+                return;
             }
             _scBarDragged = false;
         }
@@ -552,13 +545,8 @@ internal sealed class DanmakuOverlayForm : Form
         {
             if (_renderer.ScBarDragging)
             {
-                POINT movePoint;
-                if (GetCursorPos(out movePoint))
-                {
-                    ScreenToClient(Handle, ref movePoint);
-                    _renderer.ScBarDragTo(movePoint.y);
-                    return;
-                }
+                _renderer.ScBarDragTo(MessagePoint(m.LParam).y);
+                return;
             }
         }
         else if (m.Msg == WmLButtonUp)
@@ -568,7 +556,7 @@ internal sealed class DanmakuOverlayForm : Form
             if (Capture) Capture = false;
             _scBarDragged = false;
             // 拖过滚动条就不要当点击 —— 否则松开手会顺手把 SC 关掉或切换形态
-            if (!wasBar && _config.ScClickable) HandleScClick();
+            if (!wasBar && _config.ScClickable) HandleScClick(MessagePoint(m.LParam));
             return;
         }
         else if (m.Msg == WmSetCursor)
@@ -623,11 +611,14 @@ internal sealed class DanmakuOverlayForm : Form
         _renderer.ShowTransient("已插入测试 SC（含 emoji，2 分钟后消失）");
     }
 
-    private void HandleScClick()
+    private static POINT MessagePoint(IntPtr lParam)
     {
-        POINT point;
-        if (!GetCursorPos(out point)) return;
-        ScreenToClient(Handle, ref point);
+        long packed = lParam.ToInt64();
+        return new POINT { x = (short)(packed & 0xffff), y = (short)((packed >> 16) & 0xffff) };
+    }
+
+    private void HandleScClick(POINT point)
+    {
         DanmakuRenderer.ScHit hit = _renderer.HitTestSc(point.x, point.y);
         if (hit == null) return;
         if (hit.DismissId != 0)

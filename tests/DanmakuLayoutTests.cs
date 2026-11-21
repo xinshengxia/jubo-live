@@ -97,6 +97,7 @@ internal static partial class HardeningTests
         RegisterDanmakuRoadmapCases();
         TestRunner.Add("弹幕-渲染", "SC 四角局部遮挡与固定弹幕避让", TestDanmakuScPlacement);
         TestRunner.Add("弹幕-渲染", "顶部四分之一区域与 SC 持续共存", TestDanmakuScNarrowArea);
+        TestRunner.Add("弹幕-渲染", "SC 卡片正文与关闭按钮各自命中", TestScCardClicks);
         TestRunner.Add("弹幕-渲染", "SC 部分遮挡保留全部滚动轨道和密集准入", TestDanmakuScPartialDensity);
         TestRunner.Add("弹幕-渲染", "窗口缩放与热设置保持穿屏进度", TestDanmakuResizePlacement);
         TestRunner.Add("弹幕-渲染", "表情异步变宽、比例与低行距", TestDanmakuImagePlacement);
@@ -164,6 +165,36 @@ internal static partial class HardeningTests
                 DanmakuScene.Set(sc, "ExpiresAt", DateTime.UtcNow.AddSeconds(-1));
             scene.Step(0f); scene.Draw();
             Check(((RectangleF)DanmakuScene.Get(scene.Renderer, "_scReserved")).IsEmpty, "SC 到期后释放占位");
+        }
+    }
+
+    private static void TestScCardClicks()
+    {
+        using (DanmakuScene scene = new DanmakuScene(1280, 720))
+        {
+            scene.Sc(41); scene.Sc(42);
+            float fullHeight = 0f;
+            foreach (string mode in new string[] { "full", "compact" })
+            {
+                DanmakuScene.Set(scene.Config, "ScMode", mode);
+                scene.Configure(); scene.Draw();
+                int buttons = 0, bodies = 0;
+                foreach (object area in (IList)DanmakuScene.Get(scene.Renderer, "_scHits"))
+                {
+                    RectangleF rect = (RectangleF)DanmakuScene.Get(area, "Rect");
+                    long id = (long)DanmakuScene.Get(area, "DismissId");
+                    object hit = scene.Call("HitTestSc", (int)(rect.X + rect.Width / 2), (int)(rect.Y + rect.Height / 2));
+                    Check(hit != null && (long)DanmakuScene.Get(hit, "DismissId") == id, "按绘制位置命中当前卡片的动作");
+                    if (id == 0)
+                    {
+                        bodies++;
+                        if (mode == "full") fullHeight = rect.Height;
+                        else Check(rect.Height < fullHeight, "折叠后的正文点击区同步缩小");
+                    }
+                    else buttons++;
+                }
+                Check(buttons == 2 && bodies == 2, "两条 SC 各有正文与关闭按钮");
+            }
         }
     }
 

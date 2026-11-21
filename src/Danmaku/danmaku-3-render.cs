@@ -1714,8 +1714,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
         // 内容比可视区矮时：顶部角从上往下排；底部角**贴着下边**（新卡片到达会把整组往上顶）
         float contentTop = ScContentTop(bottom, viewTop, viewHeight, total);
         float cursor = contentTop - _scScroll;
-        float stackTop = Math.Max(viewTop, cursor);
-        float stackBottom = viewTop;
+        RectangleF viewport = new RectangleF(x, viewTop, width, viewHeight);
         for (int k = 0; k < count; k++)
         {
             float h = heights[k];
@@ -1724,24 +1723,24 @@ internal sealed partial class DanmakuRenderer : IDisposable
                 SuperChatItem item = _superChats[count - 1 - k];
                 if (_config.ScMode == "compact") DrawScCompact(g, item, x, cursor, width, scale);
                 else DrawScFull(g, item, x, cursor, width, scale, measure);
+                if (_config.ScClickable || _scScrollable)
+                    AddScHit(RectangleF.Intersect(new RectangleF(x, cursor, width, h), viewport), 0);
                 if (_config.ScClickable)
                 {
                     float closeSize = 16f * scale;
                     float closeX = x + width - closeSize - 6f * scale;
                     float closeY = cursor + 6f * scale;
                     DrawCloseButton(g, closeX, closeY, closeSize);
-                    AddScHit(new RectangleF(closeX - 3f * scale, closeY - 3f * scale,
-                        closeSize + 6f * scale, closeSize + 6f * scale), item.Id);
+                    // HitTestSc walks backwards, so the close button wins over its card.
+                    RectangleF close = new RectangleF(closeX - 3f * scale, closeY - 3f * scale,
+                        closeSize + 6f * scale, closeSize + 6f * scale);
+                    AddScHit(RectangleF.Intersect(close, viewport), item.Id);
                 }
-                if (cursor + h > stackBottom) stackBottom = cursor + h;
             }
             cursor += h + gap;
         }
         g.Clip = saved;
         saved.Dispose();
-
-        if (_config.ScClickable && stackBottom > stackTop)
-            AddScHit(new RectangleF(x, stackTop, width, stackBottom - stackTop), 0);
 
         // 滚动条：超出可视区时画一条**可以拖的**滚动条 —— 不然用户根本不知道下面还有，
         // 而且只能靠滚轮（用户明确要求「有个滚动条，我可以控制滚动看」）。
