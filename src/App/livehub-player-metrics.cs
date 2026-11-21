@@ -14,17 +14,37 @@ internal static partial class LiveHub
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessageTimeoutW(IntPtr hwnd, uint msg, UIntPtr command, IntPtr arg, uint flags, uint timeout, out UIntPtr result);
 
+    private delegate bool PotWindowVisitor(IntPtr window, IntPtr context);
+    [DllImport("user32.dll", EntryPoint = "EnumWindows")]
+    private static extern bool EnumPotWindows(PotWindowVisitor visit, IntPtr context);
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
+    private static extern uint PotWindowOwner(IntPtr window, out uint processId);
+
+    private static IntPtr FindPotPlayerWindow(int pid)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumPotWindows(delegate(IntPtr window, IntPtr context)
+        {
+            uint owner;
+            PotWindowOwner(window, out owner);
+            if (owner != (uint)pid) return true;
+            var name = new StringBuilder(64);
+            if (GetClassNameW(window, name, name.Capacity) == 0) return true;
+            if (name.ToString() != "PotPlayer64" && name.ToString() != "PotPlayer") return true;
+            found = window;
+            return false;
+        }, IntPtr.Zero);
+        return found;
+    }
+
     private static string PotPlaybackStatus(PlaybackSession session)
     {
         // Query the owned process only, with a bounded wait if its UI is busy.
         try
         {
             if (session.Process == null || session.Process.HasExited) return "状态不可用";
-            session.Process.Refresh();
-            IntPtr window = session.Process.MainWindowHandle;
-            var name = new StringBuilder(64);
-            if (window == IntPtr.Zero || GetClassNameW(window, name, name.Capacity) == 0
-                || (name.ToString() != "PotPlayer64" && name.ToString() != "PotPlayer")) return "状态不可用";
+            IntPtr window = FindPotPlayerWindow(session.PlayerProcessId);
+            if (window == IntPtr.Zero) return "状态不可用";
             UIntPtr status, pos;
             if (SendMessageTimeoutW(window, 0x400, (UIntPtr)0x5006, IntPtr.Zero, 2, 25, out status) == IntPtr.Zero)
                 return "状态不可用";
