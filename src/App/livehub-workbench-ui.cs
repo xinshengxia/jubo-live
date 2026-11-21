@@ -837,9 +837,9 @@ internal static partial class LiveHub
                 int pad = Px(width < Px(900) ? 20 : 24);
                 workbenchChrome.SetBounds(0, 0, width, chromeHeight);
                 int shellHeight = Math.Max(Px(160), height - chromeHeight);
-                int footerHeight = Px(56);
-                workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight - footerHeight);
-                workbenchSidebarFooter.SetBounds(0, height - footerHeight, sidebar, footerHeight);
+                int sidebarFooterHeight = Px(56);
+                workbenchSidebar.SetBounds(0, chromeHeight, sidebar, shellHeight - sidebarFooterHeight);
+                workbenchSidebarFooter.SetBounds(0, height - sidebarFooterHeight, sidebar, sidebarFooterHeight);
                 getUpdate.SetBounds(Px(8), Px(8), sidebar - Px(16), Px(36));
                 workbenchContent.SetBounds(sidebar, chromeHeight, Math.Max(Px(300), width - sidebar), shellHeight);
                 int dot = Px(30), dotGap = Px(4);
