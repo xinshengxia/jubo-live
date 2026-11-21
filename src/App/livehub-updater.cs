@@ -69,7 +69,8 @@ internal static partial class LiveHub
                     : !Path.GetFileName(Application.ExecutablePath).Equals("看直播-mpv.exe", StringComparison.OrdinalIgnoreCase)
                         && File.Exists(Path.Combine(root, "bin", "mpv", "mpv.exe"));
                 if (full) packageType = "full";
-            } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            } catch (IOException ex) { Diagnostics.Report("读取安装包类型", ex); }
+              catch (UnauthorizedAccessException ex) { Diagnostics.Report("读取安装包类型", ex); }
             var help = WorkbenchLabel("offlineInstructions",
                 "从 C# 版同一次发布的附件下载两个文件，也可从另一台电脑拷来。\r\n"
                 + "先选以 win-x64-" + packageType + ".zip 结尾的安装包（无需解压），再选签名清单 channel.json。", true);
@@ -85,6 +86,7 @@ internal static partial class LiveHub
             });
             page.Controls.AddRange(new Control[] { heading, updateResult, auto, checkAgain, installUpdate, localUpdate, cancelUpdate, offlineTitle, help, releases });
             page.Layout += delegate {
+                if (!page.Visible) return;
                 int x = Px(18), width = Math.Max(Px(160), page.ClientSize.Width - x * 2);
                 heading.SetBounds(x, Px(16), width, Px(32));
                 updateResult.SetBounds(x, Px(56), width, Px(66));
