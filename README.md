@@ -22,6 +22,8 @@ Windows 绿色版四平台直播启动器：把 **B站 / 虎牙 / 斗鱼 / 抖�
 
 每个压缩包都附 `.sha256` 校验文件。系统要求：Windows 10/11 64 位。
 
+单独安装 mpv 时，推荐 zhongfly 的 2026-11-24 Windows x64 构建（`35efcf53d5`）。解压后，在「播放器与画质」中选择 `mpv.exe`。[下载普通 x64 压缩包](https://github.com/zhongfly/mpv-winbuild/releases/download/2026-11-24-35efcf53d5/mpv-x86_64-20261124-git-35efcf53d5.7z) · [查看上游版本和校验值](https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-24-35efcf53d5)
+
 ## 快速上手
 
 1. 解压到任意目录（建议放在你自己有写权限的位置，例如新建的 `jubo-live` 文件夹）。
