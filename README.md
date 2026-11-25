@@ -22,7 +22,16 @@ Windows 绿色版四平台直播启动器：把 **B站 / 虎牙 / 斗鱼 / 抖�
 
 每个压缩包都附 `.sha256` 校验文件。系统要求：Windows 10/11 64 位。
 
-单独安装 mpv 时，推荐 zhongfly 的 2026-11-24 Windows x64 构建（`35efcf53d5`）。解压后，在「播放器与画质」中选择 `mpv.exe`。[下载普通 x64 压缩包](https://github.com/zhongfly/mpv-winbuild/releases/download/2026-11-24-35efcf53d5/mpv-x86_64-20261124-git-35efcf53d5.7z) · [查看上游版本和校验值](https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-24-35efcf53d5)
+<a id="recommended-mpv"></a>
+
+### 推荐的 mpv
+
+单独安装 mpv 时，推荐 **shinchiro 最新的普通 Windows x64 构建**。登录 GitHub，打开作者的 `mpv clang` 工作流，按时间查看最近的运行。选择其中 `Building mpv (x86_64)` 成功、且 `Artifacts` 里仍能下载 `mpv-x86_64` 的最新一次。其他架构的结果独立显示。解开下载的 ZIP，再解开其中的 `.7z`，然后在「播放器与画质」选择 `mpv.exe`。[查看作者的最新构建](https://github.com/shinchiro/mpv-winbuild-cmake/actions/workflows/mpv_clang.yml)
+
+**已核验的构建（2026-11-25）** 来自 GitHub Actions。本次普通 x64 构建成功，i686 和 aarch64 构建失败，上游跳过了 Release 发布步骤。[下载普通 x64 产物（需登录 GitHub）](https://github.com/shinchiro/mpv-winbuild-cmake/actions/runs/45514553107/artifacts/14979868817) · [查看构建记录](https://github.com/shinchiro/mpv-winbuild-cmake/actions/runs/45514553107)
+
+- 外层 ZIP 的 SHA-256 为 `091e89a2b4cc34c3ec9eca121b5a5b2d717e0cd1df3af7919673a7cdc7769f1c`。
+- ZIP 内的播放器压缩包为 `mpv-x86_64-20261125-git-d32c910be6.7z`。此 Actions 产物于 2027-02-23 00:00 UTC 到期。到期后可从上面的工作流获取最新可下载的普通 x64 构建。
 
 ## 快速上手
 

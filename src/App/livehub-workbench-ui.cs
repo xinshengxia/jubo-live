@@ -471,10 +471,10 @@ internal static partial class LiveHub
             WorkbenchFont(pickPlayer, 12, FontStyle.Regular);
             WorkbenchFont(playerBox, 12, FontStyle.Regular);
             workbenchPlayerCard.Controls.Add(workbenchPlayerHelp);
-            getMpv = WorkbenchButton("workbenchGetMpv", "下载推荐 mpv", delegate
+            getMpv = WorkbenchButton("workbenchGetMpv", "获取推荐 mpv", delegate
             {
-                try { System.Diagnostics.Process.Start("https://github.com/zhongfly/mpv-winbuild/releases/download/2026-11-24-35efcf53d5/mpv-x86_64-20261124-git-35efcf53d5.7z"); }
-                catch (Exception ex) { status.Text = "打开下载链接失败：" + ex.Message; }
+                try { System.Diagnostics.Process.Start("https://github.com/xinshengxia/jubo-live#recommended-mpv"); }
+                catch (Exception ex) { status.Text = "打开 mpv 推荐页失败：" + ex.Message; }
             });
             getYtdlp = WorkbenchButton("workbenchGetYtdlp", "下载备用 yt-dlp", FetchYtdlp);
             workbenchPlayerCard.Controls.AddRange(new Control[] { getMpv, getYtdlp });
