@@ -98,11 +98,43 @@ internal static partial class HardeningTests
         TestRunner.Add("弹幕-渲染", "SC 四角局部遮挡与固定弹幕避让", TestDanmakuScPlacement);
         TestRunner.Add("弹幕-渲染", "顶部四分之一区域与 SC 持续共存", TestDanmakuScNarrowArea);
         TestRunner.Add("弹幕-渲染", "SC 卡片正文与关闭按钮各自命中", TestScCardClicks);
+        TestRunner.Add("弹幕-渲染", "局部提交边界覆盖滚动文字和 SC 实际像素", TestPaintBounds);
         TestRunner.Add("弹幕-渲染", "SC 部分遮挡保留全部滚动轨道和密集准入", TestDanmakuScPartialDensity);
         TestRunner.Add("弹幕-渲染", "窗口缩放与热设置保持穿屏进度", TestDanmakuResizePlacement);
         TestRunner.Add("弹幕-渲染", "表情异步变宽、比例与低行距", TestDanmakuImagePlacement);
         TestRunner.Add("弹幕-渲染", "重复计数合并、寿命与满屏准入", TestDanmakuRepeatPlacement);
         TestRunner.Add("弹幕-渲染", "合成场景离屏渲染预览", TestDanmakuLayoutPreview);
+    }
+
+    private static void TestPaintBounds()
+    {
+        using (DanmakuScene scene = new DanmakuScene(1280, 720))
+        {
+            scene.Sc(1);
+            scene.Add("移动的测试文字", 1);
+            foreach (string mode in new string[] { "full", "compact", "badge" })
+            {
+                DanmakuScene.Set(scene.Config, "ScMode", mode);
+                scene.Configure(); scene.Step(0.8f); scene.Draw();
+                Rectangle bounds = (Rectangle)scene.RendererType.GetProperty("PaintBounds",
+                    BindingFlags.Instance | BindingFlags.NonPublic).GetValue(scene.Renderer, null);
+                Rectangle surface = new Rectangle(0, 0, scene.Width, scene.Height);
+                BitmapData pixels = scene.Canvas.LockBits(surface, ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+                bool content = false, outside = false;
+                try
+                {
+                    byte[] row = new byte[scene.Width * 4];
+                    for (int y = 0; y < scene.Height && !outside; y++)
+                    {
+                        System.Runtime.InteropServices.Marshal.Copy(IntPtr.Add(pixels.Scan0, y * pixels.Stride), row, 0, row.Length);
+                        for (int x = 0; x < scene.Width; x++)
+                            if (row[4 * x + 3] != 0) { content = true; if (!bounds.Contains(x, y)) { outside = true; break; } }
+                    }
+                }
+                finally { scene.Canvas.UnlockBits(pixels); }
+                Check(content && !outside && bounds != surface, "实际非透明像素在局部边界内：" + mode);
+            }
+        }
     }
 
     private static void TestDanmakuPlacement()

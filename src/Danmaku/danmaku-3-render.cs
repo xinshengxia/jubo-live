@@ -1423,8 +1423,21 @@ internal sealed partial class DanmakuRenderer : IDisposable
     }
 
     // ---------------------------------------------------------------- 绘制
+    internal Rectangle PaintBounds { get; private set; }
+
+    private void IncludePaint(float x, float y, float width, float height)
+    {
+        // Rasterization rounds fractional coordinates, including scaled antialiased edges.
+        Rectangle bounds = Rectangle.FromLTRB(Math.Max(0, (int)Math.Floor(x) - 3),
+            Math.Max(0, (int)Math.Floor(y) - 3), Math.Min(_width, (int)Math.Ceiling(x + width) + 3),
+            Math.Min(_height, (int)Math.Ceiling(y + height) + 3));
+        if (bounds.Width > 0 && bounds.Height > 0)
+            PaintBounds = PaintBounds.IsEmpty ? bounds : Rectangle.Union(PaintBounds, bounds);
+    }
+
     public void Draw(Graphics g)
     {
+        PaintBounds = Rectangle.Empty;
         EnsureLayout();
         // 每条变更先尝试放大，空间不足则逐档回退；其余弹幕保留自己的位置。
         for (int i = 0; i < _flying.Count; i++)
@@ -1446,6 +1459,8 @@ internal sealed partial class DanmakuRenderer : IDisposable
         if (_config.ScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
         if (_config.ScMode != "off") DrawSuperChats(g);
         DrawLiveEvents(g);
+        if (!_eventReserved.IsEmpty)
+            IncludePaint(_eventReserved.X, _eventReserved.Y, _eventReserved.Width, _eventReserved.Height);
         DrawTransient(g);
     }
 
@@ -1538,6 +1553,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
         {
             SizeF size = g.MeasureString(TransientText, font);
             float x = (_width - size.Width) / 2f;
+            IncludePaint(x - 12, 8, size.Width + 24, size.Height + 12);
             g.FillRectangle(back, x - 12, 8, size.Width + 24, size.Height + 10);
             g.DrawString(TransientText, font, brush, x, 13);
         }
@@ -1721,6 +1737,8 @@ internal sealed partial class DanmakuRenderer : IDisposable
             if (cursor + h >= viewTop && cursor <= viewTop + viewHeight)   // 只画看得见的
             {
                 SuperChatItem item = _superChats[count - 1 - k];
+                float pad = 4f + 2f * scale;
+                IncludePaint(x - pad, cursor - pad, width + 2 * pad, h + 2 * pad);
                 if (_config.ScMode == "compact") DrawScCompact(g, item, x, cursor, width, scale);
                 else DrawScFull(g, item, x, cursor, width, scale, measure);
                 if (_config.ScClickable || _scScrollable)
@@ -1758,6 +1776,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
             float barW = 8f * scale;
             float barX = left ? x - (barW + 2f * scale) : x + width + 2f * scale;
             _scBarTrack = new RectangleF(barX, trackY, barW, trackH);
+            IncludePaint(barX, trackY, barW, trackH);
             _scBarThumb = new RectangleF(barX, thumbY, barW, thumbH);
             using (SolidBrush track = new SolidBrush(Color.FromArgb(70, 255, 255, 255)))
                 g.FillRectangle(track, _scBarTrack);
@@ -1879,6 +1898,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
         {
             SizeF size = g.MeasureString(text, font);
             float w = size.Width + 20 * scale, h = size.Height + 10 * scale;
+            IncludePaint(x + width - w, y, w, h);
             using (GraphicsPath path = Rounded(new RectangleF(x + width - w, y, w, h), h / 2f))
             using (SolidBrush back = new SolidBrush(newest.BackgroundBottomColor)) g.FillPath(back, path);
             g.DrawString(text, font, brush, x + width - w + 10 * scale, y + 5 * scale);

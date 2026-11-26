@@ -88,6 +88,24 @@ internal sealed class DanmakuOverlayForm : Form
     [DllImport("user32.dll", SetLastError = true)] private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
         ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
     [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct LayerUpdate
+    {
+        public uint Size;
+        public IntPtr DestinationDc;
+        public POINT* Destination;
+        public SIZE* Dimensions;
+        public IntPtr SourceDc;
+        public POINT* Source;
+        public uint ColorKey;
+        public BLENDFUNCTION* Blend;
+        public uint Flags;
+        public RECT* Dirty;
+    }
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UpdateLayeredWindowIndirect(IntPtr window, ref LayerUpdate update);
+    [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr memset(IntPtr address, int value, UIntPtr bytes);
+    [StructLayout(LayoutKind.Sequential)]
     private struct BitmapInfoHeader
     {
         public uint Size;
@@ -249,6 +267,7 @@ internal sealed class DanmakuOverlayForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        _partialUnavailable = false;
         UpdateHotkeyOwnership();
     }
 
@@ -791,7 +810,8 @@ internal sealed class DanmakuOverlayForm : Form
 
         int width = rect.Right - rect.Left;
         int height = rect.Bottom - rect.Top;
-        _renderer.SetDisplayDpi(DpiForm.WindowDpi(this));
+        int dpi = DpiForm.WindowDpi(this);
+        _renderer.SetDisplayDpi(dpi);
         _renderer.Resize(width, height);
         int surfaceHeight = ShotPath == null ? _renderer.OverlaySurfaceHeight : height;
         bool blank = !_renderer.HasOverlayContent;
@@ -799,10 +819,25 @@ internal sealed class DanmakuOverlayForm : Form
             || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top;
         if (needsBlit)
         {
+            bool full = !_overlayVisible || _presentFailed || _canvas == null || _canvas.Width != width
+                || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top
+                || _lastRect.Right != rect.Right || _lastRect.Bottom != rect.Bottom || _lastDpi != dpi
+                || _lastAlpha != LayerAlpha(_config) || _partialUnavailable;
             EnsureCanvas(width, surfaceHeight);
-            _canvasGraphics.Clear(Color.Transparent);
+            if (full) _canvasGraphics.Clear(Color.Transparent);
+            else if (!_painted.IsEmpty)
+            {
+                // Top-down PARGB DIB. The preceding successful Blit flushed GDI+.
+                // Every non-transparent pixel from the last draw is inside these rows.
+                int stride = checked(_canvas.Width * 4);
+                memset(IntPtr.Add(_canvasPixels, checked(_painted.Top * stride)), 0,
+                    (UIntPtr)(uint)checked(_painted.Height * stride));
+            }
             _renderer.Draw(_canvasGraphics);
-            if (!Blit(rect))
+            Rectangle next = Rectangle.Intersect(new Rectangle(0, 0, width, surfaceHeight), _renderer.PaintBounds);
+            if (next.Width <= 0 || next.Height <= 0) next = Rectangle.Empty;
+            Rectangle dirty = _painted.IsEmpty ? next : next.IsEmpty ? _painted : Rectangle.Union(_painted, next);
+            if (!Blit(rect, full, dirty))
             {
                 int error = Marshal.GetLastWin32Error();
                 if (!_presentFailed) DanmakuHost.Log("弹幕画面提交失败，等待重试。Win32=" + error
@@ -814,6 +849,9 @@ internal sealed class DanmakuOverlayForm : Form
             if (_presentFailed) DanmakuHost.Log("弹幕画面提交已恢复。");
             _presentFailed = false;
             _submittedBlank = blank;
+            _painted = next;
+            _lastAlpha = LayerAlpha(_config);
+            _lastDpi = dpi;
         }
         // Publish a correctly sized transparent frame before exposing the window again.
         if (!_overlayVisible) { ShowWindow(Handle, SwShowNoActivate); _overlayVisible = true; }
@@ -881,6 +919,11 @@ internal sealed class DanmakuOverlayForm : Form
 
     private bool _loggedFirstBlit;
     private bool _submittedBlank;
+    private IntPtr _canvasPixels;
+    private Rectangle _painted;
+    private int _lastAlpha;
+    private int _lastDpi;
+    private bool _partialUnavailable;
     private bool _presentFailed;
     private DateTime _lastTopmostAt = DateTime.MinValue;
     private bool _wasTopmost;
@@ -932,6 +975,7 @@ internal sealed class DanmakuOverlayForm : Form
             if (_canvasDc == IntPtr.Zero) throw new InvalidOperationException("无法创建弹幕画布 DC");
             _dib = CreateDIBSection(_canvasDc, ref header, 0, out pixels, IntPtr.Zero, 0);
             if (_dib == IntPtr.Zero || pixels == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            _canvasPixels = pixels;
             _previousBitmap = SelectObject(_canvasDc, _dib);
             if (_previousBitmap == IntPtr.Zero) throw new InvalidOperationException("无法选入弹幕画布");
             // GDI+ draws directly into the top-down premultiplied surface used by the layered window.
@@ -952,6 +996,8 @@ internal sealed class DanmakuOverlayForm : Form
         if (_canvasDc != IntPtr.Zero) DeleteDC(_canvasDc);
         if (_dib != IntPtr.Zero) DeleteObject(_dib);
         _previousBitmap = _canvasDc = _dib = IntPtr.Zero;
+        _canvasPixels = IntPtr.Zero;
+        _painted = Rectangle.Empty;
     }
 
     internal static int LayerAlpha(DanmakuConfig config)
@@ -959,7 +1005,7 @@ internal sealed class DanmakuOverlayForm : Form
         return config.SolidText ? 255 : (int)Math.Round(255.0 * config.OpacityPercent / 100.0);
     }
 
-    private bool Blit(RECT rect)
+    private unsafe bool Blit(RECT rect, bool full, Rectangle dirty)
     {
         int alpha = LayerAlpha(_config);
         if (alpha < 1) alpha = 1;
@@ -970,7 +1016,18 @@ internal sealed class DanmakuOverlayForm : Form
         POINT dst = new POINT { x = rect.Left, y = rect.Top };
         POINT src = new POINT();
         BLENDFUNCTION blend = new BLENDFUNCTION { SourceAlpha = (byte)alpha, AlphaFormat = 1 };
+        bool triedPartial = !full && (long)dirty.Width * dirty.Height < (long)size.cx * size.cy * 3 / 4;
+        if (triedPartial)
+        {
+            if (dirty.IsEmpty) return true;
+            RECT bounds = new RECT { Left = dirty.Left, Top = dirty.Top, Right = dirty.Right, Bottom = dirty.Bottom };
+            LayerUpdate update = new LayerUpdate { Size = (uint)sizeof(LayerUpdate), Destination = &dst,
+                Dimensions = &size, SourceDc = _canvasDc, Source = &src, Blend = &blend, Flags = UlwAlpha, Dirty = &bounds };
+            if (UpdateLayeredWindowIndirect(Handle, ref update)) return true;
+        }
         if (!UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, _canvasDc, ref src, 0, ref blend, UlwAlpha)) return false;
+        // Only turn off the optimization when this HWND accepts a full submission but rejects a partial one.
+        if (triedPartial) _partialUnavailable = true;
         _lastRect = rect;
         return true;
     }

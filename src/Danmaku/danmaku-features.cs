@@ -150,6 +150,7 @@ internal sealed partial class DanmakuRenderer
     private int _lastTextOpacity = -1;
     private void DrawTextBitmap(Graphics graphics, Bitmap bitmap, float x, float y, float width, float height)
     {
+        IncludePaint(x, y, width, height);
         int opacity = Math.Max(10, Math.Min(100, _config.TextOpacityPercent));
         if (opacity == 100)
         {
