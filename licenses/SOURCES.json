@@ -183,25 +183,25 @@
       "path": "licenses/mpv-Copyright.txt",
       "sha256": "BFE9EE4CCEABCB8ECBFADF208D04156F73D801E6A57369A5606BB8341E204A23",
       "upstreamRepository": "mpv-player/mpv",
-      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286",
+      "upstreamCommit": "d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce",
       "upstreamPath": "Copyright",
-      "url": "https://github.com/mpv-player/mpv/blob/a2cd83c56de859ced3fc8e6055e5878e50f45286/Copyright"
+      "url": "https://github.com/mpv-player/mpv/blob/d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce/Copyright"
     },
     {
       "path": "licenses/mpv-LICENSE.GPL.txt",
       "sha256": "EDAEF632CBB643E4E7A221717A6C441A4C1A7C918E6E4D56DEBC3D8739B233F6",
       "upstreamRepository": "mpv-player/mpv",
-      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286",
+      "upstreamCommit": "d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce",
       "upstreamPath": "LICENSE.GPL",
-      "url": "https://github.com/mpv-player/mpv/blob/a2cd83c56de859ced3fc8e6055e5878e50f45286/LICENSE.GPL"
+      "url": "https://github.com/mpv-player/mpv/blob/d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce/LICENSE.GPL"
     },
     {
       "path": "licenses/mpv-LICENSE.LGPL.txt",
       "sha256": "72B672113D642CBB8EF5DCC76938DB801983C56E50B1400AB930F1A64D6DC8D9",
       "upstreamRepository": "mpv-player/mpv",
-      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286",
+      "upstreamCommit": "d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce",
       "upstreamPath": "LICENSE.LGPL",
-      "url": "https://github.com/mpv-player/mpv/blob/a2cd83c56de859ced3fc8e6055e5878e50f45286/LICENSE.LGPL"
+      "url": "https://github.com/mpv-player/mpv/blob/d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce/LICENSE.LGPL"
     },
     {
       "path": "licenses/yt-dlp-LICENSE.txt",
@@ -264,6 +264,22 @@
       "archiveSha256": "4a355f3e89c83fabc730d33fb4e759dfec747806ed2287b61a90d1681b83e8d3",
       "executableSha256": "8c2e4d24eb961723cc5e2f1f4401982836e82c96e0e0a944c0576090fc48993f",
       "licenseEvidence": "Retained mpv Copyright/GPL/LGPL originals match the exact upstream commit byte-for-byte.",
+      "licensePaths": [
+        "licenses/mpv-Copyright.txt",
+        "licenses/mpv-LICENSE.GPL.txt",
+        "licenses/mpv-LICENSE.LGPL.txt"
+      ]
+    },
+    {
+      "component": "mpv",
+      "version": "v0.42.0-229-gd32c910be",
+      "distribution": "shinchiro x86_64",
+      "releaseUrl": "https://github.com/shinchiro/mpv-winbuild-cmake/actions/runs/45514553107/artifacts/14979868817",
+      "upstreamCommit": "d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce",
+      "archiveSha256": "6b2960130007817c9be5ddfd1d3f69ca476d3d391d5549d303b7c05668cb7fad",
+      "actionsZipSha256": "091e89a2b4cc34c3ec9eca121b5a5b2d717e0cd1df3af7919673a7cdc7769f1c",
+      "executableSha256": "43692afa32ca24956abc2ea9c38b01a24eb0181628bbd7bff10c63d93077c655",
+      "licenseEvidence": "The upstream Copyright, GPL and LGPL notices match the locked source commit byte for byte.",
       "licensePaths": [
         "licenses/mpv-Copyright.txt",
         "licenses/mpv-LICENSE.GPL.txt",

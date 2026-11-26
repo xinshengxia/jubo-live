@@ -85,7 +85,7 @@ internal sealed class DanmakuOverlayForm : Form
     private static readonly int[] DensitySteps = new int[] { 400, 150, 80, 40 };
     private static readonly string[] DensityLabels = new string[] { "不限", "正常", "较少", "最少" };
 
-    [DllImport("user32.dll")] private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
         ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
     [StructLayout(LayoutKind.Sequential)]
     private struct BitmapInfoHeader
@@ -256,6 +256,8 @@ internal sealed class DanmakuOverlayForm : Form
     {
         UnregisterHotkeys();
         _hotkeysActive = false;
+        _overlayVisible = false;
+        _submittedBlank = false;
         base.OnHandleDestroyed(e);
     }
 
@@ -780,11 +782,12 @@ internal sealed class DanmakuOverlayForm : Form
             HideOverlay();
             return;
         }
-        if (!_overlayVisible) { _overlayVisible = true; ShowWindow(Handle, SwShowNoActivate); }
-
         RECT rect;
-        if (!TryGetTargetRect(out rect)) return;
-        if (rect.Right - rect.Left < 16 || rect.Bottom - rect.Top < 16) return;
+        if (!TryGetTargetRect(out rect) || rect.Right - rect.Left < 16 || rect.Bottom - rect.Top < 16)
+        {
+            HideOverlay();
+            return;
+        }
 
         int width = rect.Right - rect.Left;
         int height = rect.Bottom - rect.Top;
@@ -792,15 +795,28 @@ internal sealed class DanmakuOverlayForm : Form
         _renderer.Resize(width, height);
         int surfaceHeight = ShotPath == null ? _renderer.OverlaySurfaceHeight : height;
         bool blank = !_renderer.HasOverlayContent;
-        bool needsBlit = !blank || !_submittedBlank || _canvas == null || _canvas.Width != width
+        bool needsBlit = !_overlayVisible || !blank || !_submittedBlank || _canvas == null || _canvas.Width != width
             || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top;
         if (needsBlit)
         {
             EnsureCanvas(width, surfaceHeight);
             _canvasGraphics.Clear(Color.Transparent);
             _renderer.Draw(_canvasGraphics);
-            _submittedBlank = Blit(rect) && blank;
+            if (!Blit(rect))
+            {
+                int error = Marshal.GetLastWin32Error();
+                if (!_presentFailed) DanmakuHost.Log("弹幕画面提交失败，等待重试。Win32=" + error
+                    + " 画布=" + width + "x" + surfaceHeight);
+                _presentFailed = true;
+                HideOverlay();
+                return;
+            }
+            if (_presentFailed) DanmakuHost.Log("弹幕画面提交已恢复。");
+            _presentFailed = false;
+            _submittedBlank = blank;
         }
+        // Publish a correctly sized transparent frame before exposing the window again.
+        if (!_overlayVisible) { ShowWindow(Handle, SwShowNoActivate); _overlayVisible = true; }
         EnsureZOrder();
 
         if (!_loggedFirstBlit)
@@ -865,6 +881,7 @@ internal sealed class DanmakuOverlayForm : Form
 
     private bool _loggedFirstBlit;
     private bool _submittedBlank;
+    private bool _presentFailed;
     private DateTime _lastTopmostAt = DateTime.MinValue;
     private bool _wasTopmost;
 

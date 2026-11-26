@@ -1,6 +1,6 @@
 {
   "schema": "livehub-deps-lock/1",
-  "generatedAt": "2026-10-21T14:52:08Z",
+  "generatedAt": "2026-11-26",
   "hashAlgorithm": "SHA-256；文件哈希与 components/bundles.files 里的 sha256 存小写十六进制，用于比较时统一转大写",
   "treeHashRule": "目录内每个文件写成一行 <小写相对路径（/ 分隔）>LF<大写文件 sha256>LF，行按小写相对路径字典序排列，对拼接后的 UTF-8 字节取 SHA-256（小写 hex）",
   "sourcePackages": [
@@ -20,14 +20,14 @@
       "name": "mpv",
       "target": "bin/mpv/mpv.exe",
       "source": "installed:bin/mpv/mpv.exe",
-      "version": "v0.41.0-1186-ga2cd83c56",
+      "version": "v0.42.0-229-gd32c910be",
       "versionEvidence": "mpv --version; ordinary x86_64 build; binary SHA-256 verified",
-      "sha256": "7a9d8c24975c681eca6010ceeae9806344f1d343381d753e03b73dfde8d04106",
-      "size": 121010688,
+      "sha256": "43692afa32ca24956abc2ea9c38b01a24eb0181628bbd7bff10c63d93077c655",
+      "size": 122802688,
       "license": "GPLv2+ / LGPLv2.1+（实际取决于构建；附 Copyright 与两份原文）",
       "note": "播放器主体；随包再分发需遵守 mpv 的 GPL/LGPL 条款",
       "distribution": "x86_64",
-      "upstreamCommit": "a2cd83c56de859ced3fc8e6055e5878e50f45286"
+      "upstreamCommit": "d32c910be63d1dd325c7b3efeaa09c3c4c8d51ce"
     },
     {
       "name": "potplayer",
@@ -165,18 +165,18 @@
       ],
       "note": "Windows x86_64 mpv runtime with byte-identical copies of the launcher playback scripts.",
       "fileCount": 4,
-      "bytes": 121033250,
-      "treeSha256": "525ca4774b30991e935683347fab789a4b69cb576c7961a5e87ab99dd86007f8",
+      "bytes": 122825250,
+      "treeSha256": "045d6df2591ecb9536bd26fa1818cd9fa2ab09da6e069695312ae77ec6deb35e",
       "files": [
         {
           "path": "mpv.com",
-          "sha256": "6a6b7bd49f04e7872cd35456ddef87c4bae7e94e0e4a9d4da2b30bcde6950918",
+          "sha256": "115b6909d5f53d10415145575ab245a23edf86f0d72ef6b7b7fff1300080808f",
           "size": 3584
         },
         {
           "path": "mpv.exe",
-          "sha256": "7a9d8c24975c681eca6010ceeae9806344f1d343381d753e03b73dfde8d04106",
-          "size": 121010688
+          "sha256": "43692afa32ca24956abc2ea9c38b01a24eb0181628bbd7bff10c63d93077c655",
+          "size": 122802688
         },
         {
           "path": "portable_config/scripts/live-resync.lua",
@@ -1252,7 +1252,7 @@
   ],
   "seed": [],
   "notes": [
-    "四个二进制组件及未变的分发文件保持既有锁定哈希；本次不替换播放器、取流器或扫码库。",
+    "full 包使用锁定的普通 x86_64 mpv，lite 包使用用户配置的播放器。",
     "项目标题脚本已更新为发布 commit 的版本；repo: 来源必须指向该 commit 的 staging。",
     "当前只有一个可用依赖目录，不伪造独立镜像校验。原目录只读，已安装绿色版的同步另行执行。",
     "对外发布不从已安装目录导入任何 data/runtime 种子，排除 PotPlayer Playlist 与 mpv shader cache；自用更新保留原数据。",
