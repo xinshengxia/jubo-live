@@ -120,6 +120,8 @@ internal sealed class DanmakuOverlayForm : Form
         uint colorUsage, out IntPtr pixels, IntPtr section, uint offset);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
         int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int GetClassNameW(IntPtr hwnd, StringBuilder name, int capacity);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
@@ -166,6 +168,11 @@ internal sealed class DanmakuOverlayForm : Form
     private readonly int _targetPid;
     private readonly string _title;
     private readonly DanmakuRenderer _renderer;
+    private DanmakuComposition _composition;
+    private IntPtr _compositionOwner;
+    private IntPtr _checkedCompositionTarget;
+    private bool _compositionFailed;
+    private bool _loggedComposition;
     private readonly object _gate = new object();
     private readonly Queue<object> _inbox = new Queue<object>();
     private const int MaxInbox = 2048;
@@ -273,6 +280,7 @@ internal sealed class DanmakuOverlayForm : Form
 
     protected override void OnHandleDestroyed(EventArgs e)
     {
+        CloseComposition();
         UnregisterHotkeys();
         _hotkeysActive = false;
         _overlayVisible = false;
@@ -520,7 +528,7 @@ internal sealed class DanmakuOverlayForm : Form
             // 关点击是怕误触，不代表不想用滚轮翻看攒下来的卡片。
             bool interactive = _config.ScClickable || _renderer.SuperChatScrollable;
             // 滚动条也算「我们的区域」—— 不然后面那 8px 会被放行给播放器，根本拖不到
-            bool overSc = interactive
+            bool overSc = CanUseScInput() && interactive
                 && (_renderer.HitTestSc(point.x, point.y) != null || _renderer.HitTestScBar(point.x, point.y));
             m.Result = new IntPtr(overSc ? HtClient : HtTransparent);
             return;
@@ -536,7 +544,7 @@ internal sealed class DanmakuOverlayForm : Form
             // （WM_NCHITTEST 已经把非 SC 区域放行给下面了，所以正常情况下滚轮本来就到不了这里；
             //   这一层判断是兜底，避免边缘情况误吃。）
             POINT wheelPoint;
-            if (GetCursorPos(out wheelPoint))
+            if (CanUseScInput() && GetCursorPos(out wheelPoint))
             {
                 ScreenToClient(Handle, ref wheelPoint);
                 if (_renderer.HitTestSc(wheelPoint.x, wheelPoint.y) != null)
@@ -553,7 +561,7 @@ internal sealed class DanmakuOverlayForm : Form
             // ⚠️ 2026-09-28 新增：之前滚动条只是画出来的装饰、不参与命中，
             //    用户只能靠滚轮；现在可以按住拖动（用户要求「有个滚动条，我可以控制滚动看」）。
             POINT downPoint = MessagePoint(m.LParam);
-            if ((_config.ScClickable || _renderer.SuperChatScrollable)
+            if (CanUseScInput() && (_config.ScClickable || _renderer.SuperChatScrollable)
                 && _renderer.ScBarMouseDown(downPoint.x, downPoint.y))
             {
                 _scBarDragged = true;
@@ -564,7 +572,7 @@ internal sealed class DanmakuOverlayForm : Form
         }
         else if (m.Msg == WmMouseMove)
         {
-            if (_renderer.ScBarDragging)
+            if (CanUseScInput() && _renderer.ScBarDragging)
             {
                 _renderer.ScBarDragTo(MessagePoint(m.LParam).y);
                 return;
@@ -577,13 +585,13 @@ internal sealed class DanmakuOverlayForm : Form
             if (Capture) Capture = false;
             _scBarDragged = false;
             // 拖过滚动条就不要当点击 —— 否则松开手会顺手把 SC 关掉或切换形态
-            if (!wasBar && _config.ScClickable) HandleScClick(MessagePoint(m.LParam));
+            if (!wasBar && CanUseScInput() && _config.ScClickable) HandleScClick(MessagePoint(m.LParam));
             return;
         }
         else if (m.Msg == WmSetCursor)
         {
             POINT point;
-            if (GetCursorPos(out point))
+            if (CanUseScInput() && GetCursorPos(out point))
             {
                 ScreenToClient(Handle, ref point);
                 if ((_config.ScClickable || _renderer.SuperChatScrollable)
@@ -738,7 +746,8 @@ internal sealed class DanmakuOverlayForm : Form
         float dt = (float)((stamp - _lastFrame) / (double)Stopwatch.Frequency);
         _lastFrame = stamp;
         // After suspend or a modal dialog, freshly drained messages should still enter at the edge.
-        if (dt > 0.5f) dt = ScrollingIntervalMs / 1000f;
+        bool clockReset = dt > 0.5f;
+        if (clockReset) dt = ScrollingIntervalMs / 1000f;
 
         UpdateHotkeyOwnership();
         DrainInbox();
@@ -746,7 +755,8 @@ internal sealed class DanmakuOverlayForm : Form
         // 即使窗口暂时消失也清理过期弹幕，恢复时不会灌出积攒的旧消息。
         ReleasePendingDanmaku(now);
         _renderer.Advance(now, dt);
-        int interval = _overlayVisible && _renderer.ActiveCount > 0 ? ScrollingIntervalMs : IdleIntervalMs;
+        int interval = _composition == null && _overlayVisible && _renderer.ActiveCount > 0
+            ? ScrollingIntervalMs : IdleIntervalMs;
         if (_tick.Interval != interval) _tick.Interval = interval;
 
         int tick = Environment.TickCount;
@@ -774,7 +784,12 @@ internal sealed class DanmakuOverlayForm : Form
         }
 
         // 目标窗口没了才算「跟丢」；「不在前台」只是暂时藏起来，不能当成退出信号。
-        if (_targetHwnd == IntPtr.Zero || !IsWindow(_targetHwnd)) _targetHwnd = FindTargetWindow(_targetPid);
+        if (!IsEligibleTargetWindow(_targetHwnd, _targetPid) || IsIconic(_targetHwnd))
+        {
+            // Invalidate the submitted geometry and SC input before switching targets.
+            HideOverlay();
+            _targetHwnd = FindTargetWindow(_targetPid);
+        }
         if (_targetHwnd == IntPtr.Zero)
         {
             HideOverlay();
@@ -813,17 +828,19 @@ internal sealed class DanmakuOverlayForm : Form
         int dpi = DpiForm.WindowDpi(this);
         _renderer.SetDisplayDpi(dpi);
         _renderer.Resize(width, height);
-        int surfaceHeight = ShotPath == null ? _renderer.OverlaySurfaceHeight : height;
-        bool blank = !_renderer.HasOverlayContent;
-        bool needsBlit = !_overlayVisible || !blank || !_submittedBlank || _canvas == null || _canvas.Width != width
+        bool composed = TryPresentComposition(rect, stamp, clockReset);
+        bool blank = composed ? !_renderer.HasFurniture : !_renderer.HasOverlayContent;
+        int surfaceWidth = composed && blank ? 1 : width;
+        int surfaceHeight = composed && blank ? 1 : ShotPath == null ? _renderer.OverlaySurfaceHeight : height;
+        bool needsBlit = !_overlayVisible || !blank || !_submittedBlank || _canvas == null || _canvas.Width != surfaceWidth
             || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top;
         if (needsBlit)
         {
-            bool full = !_overlayVisible || _presentFailed || _canvas == null || _canvas.Width != width
+            bool full = !_overlayVisible || _presentFailed || _canvas == null || _canvas.Width != surfaceWidth
                 || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top
                 || _lastRect.Right != rect.Right || _lastRect.Bottom != rect.Bottom || _lastDpi != dpi
                 || _lastAlpha != LayerAlpha(_config) || _partialUnavailable;
-            EnsureCanvas(width, surfaceHeight);
+            EnsureCanvas(surfaceWidth, surfaceHeight);
             if (full) _canvasGraphics.Clear(Color.Transparent);
             else if (!_painted.IsEmpty)
             {
@@ -833,8 +850,9 @@ internal sealed class DanmakuOverlayForm : Form
                 memset(IntPtr.Add(_canvasPixels, checked(_painted.Top * stride)), 0,
                     (UIntPtr)(uint)checked(_painted.Height * stride));
             }
-            _renderer.Draw(_canvasGraphics);
-            Rectangle next = Rectangle.Intersect(new Rectangle(0, 0, width, surfaceHeight), _renderer.PaintBounds);
+            if (composed) _renderer.DrawFurnitureOnly(_canvasGraphics);
+            else _renderer.Draw(_canvasGraphics);
+            Rectangle next = Rectangle.Intersect(new Rectangle(0, 0, surfaceWidth, surfaceHeight), _renderer.PaintBounds);
             if (next.Width <= 0 || next.Height <= 0) next = Rectangle.Empty;
             Rectangle dirty = _painted.IsEmpty ? next : next.IsEmpty ? _painted : Rectangle.Union(_painted, next);
             if (!Blit(rect, full, dirty))
@@ -854,6 +872,7 @@ internal sealed class DanmakuOverlayForm : Form
             _lastDpi = dpi;
         }
         // Publish a correctly sized transparent frame before exposing the window again.
+        if (composed) _composition.Show();
         if (!_overlayVisible) { ShowWindow(Handle, SwShowNoActivate); _overlayVisible = true; }
         EnsureZOrder();
 
@@ -868,9 +887,67 @@ internal sealed class DanmakuOverlayForm : Form
         LogBitmapStatsIfDue();
     }
 
+    private bool TryPresentComposition(RECT rect, long stamp, bool clockReset)
+    {
+        if (_composition != null && _compositionOwner != _targetHwnd) CloseComposition();
+        if (_compositionFailed || ShotPath != null) return false;
+        try
+        {
+            if (_composition == null)
+            {
+                if (_checkedCompositionTarget == _targetHwnd) return false;
+                _checkedCompositionTarget = _targetHwnd;
+                var className = new StringBuilder(64);
+                if (GetClassNameW(_targetHwnd, className, className.Capacity) == 0
+                    || !string.Equals(className.ToString(), "mpv", StringComparison.OrdinalIgnoreCase)) return false;
+                _composition = DanmakuComposition.Create(_targetHwnd);
+                _compositionOwner = _targetHwnd;
+                // Force a new layered frame when switching output paths.
+                ReleaseCanvas();
+            }
+            _renderer.PrepareDraw();
+            _composition.Present(_renderer, Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom),
+                Math.Max(1, Math.Min(255, LayerAlpha(_config))), stamp, clockReset);
+            if (!_loggedComposition) { DanmakuHost.Log("外置弹幕使用 DirectComposition 逐条合成。"); _loggedComposition = true; }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            UseLayeredFallback(ex);
+            return false;
+        }
+    }
+
+    private void CloseComposition()
+    {
+        if (_composition == null) return;
+        _composition.Dispose();
+        _composition = null;
+        _compositionOwner = IntPtr.Zero;
+        _checkedCompositionTarget = IntPtr.Zero;
+    }
+
+    private void UseLayeredFallback(Exception error)
+    {
+        _compositionFailed = true;
+        CloseComposition();
+        ReleaseCanvas();
+        DanmakuHost.Log("DirectComposition 不可用，恢复分层弹幕覆盖层。" + error.Message);
+    }
+
     private void HideOverlay()
     {
-        if (_overlayVisible) { ShowWindow(Handle, SwHide); _overlayVisible = false; }
+        if (_composition != null)
+        {
+            try { _composition.Hide(); }
+            catch (Exception ex) { UseLayeredFallback(ex); }
+        }
+        if (!_overlayVisible) return;
+        _overlayVisible = false;
+        _renderer.ScBarMouseUp();
+        _scBarDragged = false;
+        if (Capture) Capture = false;
+        ShowWindow(Handle, SwHide);
     }
 
     /// 每 10 秒记一次「共享位图存活数」——所有权模型下它必须**收敛**（缓存容量有界），
@@ -938,11 +1015,14 @@ internal sealed class DanmakuOverlayForm : Form
     /// 只有 `AlwaysOnTop=true`（放副屏常驻）时才用 HWND_TOPMOST。
     private void EnsureZOrder()
     {
+        IntPtr visual = _composition == null ? IntPtr.Zero : _composition.Window;
+        const uint positionFlags = SwpNoMove | SwpNoSize | SwpNoActivate | 0x0200; // SWP_NOOWNERZORDER
         if (_config.AlwaysOnTop)
         {
             if (!_wasTopmost || (DateTime.UtcNow - _lastTopmostAt).TotalMilliseconds > 800)
             {
-                SetWindowPos(Handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+                if (visual != IntPtr.Zero) SetWindowPos(visual, HwndTopmost, 0, 0, 0, 0, positionFlags);
+                SetWindowPos(Handle, HwndTopmost, 0, 0, 0, 0, positionFlags);
                 _wasTopmost = true;
                 _lastTopmostAt = DateTime.UtcNow;
             }
@@ -950,12 +1030,20 @@ internal sealed class DanmakuOverlayForm : Form
         }
         if (_wasTopmost)
         {
-            SetWindowPos(Handle, HwndNotTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+            if (visual != IntPtr.Zero) SetWindowPos(visual, HwndNotTopmost, 0, 0, 0, 0, positionFlags);
+            SetWindowPos(Handle, HwndNotTopmost, 0, 0, 0, 0, positionFlags);
             _wasTopmost = false;
         }
         IntPtr above = GetWindow(_targetHwnd, GwHwndPrev);
-        if (above == Handle) return;     // 已经正好贴在播放器之上，省掉每帧一次 SetWindowPos
-        SetWindowPos(Handle, above, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+        if (visual == IntPtr.Zero)
+        {
+            if (above != Handle) SetWindowPos(Handle, above, 0, 0, 0, 0, positionFlags);
+            return;
+        }
+        if (above == visual && GetWindow(visual, GwHwndPrev) == Handle) return;
+        while (above != IntPtr.Zero && (above == Handle || above == visual)) above = GetWindow(above, GwHwndPrev);
+        SetWindowPos(Handle, above, 0, 0, 0, 0, positionFlags);
+        SetWindowPos(visual, Handle, 0, 0, 0, 0, positionFlags);
     }
 
     private const int SwHide = 0;
@@ -1083,28 +1171,40 @@ internal sealed class DanmakuOverlayForm : Form
         return false;
     }
 
+    private bool CanUseScInput()
+    {
+        return _overlayVisible && !_presentFailed && !_userHidden
+            && IsEligibleTargetWindow(_targetHwnd, _targetPid) && !IsIconic(_targetHwnd);
+    }
+
+    private static bool IsEligibleTargetWindow(IntPtr hwnd, int pid)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+        uint windowPid;
+        return GetWindowThreadProcessId(hwnd, out windowPid) != 0 && windowPid == (uint)pid
+            && GetWindow(hwnd, 4) == IntPtr.Zero; // GW_OWNER: exclude owned menus and dialogs.
+    }
+
     private static IntPtr FindTargetWindow(int pid)
     {
         IntPtr best = IntPtr.Zero;
+        IntPtr minimized = IntPtr.Zero;
         long bestArea = 0;
         try
         {
             EnumWindows(delegate (IntPtr hwnd, IntPtr param)
             {
-                uint windowPid;
-                GetWindowThreadProcessId(hwnd, out windowPid);
-                if (windowPid != (uint)pid) return true;
-                if (!IsWindowVisible(hwnd)) return true;
-                if (GetWindow(hwnd, 4) != IntPtr.Zero) return true;      // GW_OWNER != 0 → 是工具窗/弹窗
+                if (!IsEligibleTargetWindow(hwnd, pid)) return true;
+                if (IsIconic(hwnd)) { if (minimized == IntPtr.Zero) minimized = hwnd; return true; }
                 RECT rect;
-                if (!GetWindowRect(hwnd, out rect)) return true;
+                if (!GetWindowRect(hwnd, out rect) || rect.Right - rect.Left < 16 || rect.Bottom - rect.Top < 16) return true;
                 long area = (long)(rect.Right - rect.Left) * (rect.Bottom - rect.Top);
                 if (area > bestArea) { bestArea = area; best = hwnd; }
                 return true;
             }, IntPtr.Zero);
         }
         catch (Exception) { }
-        return best;
+        return best != IntPtr.Zero ? best : minimized;
     }
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr param);    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr param);
@@ -1571,6 +1671,7 @@ internal sealed class DanmakuOverlayForm : Form
         if (disposing)
         {
             if (_tick != null) { _tick.Stop(); _tick.Dispose(); }
+            CloseComposition();
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
             ReleaseCanvas();
             if (_targetProcess != null) _targetProcess.Dispose();

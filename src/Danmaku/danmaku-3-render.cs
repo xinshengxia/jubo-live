@@ -874,6 +874,7 @@ internal sealed class FlyingDanmaku
     /// 缓存淘汰 / 换房间都只是「缓存放手」，不会把这条弹幕正在用的位图释放掉（见 SharedBitmap）。
     /// 摘掉这条弹幕时必须 Release()（见 DanmakuRenderer.ForgetFlying）。
     public SharedBitmap Handle;
+    public int VisualRevision;
     public float X;
     public float Y;
     public float Width;
@@ -1188,6 +1189,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
         flying.AppliedMergeScale = mergeScale;
         flying.TextColor = _rules.Any(item.Text, _config.HighlightKeywords) || item.Pinned
             ? ColorFromInt(_config.HighlightColor) : ColorFromInt(item.Color);
+        float oldEmoteBox = flying.EmoteBox, oldEmoteWidth = flying.EmoteWidth;
         flying.EmoteBox = flying.EmoteWidth = 0f;
         bool imagePending = false;
         bool imageReady = false;
@@ -1232,6 +1234,8 @@ internal sealed partial class DanmakuRenderer : IDisposable
         SharedBitmap old = flying.Handle; flying.Handle = fresh;
         if (old != null) old.Release();
         flying.VisualWidth = fresh.Bitmap.Width + flying.EmoteWidth;
+        if (!object.ReferenceEquals(old, fresh) || oldEmoteBox != flying.EmoteBox || oldEmoteWidth != flying.EmoteWidth)
+            unchecked { flying.VisualRevision++; }
         flying.Width = Math.Max(fresh.Bitmap.Width, reservedWidth) + flying.EmoteWidth;
         flying.Height = Math.Max(fresh.Bitmap.Height, flying.EmoteBox);
         flying.Speed = flying.Fixed ? 0f : (item.Mode == 6 ? -1f : 1f) * (_width + flying.Width) / _duration;
@@ -1435,9 +1439,12 @@ internal sealed partial class DanmakuRenderer : IDisposable
             PaintBounds = PaintBounds.IsEmpty ? bounds : Rectangle.Union(PaintBounds, bounds);
     }
 
-    public void Draw(Graphics g)
+    internal IList<FlyingDanmaku> CompositionMessages { get { return _flying; } }
+    internal RectangleF CompositionScReservation { get { return _scReserved; } }
+    internal int CompositionTextOpacity { get { return _config.TextOpacityPercent; } }
+
+    internal void PrepareDraw()
     {
-        PaintBounds = Rectangle.Empty;
         EnsureLayout();
         // 每条变更先尝试放大，空间不足则逐档回退；其余弹幕保留自己的位置。
         for (int i = 0; i < _flying.Count; i++)
@@ -1446,6 +1453,12 @@ internal sealed partial class DanmakuRenderer : IDisposable
             if (!f.VisualDirty && f.EmoteSettled) continue;
             if (!RefreshChangedFlying(f, 1.8f)) { DroppedCount++; ForgetFlying(i--); }
         }
+    }
+
+    public void Draw(Graphics g)
+    {
+        PrepareDraw();
+        PaintBounds = Rectangle.Empty;
         GraphicsState saved = g.Save();
         try
         {
@@ -1454,6 +1467,23 @@ internal sealed partial class DanmakuRenderer : IDisposable
             DrawFlying(g);
         }
         finally { g.Restore(saved); }
+        DrawFurniture(g);
+    }
+
+    internal bool HasFurniture
+    {
+        get { return (_superChats.Count > 0 && _config.ScMode != "off") || !_eventReserved.IsEmpty
+            || (TransientText != null && Now < TransientUntil); }
+    }
+
+    internal void DrawFurnitureOnly(Graphics g)
+    {
+        PaintBounds = Rectangle.Empty;
+        DrawFurniture(g);
+    }
+
+    private void DrawFurniture(Graphics g)
+    {
         _scHits.Clear(); _scScrollable = false;
         _scBarTrack = _scBarThumb = RectangleF.Empty;
         if (_config.ScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
@@ -1470,39 +1500,58 @@ internal sealed partial class DanmakuRenderer : IDisposable
         {
             FlyingDanmaku f = _flying[i];
             if (f.X > _width || f.X + f.Width < 0) continue;
-            float contentX = f.X + (f.Fixed ? (f.Width - f.VisualWidth) / 2f : 0f);
-            float textX = contentX;
-            // 兜底（不再是主要手段）：所有权已经保证「手里的位图一定有效」，
-            // 这里只防 GDI+ 别的意外（显存不足之类）——**任何**一条弹幕画不出来都只丢它自己，
-            // 不许把整帧 / 整个覆盖层带走。
-            SharedBitmap emote = null;
-            try
-            {
-                if (f.EmoteBox > 0f)
-                {
-                    emote = _imageCache.TryGet(f.Source.EmoticonUrl);   // 借出一份
-                    if (emote != null)
-                    {
-                        float box = f.EmoteBox;
-                        float top = f.Y + (f.Height - box) / 2f;
-                        DrawTextBitmap(g, emote.Bitmap, contentX, top, f.EmoteWidth, box);
-                    }
-                    textX += f.EmoteWidth;
-                }
-                DrawTextBitmap(g, f.Handle.Bitmap, textX, f.Y + (f.Height - f.Handle.Bitmap.Height) / 2f,
-                    f.Handle.Bitmap.Width, f.Handle.Bitmap.Height);
-            }
+            try { DrawMessageBitmap(g, f, MessageContentX(f), f.Y); }
             catch (Exception ex)
             {
                 DropUndrawable(f, ex);
                 i--;
             }
-            finally
-            {
-                if (emote != null) emote.Release();     // 表情图这一帧用完就还
-            }
         }
     }
+
+    internal static float MessageContentX(FlyingDanmaku message)
+    {
+        return message.X + (message.Fixed ? (message.Width - message.VisualWidth) / 2f : 0f);
+    }
+
+    // Padding admits bicubic filter edges and subpixel offsets. The visual subtracts it
+    // from the scheduler's content origin, so measured lanes and lifetimes stay identical.
+    internal const int CompositionPadding = 3;
+    internal Bitmap RenderCompositionMessage(FlyingDanmaku message)
+    {
+        int padding = CompositionPadding;
+        Bitmap bitmap = new Bitmap((int)Math.Ceiling(message.VisualWidth) + padding * 2,
+            (int)Math.Ceiling(message.Height) + padding * 2, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        try
+        {
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                DrawMessageBitmap(g, message, padding, padding);
+            }
+            return bitmap;
+        }
+        catch { bitmap.Dispose(); throw; }
+    }
+
+    private void DrawMessageBitmap(Graphics g, FlyingDanmaku message, float x, float y)
+    {
+        if (message.EmoteBox > 0f)
+        {
+            SharedBitmap emote = _imageCache.TryGet(message.Source.EmoticonUrl);
+            if (emote != null)
+            {
+                try { DrawTextBitmap(g, emote.Bitmap, x, y + (message.Height - message.EmoteBox) / 2f,
+                    message.EmoteWidth, message.EmoteBox); }
+                finally { emote.Release(); }
+            }
+            x += message.EmoteWidth;
+        }
+        Bitmap text = message.Handle.Bitmap;
+        DrawTextBitmap(g, text, x, y + (message.Height - text.Height) / 2f, text.Width, text.Height);
+    }
+
 
     /// 这条弹幕画不出来（位图失效 / GDI+ 异常）：从列表里摘掉，并**留一次痕**。
     /// 只报第一次 —— 一个坏位图会连续失败 30 帧，每帧写一次日志会把日志刷爆。
