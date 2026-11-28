@@ -27,8 +27,9 @@ internal static partial class LiveHub
                 else WatchPotPlayerKeys(player);
             }
         }
-        catch (ArgumentException) { } // The player can exit before the watcher attaches.
-        catch (InvalidOperationException) { }
+        // The player can exit before the watcher attaches or while the room lookup is pending.
+        catch (ArgumentException ex) { Diagnostics.Report("PotPlayer 监控连接已结束", ex); }
+        catch (InvalidOperationException ex) { Diagnostics.Report("PotPlayer 监控已结束", ex); }
         catch (Win32Exception ex) { Diagnostics.Report("PotPlayer 窗口监控", ex); }
     }
 
@@ -36,7 +37,7 @@ internal static partial class LiveHub
     {
         try { using (var key = new PotPlayerRefreshKey(player)) Application.Run(); }
         catch (Win32Exception ex) { Diagnostics.Report("PotPlayer 刷新键", ex); }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException ex) { Diagnostics.Report("PotPlayer 刷新键已结束", ex); }
     }
 
     private sealed class PotPlayerRefreshKey : NativeWindow, IDisposable
