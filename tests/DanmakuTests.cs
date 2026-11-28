@@ -101,6 +101,7 @@ internal static partial class HardeningTests
         // 用一条按线上真实结构（带转义、带嵌套）构造的报文做回归。
         TestRunner.Add("弹幕-协议", "斗鱼 STT 解析（含 SC 高能弹幕）", delegate { TestDouyuStt(launcher); });
         TestRunner.Add("弹幕-协议", "虎牙 Tars 编解码逐字节复现", delegate { TestHuyaTars(launcher); });
+        TestRunner.Add("弹幕-协议", "虎牙订阅和 B站认证回执结果码", delegate { TestSubscriptionAcknowledgements(); });
         TestRunner.Add("弹幕-协议", "虎牙 1400 弹幕解析", delegate { TestHuyaMessageNotice(launcher); });
         TestRunner.Add("弹幕-协议", "抖音签名与 protobuf", delegate { TestDouyinSign(launcher); });
         TestRunner.AddDesktop("弹幕-UI", "设置对话框布局不重叠", delegate { TestSettingsLayout(launcher); });
@@ -352,6 +353,38 @@ internal static partial class HardeningTests
         finally { try { File.Delete(probeOut); } catch (Exception) { } }
     }
 
+
+    private static void TestSubscriptionAcknowledgements()
+    {
+        BindingFlags members = BindingFlags.Public | BindingFlags.NonPublic;
+        Type bili = DanmakuType("BiliDanmakuClient");
+        MethodInfo auth = bili.GetMethod("AuthenticationResultCode", members | BindingFlags.Static);
+        Check(Equals(auth.Invoke(null, new object[] { "{\"code\": 0}" }), 0L), "B站：接受带空格的成功回执");
+        Check(Equals(auth.Invoke(null, new object[] { "{\"code\": -101, \"data\": {\"code\":0}}" }), -101L),
+            "B站：以顶层结果码为准");
+        Check(auth.Invoke(null, new object[] { "{\"data\": {\"code\":0}}" }) == null, "B站：缺少顶层结果码");
+
+        Type huya = DanmakuType("HuyaDanmakuClient");
+        object client = Activator.CreateInstance(huya, new object[] { "123" });
+        MethodInfo dispatch = huya.GetMethod("Dispatch", members | BindingFlags.Instance);
+        EventInfo statusChanged = huya.GetEvent("StatusChanged");
+        string status = null;
+        Action<string> sink = delegate (string value) { status = value; };
+        statusChanged.AddEventHandler(client, Delegate.CreateDelegate(statusChanged.EventHandlerType, sink.Target, sink.Method));
+        byte[] accepted = { 0x00, 0x11, 0x1d, 0x00, 0x00, 0x03, 0x0c, 0x19, 0x0c };
+        dispatch.Invoke(client, new object[] { accepted, accepted.Length });
+        Check(status == "虎牙弹幕已连接，等待新消息", "虎牙：结果为 0 且 P2P 列表为空时正常等待弹幕");
+
+        byte[] rejected = { 0x00, 0x11, 0x1d, 0x00, 0x00, 0x04, 0x00, 0x05, 0x19, 0x0c };
+        bool correctlyRejected = false;
+        try { dispatch.Invoke(client, new object[] { rejected, rejected.Length }); }
+        catch (TargetInvocationException exception)
+        {
+            correctlyRejected = exception.InnerException is System.Security.Authentication.AuthenticationException
+                && exception.InnerException.Message.Contains("错误码 5");
+        }
+        Check(correctlyRejected, "虎牙：非零结果码交给连接重试路径");
+    }
 
     /// 斗鱼 STT 解析回归。
     ///

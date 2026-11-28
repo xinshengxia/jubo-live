@@ -265,7 +265,7 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
                 if (host != null && host.Length > 0 && !_hosts.Contains(host)) _hosts.Add(host);
             }
         if (_hosts.Count == 0) _hosts.Add("broadcastlv.chat.bilibili.com");
-        Say("握手完成：uid=" + _uid + "，服务器 " + _hosts.Count + " 个");
+        Say("B站：已获取弹幕服务器，等待认证");
     }
 
     /// 拉取当前房间的**表情字典**并把 `[名称]` → 图片 URL 填进 _emoticons。
@@ -485,9 +485,16 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
 
             if (op == 8)
             {
-                string reply = Encoding.UTF8.GetString(body);
-                if (reply.IndexOf("\"code\":0") < 0) { PlatformHealth.Record("bili", "danmaku", "auth-required"); throw new System.Security.Authentication.AuthenticationException("认证被拒：" + PlatformHealth.ResponseSummary(reply)); }
+                long? code = AuthenticationResultCode(Encoding.UTF8.GetString(body));
+                if (code != 0)
+                {
+                    PlatformHealth.Record("bili", "danmaku", "auth-required");
+                    string reason = code.HasValue ? "B站弹幕认证未通过（错误码 " + code.Value + "）"
+                        : "B站弹幕认证回执缺少有效结果码";
+                    throw new System.Security.Authentication.AuthenticationException(reason);
+                }
                 PlatformHealth.Record("bili", "danmaku", "ready");
+                Say("B站弹幕已认证，等待新消息");
                 continue;
             }
             if (op != 5) continue;
@@ -499,6 +506,18 @@ internal sealed partial class BiliDanmakuClient : IDanmakuClient, ILiveEventSour
             else if (ver == 3) FeedBounded(DecompressBrotli(body), depth + 1, ref remaining);
             else if (ver == 0 || ver == 1) Dispatch(Encoding.UTF8.GetString(body));
         }
+    }
+
+    internal static long? AuthenticationResultCode(string reply)
+    {
+        try
+        {
+            object code = Val(Json(reply), "code");
+            if (code is int || code is long) return Convert.ToInt64(code, CultureInfo.InvariantCulture);
+        }
+        catch (ArgumentException) { return null; }
+        catch (InvalidOperationException) { return null; }
+        return null;
     }
 
     internal static byte[] Inflate(byte[] zlib)

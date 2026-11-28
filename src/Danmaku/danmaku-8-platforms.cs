@@ -572,7 +572,7 @@ internal sealed class DouyuDanmakuClient : IDanmakuClient
         Send("type@=joingroup/gid@=-9999/rid@=" + _realRoomId + "/");
         Thread.Sleep(300);
         PlatformHealth.Record("douyu", "danmaku", "ready");
-        Status("斗鱼：已进入房间 " + _realRoomId);
+        Status("斗鱼弹幕服务器已连接，等待新消息");
 
         StartHeartbeat(stream, HeartbeatSeconds * 1000);
     }

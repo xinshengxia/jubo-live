@@ -378,7 +378,7 @@ internal sealed class DouyinDanmakuClient : IDanmakuClient
     private string _userUniqueId = "";
     private string _ttwid = "";
     private string _anchor = "";
-    private bool _live;
+    private bool _waitingForLive;
 
     private ClientWebSocket _socket;
     private volatile bool _stopping;
@@ -457,7 +457,7 @@ internal sealed class DouyinDanmakuClient : IDanmakuClient
             }
             _roomId = structured.RoomId;
             _anchor = structured.Owner;
-            _live = structured.Status == 2;
+            _waitingForLive = structured.Status == 4;
             _userUniqueId = structured.UserUniqueId;
             if (!string.IsNullOrEmpty(structured.Ttwid)) _ttwid = structured.Ttwid;
             if (string.IsNullOrEmpty(_userUniqueId))
@@ -468,8 +468,7 @@ internal sealed class DouyinDanmakuClient : IDanmakuClient
                 _userUniqueId = digits.ToString();
             }
             Info("抖音 " + _webRid + (string.IsNullOrEmpty(_anchor) ? "" : " · " + _anchor)
-                + (_live ? "" : "（未开播）"));
-            if (!_live) Status("抖音：房间未开播，仍会保持连接等待");
+                + (_waitingForLive ? "（未开播）" : ""));
             return true;
         }
         catch (Exception ex)
@@ -572,8 +571,8 @@ internal sealed class DouyinDanmakuClient : IDanmakuClient
                 _lastFrameTick = Environment.TickCount;
                 _frameCount = 0;
                 _heartbeatWatch = new HeartbeatAckWatch(5000);
-        PlatformHealth.Record("douyin", "danmaku", "ready");
-                Status("抖音：已连接");
+                PlatformHealth.Record("douyin", "danmaku", "ready");
+                Status(_waitingForLive ? "抖音房间未开播，等待开播" : "抖音弹幕服务器已连接，等待新消息");
                 return;
             }
             catch (Exception ex)

@@ -33,7 +33,7 @@ using System.Windows.Forms;
 // 三个反直觉的坑（都是实测对照出来的，别照抄老实现）：
 //  ① **真正的订阅包是 cmd 16（RegisterGroupReq）不是 cmd 1**。只发 cmd 1 一条弹幕都收不到，
 //     服务器也不报错 —— 很多开源实现两个都发，所以很容易误判因果。
-//  ② **组名必须用 lChannelId，不能用 lYyid**（= 主播的 yyuid）。用错服务器**静默回空组**、不报错。
+//  ② 组名使用房间的 lChannelId；订阅回执单独返回结果码和支持 P2P 的组名。
 //  ③ **cmd 22（V2 推送）也要处理**，6111 这类只走 V2；只认 cmd 7 会漏。
 //
 // 载荷是腾讯 **Tars/JCE** 二进制（不是 protobuf），规则见 TarsWriter/TarsReader：
@@ -497,7 +497,6 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
 
     private ClientWebSocket _socket;
     private volatile bool _stopping;
-    private volatile bool _subscribed;   // 订阅成功判据（cmd17 回显非空组）；仅用于日志
     private HeartbeatAckWatch _heartbeatWatch = new HeartbeatAckWatch();
 
     public HuyaDanmakuClient(string room) { _roomInput = room; }
@@ -548,11 +547,8 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
                 Send(CommandRegisterGroup(_lChannelId));
                 _heartbeatWatch.Begin(Environment.TickCount);
                 Send(CommandHeartbeat(_lYyid, _lChannelId, _lChannelId));
-                // ⚠️ 在这里请求表情包，**不要**挂在「订阅回显」那条路里：
-                //    实测那条路不一定走到（弹幕照样能进来，但 cmd 17 的回显没解析成功），
-                //    挂那儿会出现「表情包请求静默没发出去」。发完订阅包就发，一定执行。
+                // 表情请求独立于订阅回执，连接建立后只发送一次。
                 RequestEmoticonPackages();
-                _subscribed = false;
                 attempt = 0;
                 ReadLoop();
             }
@@ -677,7 +673,7 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
         _frameCount = 0;
         _heartbeatWatch = new HeartbeatAckWatch();
         PlatformHealth.Record("huya", "danmaku", "ready");
-        Status("虎牙：已连接，正在订阅 chat:" + _lChannelId);
+        Status("虎牙弹幕正在订阅");
     }
 
     private void CloseQuietly()
@@ -693,7 +689,7 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
 
     /// cmd 16 EWSCmdC2S_RegisterGroupReq
     /// ⚠️ 这才是**真正的订阅包**；cmd 1（RegisterReq）对弹幕不起作用，服务器不报错但也不推。
-    /// ⚠️ 组名必须用 **lChannelId**；用 lYyid 服务器会**静默回空组**。
+    /// 组名使用房间频道 lChannelId。
     internal static byte[] CommandRegisterGroup(long lChannelId)
     {
         TarsWriter groups = new TarsWriter();
@@ -810,6 +806,7 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
             if (buffer.Length == 0) continue;
 
             try { Dispatch(buffer, buffer.Length); }
+            catch (System.Security.Authentication.AuthenticationException) { throw; }
             catch (Exception ex) { Status("虎牙：解析出错 " + ex.Message); }
         }
     }
@@ -891,7 +888,7 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
             case 22:                      // V2 推送：{sGroupId, list<{iUri, sMsg, lMsgId}>}
                 HandlePushV2(new TarsReader(vData));
                 return;
-            case 17:                      // RegisterGroupRsp：**回显成功加入的组 = 订阅成功判据**
+            case 17:                      // RegisterGroupRsp
                 HandleRegisterGroupRsp(new TarsReader(vData));
                 return;
             default:
@@ -919,33 +916,12 @@ internal sealed class HuyaDanmakuClient : IDanmakuClient
 
     private void HandleRegisterGroupRsp(TarsReader reader)
     {
-        // ⚠️ 组列表在 **tag1**：报文开头是 `0c`（tag0/ZERO 的 iResult），然后 `19`（tag1/LIST）。
-        // 一开始按 tag0 解，结果一条弹幕都收不到 —— EnterList 直接返回 false 静默退出了。
-        int count;
-        if (!reader.EnterList(1, out count)) return;
-        List<string> groups = new List<string>();
-        for (int i = 0; i < count; i++)
-        {
-            // ⚠️ **不要**在这里再 Head() 一次。list<string> 的每个元素本身就是
-            //    `Str(0, 值)` 的完整编码（头 + 长度 + 数据）；先吃一次头会让紧随其后的
-            //    `Str(0, "")` 把「长度字节」当成新头读 → 撞出 Tars 未定义类型（实测 14/15），
-            //    组名永远解析成空串，而且每条连接白抛一个异常（日志里那句
-            //    「收到未定义的类型」就是它，跟弹幕本身无关）。
-            //    2026-09-30 用真实报文对照过（虎牙 a16789）：
-            //      原始 0c 19 00 01 06 0f + "chat:1271256459"（共 21 字节）
-            //      带多余 Head → ""，并报未知类型 15
-            //      去掉多余 Head → "chat:1271256459"，无未知类型
-            groups.Add(reader.Str(0, ""));
-        }
-        if (groups.Count == 0)
-        {
-            // 实测：组名用错 id 时服务器**静默回空列表**、不报错 —— 这是最容易踩的坑
-            Status("虎牙：订阅返回空组，lChannelId 可能取错了（当前 " + _lChannelId + "）");
-            return;
-        }
-        _subscribed = true;
-        Status("虎牙：订阅成功 " + string.Join(",", groups.ToArray()) + (_subscribed ? "" : ""));
-        RequestEmoticonPackages();   // 订阅成功后才请求表情包
+        // tag 0 是 iResCode，tag 1 仅列出支持 P2P 的组。
+        long code = reader.Num(0, long.MinValue);
+        if (code < int.MinValue || code > int.MaxValue) return;
+        if (code != 0)
+            throw new System.Security.Authentication.AuthenticationException("虎牙弹幕订阅失败（服务端错误码 " + code + "）");
+        Status("虎牙弹幕已连接，等待新消息");
     }
 
     // ---------------------------------------------------------------- 表情包（WUP RPC）
