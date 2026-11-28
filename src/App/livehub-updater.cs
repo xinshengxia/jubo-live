@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -13,8 +14,10 @@ internal static partial class LiveHub
         private DateTime nextAutoCheck;
         private string updateTicket, announcedVersion;
         private Process updateWorker;
-        private bool installingUpdate, newerVersion;
+        private bool installingUpdate, onlineInstall, newerVersion;
         private Label updateResult;
+        private ProgressBar updateDownload;
+        private Timer updateDownloadTimer;
         private ModernButton checkAgain, installUpdate, localUpdate, cancelUpdate;
         private string UpdateRequest { get { return Path.Combine(UpdateCache, "requests", updateTicket); } }
         private static string UpdateCache { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JuboLive", "Updates", "cs"); } }
@@ -47,6 +50,15 @@ internal static partial class LiveHub
             WorkbenchFont(heading, 17, System.Drawing.FontStyle.Bold);
             updateResult = WorkbenchLabel("updateResult", "准备检查正式版更新。", false);
             updateResult.AutoEllipsis = false;
+            updateDownload = new ProgressBar { Name = "updateDownloadProgress", AccessibleName = "更新包下载进度",
+                Maximum = 1000, Style = ProgressBarStyle.Continuous, Visible = false };
+            updateDownloadTimer = new Timer { Interval = 250 };
+            updateDownloadTimer.Tick += delegate {
+                try { ReadUpdateProgress(); }
+                catch (IOException) { ClearDownloadProgress(); }
+                catch (UnauthorizedAccessException) { ClearDownloadProgress(); }
+            };
+            page.Disposed += delegate { updateDownloadTimer.Dispose(); };
             var auto = new ModernCheckBox { Text = "自动检查正式版更新", Checked = !File.Exists(Path.Combine(UpdateCache, "auto-off")) };
             auto.Click += delegate {
                 try {
@@ -81,15 +93,20 @@ internal static partial class LiveHub
             });
             releases.Style = ModernButton.Kind.Subtle;
             cancelUpdate = WorkbenchButton("updateCancel", "取消安装", delegate {
-                try { Directory.CreateDirectory(UpdateRequest); File.WriteAllText(Path.Combine(UpdateRequest, "cancel"), "cancel"); cancelUpdate.Enabled = false; }
+                try {
+                    Directory.CreateDirectory(UpdateRequest); File.WriteAllText(Path.Combine(UpdateRequest, "cancel"), "cancel");
+                    onlineInstall = false; updateDownloadTimer.Stop(); ClearDownloadProgress(); cancelUpdate.Enabled = false;
+                    updateResult.Text = "正在取消安装…";
+                }
                 catch (IOException ex) { updateResult.Text = ex.Message; }
             });
-            page.Controls.AddRange(new Control[] { heading, updateResult, auto, checkAgain, installUpdate, localUpdate, cancelUpdate, offlineTitle, help, releases });
+            page.Controls.AddRange(new Control[] { heading, updateResult, updateDownload, auto, checkAgain, installUpdate, localUpdate, cancelUpdate, offlineTitle, help, releases });
             page.Layout += delegate {
                 if (!page.Visible) return;
                 int x = Px(18), width = Math.Max(Px(160), page.ClientSize.Width - x * 2);
                 heading.SetBounds(x, Px(16), width, Px(32));
                 updateResult.SetBounds(x, Px(56), width, Px(66));
+                updateDownload.SetBounds(x, Px(111), width, Px(11));
                 checkAgain.SetBounds(x, Px(132), Px(90), Px(34));
                 installUpdate.SetBounds(x + Px(100), Px(132), Px(84), Px(34));
                 cancelUpdate.Bounds = installUpdate.Bounds;
@@ -134,13 +151,66 @@ internal static partial class LiveHub
             if (installingUpdate || (updateWorker != null && zip.Length == 0)) return;
             if (updateWorker != null) { updateWorker.Dispose(); updateWorker = null; }
             newerVersion = false;
+            onlineInstall = false;
+            ClearDownloadProgress();
             updateTicket = Guid.NewGuid().ToString("N");
             try {
                 updateWorker = OpenUpdater(install ? "Install" : "Check", updateTicket, zip, catalog);
                 installingUpdate = install;
+                onlineInstall = install && zip.Length == 0;
+                updateDownloadTimer.Enabled = onlineInstall;
                 updateResult.Text = install ? "正在准备安装并校验签名…" : "正在检查更新，直连失败会尝试备用线路…";
             } catch (Exception ex) { updateResult.Text = "无法启动更新任务：" + ex.Message; }
             SyncUpdateButtons();
+        }
+
+        private const string DownloadingStatus = "正在下载更新包…";
+
+        private static bool TryReadDownloadCounts(string file, out long downloaded, out long total)
+        {
+            downloaded = 0; total = 0;
+            try {
+                var info = new FileInfo(file);
+                if (!info.Exists || info.Length > 1024) return false;
+                var json = new JavaScriptSerializer { MaxJsonLength = 1024 };
+                var fields = json.DeserializeObject(File.ReadAllText(file)) as Dictionary<string, object>;
+                object done, size;
+                if (fields == null || !fields.TryGetValue("downloaded", out done) || !fields.TryGetValue("total", out size)
+                    || !(done is int || done is long) || !(size is int || size is long)) return false;
+                downloaded = Convert.ToInt64(done); total = Convert.ToInt64(size);
+                return total > 0 && downloaded >= 0 && downloaded <= total;
+            } catch (IOException) { return false; }
+              catch (UnauthorizedAccessException) { return false; }
+              catch (ArgumentException) { return false; }
+              catch (InvalidOperationException) { return false; }
+        }
+
+        private void ClearDownloadProgress()
+        {
+            updateDownload.Visible = false;
+            updateDownload.Value = 0;
+            if (updateResult.Text.StartsWith(DownloadingStatus + " ", StringComparison.Ordinal))
+                updateResult.Text = DownloadingStatus;
+        }
+
+        private void UpdateDownloadDisplay(string request, string statusText, bool finished)
+        {
+            long downloaded, total;
+            if (!finished && installingUpdate && onlineInstall && statusText == DownloadingStatus
+                && !File.Exists(Path.Combine(request, "cancel"))
+                && TryReadDownloadCounts(Path.Combine(request, "download.json"), out downloaded, out total))
+            {
+                int value = (int)(1000m * downloaded / total);
+                updateDownload.Value = value;
+                updateDownload.Visible = true;
+                updateResult.Text = string.Format("{0} {1}%（{2:0.0} / {3:0.0} MiB）",
+                    statusText, value / 10, downloaded / 1048576.0, total / 1048576.0);
+            }
+            else
+            {
+                ClearDownloadProgress();
+                if (statusText != null) updateResult.Text = statusText;
+            }
         }
 
         private void ReadUpdateProgress()
@@ -148,14 +218,16 @@ internal static partial class LiveHub
             if (updateWorker == null) return;
             bool finished = updateWorker.HasExited;
             string progress = Path.Combine(UpdateRequest, "status.txt");
-            if (File.Exists(progress)) updateResult.Text = File.ReadAllText(progress);
+            string statusText = File.Exists(progress) ? File.ReadAllText(progress) : null;
+            UpdateDownloadDisplay(UpdateRequest, statusText, finished);
             if (!finished) return;
             string verified = Path.Combine(UpdateRequest, "version.txt");
             Version version;
             newerVersion = !installingUpdate && updateWorker.ExitCode == 0 && File.Exists(verified)
                 && Version.TryParse(File.ReadAllText(verified).Trim(), out version) && version > CurrentVersion;
             if (!File.Exists(progress)) updateResult.Text = "更新任务已停止。请重新检查。";
-            updateWorker.Dispose(); updateWorker = null; installingUpdate = false;
+            updateWorker.Dispose(); updateWorker = null; installingUpdate = false; onlineInstall = false;
+            updateDownloadTimer.Stop();
             SyncUpdateButtons();
         }
 

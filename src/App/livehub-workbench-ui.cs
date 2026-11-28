@@ -138,7 +138,7 @@ internal static partial class LiveHub
                 form.Controls.Add(workbenchContent); form.Controls.Add(workbenchModels);
                 workbenchTitle = WorkbenchLabel("workbenchTitle", "我的收藏", false);
                 WorkbenchFont(workbenchTitle, 23, FontStyle.Bold);
-                workbenchSubtitle = WorkbenchLabel("workbenchSubtitle", "喜欢的主播，打开就能看。", true);
+                workbenchSubtitle = WorkbenchLabel("workbenchSubtitle", "在 mpv 播放窗口按 Ctrl+R 刷新直播流。", true);
                 workbenchContent.Controls.Add(workbenchTitle); workbenchContent.Controls.Add(workbenchSubtitle);
                 workbenchContent.Controls.Add(workbenchHost); workbenchContent.Controls.Add(workbenchFooter);
                 workbenchBrandMark = new WorkbenchBrandMark { Name = "workbenchBrandMark" };
@@ -565,7 +565,7 @@ internal static partial class LiveHub
             foreach (KeyValuePair<string, WorkbenchNavigationButton> pair in workbenchNavigation) pair.Value.Selected = pair.Key == key;
             getUpdate.Style = key == "updates" ? ModernButton.Kind.Primary : ModernButton.Kind.Secondary;
             workbenchTitle.Text = key == "updates" ? "检查更新" : workbenchNavigation[key].Text;
-            string subtitle = key == "favorites" ? "喜欢的主播，打开就能看。"
+            string subtitle = key == "favorites" ? "在 mpv 播放窗口按 Ctrl+R 刷新直播流。"
                 : key == "recent" ? "选择熟悉的播放器，从最近的房间继续。"
                 : key == "lookup" ? "查询、核验、收藏，找到喜欢的主播。"
                 : key == "sessions" ? "查看正在观看的房间，按上次选项重新打开。"

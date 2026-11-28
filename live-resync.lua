@@ -112,7 +112,7 @@ local function install_recovery(resolve_source)
         end
     end)
     mp.register_event("shutdown", cancel)
-    mp.add_key_binding(nil, "reload", function() reload(true) end)
+    mp.add_key_binding("Ctrl+r", "reload", function() reload(true) end)
     if not enabled then return end
 
     mp.add_periodic_timer(1, function()

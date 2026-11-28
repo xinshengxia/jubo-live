@@ -124,6 +124,7 @@ internal static class WorkbenchDanmakuUi
             AddNote(sc, "超过指定张数会启用滚动，不会据此丢弃旧卡片。SC 显示模式与我的收藏页同步。", "workbenchScHint");
 
             AddCheck(filter, "Enabled", "弹幕总开关", delegate(DanmakuConfig c) { return c.Enabled; }, delegate(DanmakuConfig c, bool v) { c.Enabled = v; });
+            AddCheck(filter, "ShowShortcutHint", "左下角显示快捷键提示", delegate(DanmakuConfig c) { return c.ShowShortcutHint; }, delegate(DanmakuConfig c, bool v) { c.ShowShortcutHint = v; });
             AddCheck(filter, "StrokeEnabled", "黑色描边", delegate(DanmakuConfig c) { return c.StrokeEnabled; }, delegate(DanmakuConfig c, bool v) { c.StrokeEnabled = v; });
             AddCheck(filter, "ShowMedal", "弹幕前显示粉丝勋章", delegate(DanmakuConfig c) { return c.ShowMedal; }, delegate(DanmakuConfig c, bool v) { c.ShowMedal = v; });
             AddCheck(filter, "ShowUserName", "弹幕前显示用户名", delegate(DanmakuConfig c) { return c.ShowUserName; }, delegate(DanmakuConfig c, bool v) { c.ShowUserName = v; });

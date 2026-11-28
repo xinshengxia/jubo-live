@@ -830,10 +830,17 @@ internal sealed class DanmakuOverlayForm : Form
         _renderer.Resize(width, height);
         bool composed = TryPresentComposition(rect, stamp, clockReset);
         bool blank = composed ? !_renderer.HasFurniture : !_renderer.HasOverlayContent;
-        int surfaceWidth = composed && blank ? 1 : width;
-        int surfaceHeight = composed && blank ? 1 : ShotPath == null ? _renderer.OverlaySurfaceHeight : height;
-        bool needsBlit = !_overlayVisible || !blank || !_submittedBlank || _canvas == null || _canvas.Width != surfaceWidth
-            || _canvas.Height != surfaceHeight || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top;
+        bool hintChanged = _hintInvalid || dpi != _lastDpi || width != _hintWidth;
+        if (hintChanged) UpdateShortcutHint(width, dpi);
+        int margin = Math.Max(4, (int)Math.Round(6f * dpi / 96f));
+        Rectangle hintBounds = _hintImage == null ? Rectangle.Empty :
+            new Rectangle(margin, Math.Max(0, height - margin - _hintImage.Height), _hintImage.Width, _hintImage.Height);
+        bool empty = blank && hintBounds.IsEmpty;
+        int surfaceWidth = composed && empty ? 1 : width;
+        int surfaceHeight = composed && empty ? 1 : ShotPath == null && hintBounds.IsEmpty ? _renderer.OverlaySurfaceHeight : height;
+        bool needsBlit = !_overlayVisible || !blank || !_submittedBlank || hintChanged || hintBounds != _paintedHint
+            || _canvas == null || _canvas.Width != surfaceWidth || _canvas.Height != surfaceHeight
+            || _lastRect.Left != rect.Left || _lastRect.Top != rect.Top || _lastAlpha != LayerAlpha(_config);
         if (needsBlit)
         {
             bool full = !_overlayVisible || _presentFailed || _canvas == null || _canvas.Width != surfaceWidth
@@ -850,11 +857,25 @@ internal sealed class DanmakuOverlayForm : Form
                 memset(IntPtr.Add(_canvasPixels, checked(_painted.Top * stride)), 0,
                     (UIntPtr)(uint)checked(_painted.Height * stride));
             }
+            if (!full && !_paintedHint.IsEmpty)
+            {
+                _canvasGraphics.CompositingMode = CompositingMode.SourceCopy;
+                try { _canvasGraphics.FillRectangle(Brushes.Transparent, _paintedHint); }
+                finally { _canvasGraphics.CompositingMode = CompositingMode.SourceOver; }
+            }
             if (composed) _renderer.DrawFurnitureOnly(_canvasGraphics);
             else _renderer.Draw(_canvasGraphics);
+            if (_hintImage != null) _canvasGraphics.DrawImageUnscaled(_hintImage, hintBounds.Location);
             Rectangle next = Rectangle.Intersect(new Rectangle(0, 0, surfaceWidth, surfaceHeight), _renderer.PaintBounds);
             if (next.Width <= 0 || next.Height <= 0) next = Rectangle.Empty;
             Rectangle dirty = _painted.IsEmpty ? next : next.IsEmpty ? _painted : Rectangle.Union(_painted, next);
+            // The static hint ends each frame with identical pixels outside the dynamic
+            // damage. Include both hint locations only when it actually changes.
+            if (hintChanged || hintBounds != _paintedHint)
+            {
+                if (!_paintedHint.IsEmpty) dirty = dirty.IsEmpty ? _paintedHint : Rectangle.Union(dirty, _paintedHint);
+                if (!hintBounds.IsEmpty) dirty = dirty.IsEmpty ? hintBounds : Rectangle.Union(dirty, hintBounds);
+            }
             if (!Blit(rect, full, dirty))
             {
                 int error = Marshal.GetLastWin32Error();
@@ -868,6 +889,7 @@ internal sealed class DanmakuOverlayForm : Form
             _presentFailed = false;
             _submittedBlank = blank;
             _painted = next;
+            _paintedHint = hintBounds;
             _lastAlpha = LayerAlpha(_config);
             _lastDpi = dpi;
         }
@@ -1000,6 +1022,62 @@ internal sealed class DanmakuOverlayForm : Form
 
     private bool _loggedFirstBlit;
     private bool _submittedBlank;
+    private bool _hintInvalid = true;
+    private int _hintWidth;
+    private Bitmap _hintImage;
+    private Rectangle _paintedHint;
+
+    private static string ShortcutLabel(string spec)
+    {
+        uint mods, key;
+        if (!ParseHotkey(spec, out mods, out key)) return "";
+        string label = key == 0x28 ? "↓" : key == 0x26 ? "↑" : key == 0x25 ? "←" : key == 0x27 ? "→"
+            : key == 0xDB ? "[" : key == 0xDD ? "]" : ((Keys)key).ToString();
+        return ((mods & 2) != 0 ? "Ctrl+" : "") + ((mods & 1) != 0 ? "Alt+" : "")
+            + ((mods & 4) != 0 ? "Shift+" : "") + ((mods & 8) != 0 ? "Win+" : "") + label;
+    }
+
+    private static string HintGroup(string key, string state)
+    {
+        return key.Length == 0 ? state : key + " " + state;
+    }
+
+    private void UpdateShortcutHint(int width, int dpi)
+    {
+        _hintInvalid = false;
+        _hintWidth = width;
+        if (_hintImage != null) { _hintImage.Dispose(); _hintImage = null; }
+        if (!_config.ShowShortcutHint) return;
+        string smaller = ShortcutLabel(_config.HotkeyFontDown), larger = ShortcutLabel(_config.HotkeyFontUp);
+        string fontKeys = smaller.Length == 0 ? larger : larger.Length == 0 ? smaller : smaller + "/" + larger;
+        string sc = _config.ScMode == "off" ? "关" : _config.ScMode == "compact" ? "折叠" :
+            _config.ScMode == "badge" ? "角标" : "完整";
+        string text = HintGroup(fontKeys, "字号 " + _config.FontScalePercent + "%") + " · " +
+            HintGroup(ShortcutLabel(_config.HotkeyToggleDanmaku), _config.Enabled ? "弹幕开" : "弹幕关") + " · " +
+            HintGroup(ShortcutLabel(_config.HotkeyCycleSc), "SC" + sc);
+        float em = Math.Max(13f, 9f * dpi / 96f);
+        using (var font = new Font(_config.FontFamily, em, FontStyle.Regular, GraphicsUnit.Pixel))
+        using (var path = new GraphicsPath())
+        using (var outline = new Pen(Color.Black, Math.Max(2f, em / 6f)) { LineJoin = LineJoin.Round })
+        using (var gold = new SolidBrush(Color.FromArgb(255, 214, 102)))
+        {
+            int margin = Math.Max(4, (int)Math.Round(6f * dpi / 96f));
+            int available = Math.Max(1, width - margin * 2);
+            // Wrap long user bindings on narrow players; the text bitmap contains only ink.
+            path.AddString(text, font.FontFamily, (int)font.Style, em,
+                new RectangleF(0, 0, Math.Max(1, available - 4), em * 8), StringFormat.GenericTypographic);
+            Rectangle bounds = Rectangle.Ceiling(path.GetBounds(null, outline));
+            bounds.Inflate(2, 2);
+            _hintImage = new Bitmap(Math.Min(available, bounds.Width), bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            using (var graphics = Graphics.FromImage(_hintImage))
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.TranslateTransform(-bounds.X, -bounds.Y);
+                graphics.DrawPath(outline, path);
+                graphics.FillPath(gold, path);
+            }
+        }
+    }
     private IntPtr _canvasPixels;
     private Rectangle _painted;
     private int _lastAlpha;
@@ -1329,6 +1407,7 @@ internal sealed class DanmakuOverlayForm : Form
 
     private void ApplyConfigAndHotkeys()
     {
+        _hintInvalid = true;
         if (IsHandleCreated) { UnregisterHotkeys(); _hotkeysActive = false; UpdateHotkeyOwnership(); }
         _renderer.ApplyConfig();
     }
@@ -1713,6 +1792,7 @@ internal sealed class DanmakuOverlayForm : Form
             if (_targetProcess != null) _targetProcess.Dispose();
             if (LiveHub.OverlayMessage == new Action<string>(_renderer.ShowTransient)) LiveHub.OverlayMessage = null;
             _renderer.Dispose();
+            if (_hintImage != null) { _hintImage.Dispose(); _hintImage = null; }
         }
         base.Dispose(disposing);
     }

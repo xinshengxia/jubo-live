@@ -32,7 +32,16 @@ function Read-SignedCatalog([string]$text) {
     }
     return $record
 }
-function Receive-PublicFile([uri]$uri,[string]$path,[long]$limit,[int]$seconds) {
+function Write-DownloadProgress([string]$path,[long]$downloaded,[long]$total) {
+    try {
+        $snapshot = [ordered]@{downloaded=$downloaded; total=$total} | ConvertTo-Json -Compress
+        Write-AtomicText $path $snapshot
+    } catch [IO.IOException] {
+        # A reader may briefly hold the previous snapshot on Windows.
+        Write-Verbose 'Download progress snapshot unavailable'
+    }
+}
+function Receive-PublicFile([uri]$uri,[string]$path,[long]$limit,[int]$seconds,[string]$progressPath) {
     $hosts=@('github.com','api.github.com','raw.githubusercontent.com','release-assets.githubusercontent.com','objects.githubusercontent.com','cdn.jsdelivr.net','gcore.jsdelivr.net','fastly.jsdelivr.net','gh-proxy.com','gh-proxy.org','ghfast.top')
     $watch=[Diagnostics.Stopwatch]::StartNew()
     for($i=0;$i -lt 7;$i++){
@@ -48,10 +57,15 @@ function Receive-PublicFile([uri]$uri,[string]$path,[long]$limit,[int]$seconds) 
             $file=[IO.File]::Open($path,'Create','Write','None')
             try {
                 $buf=New-Object byte[] 65536
+                $reportedAt=$watch.ElapsedMilliseconds
                 while(($n=$inputStream.Read($buf,0,$buf.Length)) -gt 0){
                     if($file.Length+$n -gt $limit -or $watch.Elapsed.TotalSeconds -gt $seconds){throw '下载超出大小或时间限制'}
                     if($script:cancelFile -and [IO.File]::Exists($script:cancelFile)){throw '已取消更新'}
                     $file.Write($buf,0,$n)
+                    if($progressPath -and ($watch.ElapsedMilliseconds-$reportedAt -ge 200 -or $file.Length -eq $limit)){
+                        Write-DownloadProgress $progressPath $file.Length $limit
+                        $reportedAt=$watch.ElapsedMilliseconds
+                    }
                 }
             } finally {$file.Dispose();$inputStream.Dispose()}
             return
@@ -85,9 +99,13 @@ function Get-Catalog {
 function Get-Package($asset,[string]$ver,[string]$path) {
     $repo=if($Product -eq 'cs'){'jubo-live'}else{'jubo-live-rust'}
     $origin="https://github.com/xinshengxia/$repo/releases/download/v$ver/$($asset.name)"
+    $progressPath=Join-Path $requestDir 'download.json'
     foreach($url in @($origin,"https://gh-proxy.com/$origin","https://ghfast.top/$origin")){
         try {
-            Receive-PublicFile $url $path ([long]$asset.size) 300
+            Write-DownloadProgress $progressPath 0 $asset.size
+            Set-ProgressText '正在下载更新包…'
+            Receive-PublicFile $url $path ([long]$asset.size) 300 $progressPath
+            Set-ProgressText '正在校验下载的更新包…'
             if((Get-Item -LiteralPath $path).Length -eq $asset.size -and (Get-FileHash -LiteralPath $path).Hash -eq $asset.sha256){return}
         }catch{if([IO.File]::Exists($script:cancelFile)){throw '已取消更新'}}
     }

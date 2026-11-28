@@ -169,6 +169,7 @@ internal sealed partial class DanmakuConfig
     // 默认的「贴在播放器正上方」模式不需要它 —— 播放器被盖住时弹幕自然一起被盖住。
     public bool HideWhenNotForeground = true;
     public bool ShowPanelOnStart = true;
+    public bool ShowShortcutHint = true;
     // 点 SC 面板切换形态（完整卡片 → 折叠一行 → 只留角标），点卡片右上角的 × 关掉那一条。
     public bool ScClickable = true;
     public string HotkeyToggleDanmaku = "Ctrl+Alt+D";

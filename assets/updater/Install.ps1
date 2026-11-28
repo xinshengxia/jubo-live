@@ -142,8 +142,11 @@ function Apply-Update {
     $payload=Join-Path $requestDir ('payload-'+[guid]::NewGuid().ToString('N'))
     $script:ownedPayload=$payload
     if(!$env:JUBO_UPDATE_OFFLINE_ZIP){$script:ownedDownload=$download}
-    Set-ProgressText '正在下载并校验更新包…'
-    if($env:JUBO_UPDATE_OFFLINE_ZIP){$download=$env:JUBO_UPDATE_OFFLINE_ZIP}else{Get-Package $asset $record.version $download}
+    if($env:JUBO_UPDATE_OFFLINE_ZIP){
+        $download=$env:JUBO_UPDATE_OFFLINE_ZIP
+    }else{
+        Get-Package $asset $record.version $download
+    }
     Set-ProgressText '正在核对安装包与文件清单…'
     $null=Expand-VerifiedPackage $download $payload $asset $record.version
     $mutex=[Threading.Mutex]::new($false,('Local\JuboLive.Install.'+$Product))
