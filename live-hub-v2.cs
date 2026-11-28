@@ -372,14 +372,23 @@ internal static partial class LiveHub
             }
             Environment.Exit(0);
         }
-        if (args.Length == 5 && args[0] == "--watch")
+        if ((args.Length == 5 || args.Length == 7) && args[0] == "--watch")
         {
             int playerId;
             if (Regex.IsMatch(args[1], "^(bili|huya|douyu|douyin)$")
                 && Regex.IsMatch(args[2], "^[A-Za-z0-9_-]+$")
                 && Regex.IsMatch(args[3], "^[0-9a-f]{32}$")
                 && int.TryParse(args[4], out playerId))
-                RunRoomWatcher(args[1], args[2], args[3], playerId);
+            {
+                if (args.Length == 5) RunRoomWatcher(args[1], args[2], args[3], playerId);
+                else
+                {
+                    long startTicks;
+                    if ((args[5] == "pot" || (args[5] == "pot-room" && args[1] == "bili"))
+                        && long.TryParse(args[6], out startTicks))
+                        RunPotPlayerWatcher(args[1], args[2], args[3], playerId, startTicks, args[5] == "pot-room");
+                }
+            }
             Environment.Exit(0);
         }
         // ==DANMAKU-MAIN-BEGIN==
@@ -589,7 +598,7 @@ internal static partial class LiveHub
                     Process playerProcess = Process.Start(playStart);
                     ReleaseLaunchRelay(playTarget, playerProcess == null);
                     playReport.Add("PID=" + (playerProcess == null ? 0 : playerProcess.Id));
-                    if (playerProcess != null) StartRoomWatcher(playTarget, playerProcess);
+                    if (playerProcess != null) StartRoomWatcher(playTarget, playerProcess, playPlayer);
                     if (playerProcess != null) StartDanmakuHost(playTarget, playerProcess);
                 }
                 catch (Exception ex)

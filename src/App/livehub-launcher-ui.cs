@@ -1526,7 +1526,7 @@ internal static partial class LiveHub
                                 try { process.Kill(); } catch (Exception) { }
                                 process = null;
                             }
-                            if (process != null) StartRoomWatcher(target, process);
+                            if (process != null) StartRoomWatcher(target, process, player);
                             if (process != null) StartDanmakuHost(target, process);
                         }
                     }

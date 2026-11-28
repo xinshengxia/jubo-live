@@ -20,17 +20,24 @@ internal static partial class LiveHub
     [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
     private static extern uint PotWindowOwner(IntPtr window, out uint processId);
 
+    private static bool IsPotPlayerWindow(IntPtr window, int pid)
+    {
+        if (window == IntPtr.Zero) return false;
+        uint owner;
+        PotWindowOwner(window, out owner);
+        if (owner != (uint)pid) return false;
+        var name = new StringBuilder(64);
+        if (GetClassNameW(window, name, name.Capacity) == 0) return false;
+        string cls = name.ToString();
+        return cls == "PotPlayer64" || cls == "PotPlayer";
+    }
+
     private static IntPtr FindPotPlayerWindow(int pid)
     {
         IntPtr found = IntPtr.Zero;
         EnumPotWindows(delegate(IntPtr window, IntPtr context)
         {
-            uint owner;
-            PotWindowOwner(window, out owner);
-            if (owner != (uint)pid) return true;
-            var name = new StringBuilder(64);
-            if (GetClassNameW(window, name, name.Capacity) == 0) return true;
-            if (name.ToString() != "PotPlayer64" && name.ToString() != "PotPlayer") return true;
+            if (!IsPotPlayerWindow(window, pid)) return true;
             found = window;
             return false;
         }, IntPtr.Zero);

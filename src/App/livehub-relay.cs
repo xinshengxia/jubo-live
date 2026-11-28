@@ -149,13 +149,17 @@ internal static partial class LiveHub
         try { AtomicWriteAllText(SessionRoomStatePath(target), ""); } catch (Exception) { }
     }
 
-    private static void StartRoomWatcher(Target target, Process player)
+    private static void StartRoomWatcher(Target target, Process player, string playerKind)
     {
-        if (!target.MonitorRoom || target.Platform != "bili" || target.SessionId == null) return;
+        bool watchRoom = target.MonitorRoom && target.Platform == "bili";
+        bool pot = playerKind == "potplayer";
+        if ((!watchRoom && !pot) || target.SessionId == null) return;
         try
         {
+            string extra = pot ? (watchRoom ? " pot-room " : " pot ") +
+                player.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture) : "";
             var start = new ProcessStartInfo(Application.ExecutablePath,
-                "--watch " + target.Platform + " " + target.Room + " " + target.SessionId + " " + player.Id + ChildProcessPathArguments());
+                "--watch " + target.Platform + " " + target.Room + " " + target.SessionId + " " + player.Id + extra + ChildProcessPathArguments());
             start.UseShellExecute = true;
             start.WorkingDirectory = Path.GetDirectoryName(Application.ExecutablePath);
             using (Process watcher = Process.Start(start)) { }

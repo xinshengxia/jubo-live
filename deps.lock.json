@@ -81,8 +81,8 @@
       "source": "repo:live-resync.lua",
       "version": "unknown（脚本文件没有版本号）",
       "versionEvidence": "受跟踪脚本与固定 SHA-256 一致，复制到显式加载目录",
-      "sha256": "c43d953d9f5f6d912681cbc76aa4eb46f8359bbb554e73dfa4682ed4140d81d1",
-      "size": 6570,
+      "sha256": "22d4bd58e9c1f216a232562679542cc6f101f1b85627e1b1bdb84e86103585fd",
+      "size": 6575,
       "license": "live-hub 自有脚本（随仓库）",
       "note": "重连/重新同步脚本；来源为当前干净源码检出"
     },
@@ -165,8 +165,8 @@
       ],
       "note": "Windows x86_64 mpv runtime with byte-identical copies of the launcher playback scripts.",
       "fileCount": 4,
-      "bytes": 122825250,
-      "treeSha256": "045d6df2591ecb9536bd26fa1818cd9fa2ab09da6e069695312ae77ec6deb35e",
+      "bytes": 122825255,
+      "treeSha256": "66f3b57679821bdbab7e88a4130942a49dc77333acf3b89637a4a31f5f1d6b39",
       "files": [
         {
           "path": "mpv.com",
@@ -180,8 +180,8 @@
         },
         {
           "path": "portable_config/scripts/live-resync.lua",
-          "sha256": "c43d953d9f5f6d912681cbc76aa4eb46f8359bbb554e73dfa4682ed4140d81d1",
-          "size": 6570
+          "sha256": "22d4bd58e9c1f216a232562679542cc6f101f1b85627e1b1bdb84e86103585fd",
+          "size": 6575
         },
         {
           "path": "portable_config/scripts/live-title.lua",
