@@ -73,6 +73,8 @@ internal sealed class DanmakuOverlayForm : Form
     private const int HotkeySpeedDown = 0xA009;
     private const int HotkeyDelayLess = 0xA00A;
     private const int HotkeyDelayMore = 0xA00B;
+    private const int FixedFontDown = 0xA00C, FixedFontUp = 0xA00D, FixedDanmaku = 0xA00E, FixedSuperChat = 0xA00F;
+    private readonly Dictionary<int, int> _registeredHotkeys = new Dictionary<int, int>();
 
     // B站 播放器的档位：字号「超小 / 小 / 标准 / 大 / 超大」，显示区域「1/4 屏 / 半屏 / 3/4 屏 / 全屏」
     private static readonly int[] FontSteps = new int[] { 60, 80, 100, 130, 170 };
@@ -330,6 +332,7 @@ internal sealed class DanmakuOverlayForm : Form
         string report = null;
         lock (_gate)
         {
+            if (message is DanmakuItem && !_renderer.DanmakuVisible) return;
             bool keep = true;
             if (_inbox.Count >= MaxInbox)
             {
@@ -370,7 +373,6 @@ internal sealed class DanmakuOverlayForm : Form
     {
         IntPtr foreground = GetForegroundWindow();
         if (foreground == IntPtr.Zero) return false;
-        if (IsHandleCreated && foreground == Handle) return true;
         uint pid; GetWindowThreadProcessId(foreground, out pid);
         return pid == (uint)_targetPid;
     }
@@ -409,51 +411,64 @@ internal sealed class DanmakuOverlayForm : Form
         _renderer.ShowTransient(_config.Enabled ? "弹幕已开启" : "弹幕已关闭");
     }
 
+    private string[] ConfiguredHotkeys()
+    {
+        // Same order as the contiguous configurable WM_HOTKEY ids.
+        return new[] { _config.HotkeyToggleDanmaku, _config.HotkeyCycleSc, _config.HotkeyToggleOverlay,
+            _config.HotkeyFontUp, _config.HotkeyFontDown, _config.HotkeyAreaUp, _config.HotkeyAreaDown,
+            _config.HotkeySpeedUp, _config.HotkeySpeedDown, _config.HotkeyDelayLess, _config.HotkeyDelayMore };
+    }
+
+    private static int ConfiguredAction(string[] bindings, uint requiredModifiers, uint key)
+    {
+        for (int i = 0; i < bindings.Length; i++)
+        {
+            uint modifiers, configured;
+            if (ParseHotkey(bindings[i], out modifiers, out configured) && modifiers == requiredModifiers && configured == key)
+                return HotkeyToggleDanmaku + i;
+        }
+        return 0;
+    }
+
     private void RegisterHotkeys()
     {
+        string[] bindings = ConfiguredHotkeys();
         int failures = 0;
-        if (!TryHotkey(HotkeyToggleDanmaku, _config.HotkeyToggleDanmaku)) failures++;
-        if (!TryHotkey(HotkeyCycleSc, _config.HotkeyCycleSc)) failures++;
-        if (!TryHotkey(HotkeyToggleOverlay, _config.HotkeyToggleOverlay)) failures++;
-        if (!TryHotkey(HotkeyFontUp, _config.HotkeyFontUp)) failures++;
-        if (!TryHotkey(HotkeyFontDown, _config.HotkeyFontDown)) failures++;
-        if (!TryHotkey(HotkeyAreaUp, _config.HotkeyAreaUp)) failures++;
-        if (!TryHotkey(HotkeyAreaDown, _config.HotkeyAreaDown)) failures++;
-        if (!TryHotkey(HotkeySpeedUp, _config.HotkeySpeedUp)) failures++;
-        if (!TryHotkey(HotkeySpeedDown, _config.HotkeySpeedDown)) failures++;
-        if (!TryHotkey(HotkeyDelayLess, _config.HotkeyDelayLess)) failures++;
-        if (!TryHotkey(HotkeyDelayMore, _config.HotkeyDelayMore)) failures++;
+        for (int i = 0; i < bindings.Length; i++)
+        {
+            uint modifiers, key;
+            int id = HotkeyToggleDanmaku + i;
+            if (ParseHotkey(bindings[i], out modifiers, out key) && ConfiguredAction(bindings, modifiers, key) == id
+                && !TryHotkey(id, modifiers, key, bindings[i])) failures++;
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            uint key = (uint)Keys.F7 + (uint)i;
+            if (ConfiguredAction(bindings, 0, key) == 0
+                && !TryHotkey(FixedFontDown + i, 0x4000, key, ((Keys)key).ToString())) failures++;
+        }
         _hotkeyFailures = failures;
     }
 
-    private bool TryHotkey(int id, string spec)
+    private bool TryHotkey(int id, uint modifiers, uint key, string spec)
     {
-        uint modifiers, key;
-        if (!ParseHotkey(spec, out modifiers, out key)) return true;   // 空/非法配置不占用组合
-        try
+        if (RegisterHotKey(Handle, id, modifiers, key))
         {
-            // ⚠️ RegisterHotKey **失败时返回 false 而不是抛异常** —— 原来不看返回值，
-            //    于是「热键被别的程序占了」这种情况完全静默：用户按了没反应，日志里也没有。
-            if (!RegisterHotKey(Handle, id, modifiers, key))
-            {
-                if ((DateTime.UtcNow - _lastHotkeyLog).TotalSeconds >= 60)
-                {
-                    _lastHotkeyLog = DateTime.UtcNow;
-                    DanmakuHost.Log("热键注册失败（多半被别的程序占了）：" + spec);
-                }
-                return false;
-            }
+            _registeredHotkeys[id] = (int)(key << 16 | (modifiers & 15));
             return true;
         }
-        catch (Exception ex) { DanmakuHost.Log("热键注册异常 " + spec + "：" + ex.Message); return false; }
+        if ((DateTime.UtcNow - _lastHotkeyLog).TotalSeconds >= 60)
+        {
+            _lastHotkeyLog = DateTime.UtcNow;
+            DanmakuHost.Log("热键注册失败（多半被别的程序占了）：" + spec);
+        }
+        return false;
     }
 
     private void UnregisterHotkeys()
     {
-        foreach (int id in new int[] { HotkeyToggleDanmaku, HotkeyCycleSc, HotkeyToggleOverlay,
-            HotkeyFontUp, HotkeyFontDown, HotkeyAreaUp, HotkeyAreaDown,
-            HotkeySpeedUp, HotkeySpeedDown, HotkeyDelayLess, HotkeyDelayMore })
-            try { UnregisterHotKey(Handle, id); } catch (Exception) { }
+        foreach (int id in _registeredHotkeys.Keys) UnregisterHotKey(Handle, id);
+        _registeredHotkeys.Clear();
     }
 
     private static bool ParseHotkey(string spec, out uint modifiers, out uint key)
@@ -499,23 +514,38 @@ internal sealed class DanmakuOverlayForm : Form
         return key != 0;
     }
 
+    private void DispatchHotkey(int id)
+    {
+        if (id == HotkeyToggleDanmaku) ToggleDanmaku();
+        else if (id == FixedDanmaku) ToggleSessionDanmaku();
+        else if (id == FixedSuperChat) ToggleSuperChat();
+        else if (id == HotkeyCycleSc) CycleSuperChatMode();
+        else if (id == HotkeyToggleOverlay) ToggleOverlay();
+        else if (id == HotkeyFontUp) StepFont(+1);
+        else if (id == HotkeyFontDown) StepFont(-1);
+        else if (id == FixedFontUp || id == FixedFontDown)
+        {
+            // 48–288% of the 25 px reference matches the classic 12–72 px range.
+            int current = Math.Max(48, Math.Min(288, _renderer.EffectiveFontScale));
+            _renderer.ShortcutFontScale = Math.Max(48, Math.Min(288, current + (id == FixedFontUp ? 8 : -8)));
+            _renderer.ApplyConfig();
+            ShowShortcutFeedback("字号 " + ShortcutFontPx + " px");
+        }
+        else if (id == HotkeyAreaUp) StepArea(+1);
+        else if (id == HotkeyAreaDown) StepArea(-1);
+        else if (id == HotkeySpeedUp) StepSpeed(+1);
+        else if (id == HotkeySpeedDown) StepSpeed(-1);
+        else if (id == HotkeyDelayLess) StepDelay(-500);
+        else if (id == HotkeyDelayMore) StepDelay(+500);
+    }
+
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == WmHotkey)
         {
-            if (!OwnsForeground()) return;
-            int id = m.WParam.ToInt32();
-            if (id == HotkeyToggleDanmaku) ToggleDanmaku();
-            else if (id == HotkeyCycleSc) CycleSuperChatMode();
-            else if (id == HotkeyToggleOverlay) ToggleOverlay();
-            else if (id == HotkeyFontUp) StepFont(+1);
-            else if (id == HotkeyFontDown) StepFont(-1);
-            else if (id == HotkeyAreaUp) StepArea(+1);
-            else if (id == HotkeyAreaDown) StepArea(-1);
-            else if (id == HotkeySpeedUp) StepSpeed(+1);
-            else if (id == HotkeySpeedDown) StepSpeed(-1);
-            else if (id == HotkeyDelayLess) StepDelay(-500);
-            else if (id == HotkeyDelayMore) StepDelay(+500);
+            int id = m.WParam.ToInt32(), chord;
+            if (_hotkeysActive && OwnsForeground() && _registeredHotkeys.TryGetValue(id, out chord)
+                && (m.LParam.ToInt32() & 0x00ff000f) == chord) DispatchHotkey(id);
         }
         else if (m.Msg == WmNcHitTest)
         {
@@ -662,12 +692,13 @@ internal sealed class DanmakuOverlayForm : Form
     private void StepFont(int direction)
     {
         // The standard 25 px message changes by 2 px at the reference height.
-        int next = Math.Max(50, Math.Min(300, _config.FontScalePercent + 8 * direction));
-        if (next == _config.FontScalePercent) return;
+        int next = Math.Max(50, Math.Min(300, _renderer.EffectiveFontScale + 8 * direction));
+        if (next == _renderer.EffectiveFontScale) return;
+        _renderer.ShortcutFontScale = null;
         _config.FontScalePercent = next;
         _renderer.ApplyConfig();
         SaveConfig();
-        _renderer.ShowTransient("弹幕字号：" + FontLabelOf(next));
+        ShowShortcutFeedback("字号 " + ShortcutFontPx + " px");
     }
 
     /// 弹幕速度：PgUp 更快 / PgDn 更慢（与字号 / 显示区域的热键同一套手感）
@@ -679,7 +710,7 @@ internal sealed class DanmakuOverlayForm : Form
         _config.SpeedPercent = SpeedSteps[index];
         _renderer.ApplyConfig();
         SaveConfig();
-        _renderer.ShowTransient("弹幕速度：" + SpeedLabels[index]);
+        ShowShortcutFeedback("弹幕速度：" + SpeedLabels[index]);
     }
 
     /// 按到达顺序释放，统一使用当前延迟。托盘、快捷键和热重载调低延迟时，
@@ -711,8 +742,8 @@ internal sealed class DanmakuOverlayForm : Form
         if (next == _config.DanmakuDelayMs) return;
         _config.DanmakuDelayMs = next;
         SaveConfig();
-        if (next == 0) _renderer.ShowTransient("弹幕延迟补偿：关闭");
-        else _renderer.ShowTransient("弹幕延迟补偿：" + (next / 1000.0).ToString("0.0") + " 秒（弹幕会等这么久再出现，用来对齐画面）");
+        if (next == 0) ShowShortcutFeedback("弹幕延迟补偿：关闭");
+        else ShowShortcutFeedback("弹幕延迟补偿：" + (next / 1000.0).ToString("0.0") + " 秒（弹幕会等这么久再出现，用来对齐画面）");
     }
 
     private void StepArea(int direction)
@@ -723,7 +754,7 @@ internal sealed class DanmakuOverlayForm : Form
         _config.DisplayAreaPercent = AreaSteps[index];
         _renderer.ApplyConfig();
         SaveConfig();
-        _renderer.ShowTransient("弹幕显示区域：" + AreaLabels[index]);
+        ShowShortcutFeedback("弹幕显示区域：" + AreaLabels[index]);
     }
 
     private static int NearestIndex(int[] values, int value)
@@ -830,9 +861,11 @@ internal sealed class DanmakuOverlayForm : Form
         _renderer.Resize(width, height);
         bool composed = TryPresentComposition(rect, stamp, clockReset);
         bool blank = composed ? !_renderer.HasFurniture : !_renderer.HasOverlayContent;
+        ExpireShortcutLines(stamp);
         bool hintChanged = _hintInvalid || dpi != _lastDpi || width != _hintWidth;
-        if (hintChanged) UpdateShortcutHint(width, dpi);
-        int margin = Math.Max(4, (int)Math.Round(6f * dpi / 96f));
+        float hintScale = Math.Max(0.5f, Math.Min(4f, dpi / 96f));
+        int margin = (int)Math.Round(Math.Max(6f, Math.Min(20f, 12f / hintScale)) * hintScale);
+        if (hintChanged) UpdateShortcutHint(width, hintScale, margin);
         Rectangle hintBounds = _hintImage == null ? Rectangle.Empty :
             new Rectangle(margin, Math.Max(0, height - margin - _hintImage.Height), _hintImage.Width, _hintImage.Height);
         bool empty = blank && hintBounds.IsEmpty;
@@ -1042,40 +1075,116 @@ internal sealed class DanmakuOverlayForm : Form
         return key.Length == 0 ? state : key + " " + state;
     }
 
-    private void UpdateShortcutHint(int width, int dpi)
+    private int ShortcutFontPx { get { return (int)Math.Round(25.0 * _renderer.EffectiveFontScale / 100, MidpointRounding.AwayFromZero); } }
+    private string _shortcutFeedback;
+    private long _feedbackUntil, _statusUntil;
+
+    private void ShowShortcutFeedback(string text)
+    {
+        _shortcutFeedback = text;
+        _feedbackUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5 / 2;
+        _hintInvalid = true;
+    }
+
+    private void ExpireShortcutLines(long stamp)
+    {
+        if (_feedbackUntil != 0 && stamp >= _feedbackUntil)
+        {
+            _feedbackUntil = 0;
+            _shortcutFeedback = null;
+            _hintInvalid = true;
+        }
+        if (_statusUntil != 0 && stamp >= _statusUntil)
+        {
+            _statusUntil = 0;
+            _hintInvalid = true;
+        }
+    }
+
+    private static string ActiveKeyLabel(string[] bindings, Keys key, int equivalentAction)
+    {
+        int custom = ConfiguredAction(bindings, 0, (uint)key);
+        if (custom == 0 || custom == equivalentAction) return key.ToString();
+        if (equivalentAction == 0) return "";
+        string other = bindings[equivalentAction - HotkeyToggleDanmaku];
+        uint modifiers, alternateKey;
+        return ParseHotkey(other, out modifiers, out alternateKey) && ConfiguredAction(bindings, modifiers, alternateKey) == equivalentAction
+            ? ShortcutLabel(other) : "";
+    }
+
+    private string ShortcutHintText()
+    {
+        string[] bindings = ConfiguredHotkeys();
+        string smaller = ActiveKeyLabel(bindings, Keys.F7, HotkeyFontDown);
+        string larger = ActiveKeyLabel(bindings, Keys.F8, HotkeyFontUp);
+        string fontKeys = smaller.Length == 0 ? larger : larger.Length == 0 ? smaller : smaller + "/" + larger;
+        return HintGroup(fontKeys, "字号 " + ShortcutFontPx + "px") + " · " +
+            HintGroup(ActiveKeyLabel(bindings, Keys.F9, HotkeyToggleDanmaku), _renderer.DanmakuVisible ? "弹幕开" : "弹幕关") + " · " +
+            HintGroup(ActiveKeyLabel(bindings, Keys.F10, 0), _renderer.EffectiveScMode == "off" ? "SC关" : "SC开");
+    }
+
+    private void UpdateShortcutHint(int width, float scale, int margin)
     {
         _hintInvalid = false;
         _hintWidth = width;
         if (_hintImage != null) { _hintImage.Dispose(); _hintImage = null; }
-        if (!_config.ShowShortcutHint) return;
-        string smaller = ShortcutLabel(_config.HotkeyFontDown), larger = ShortcutLabel(_config.HotkeyFontUp);
-        string fontKeys = smaller.Length == 0 ? larger : larger.Length == 0 ? smaller : smaller + "/" + larger;
-        string sc = _config.ScMode == "off" ? "关" : _config.ScMode == "compact" ? "折叠" :
-            _config.ScMode == "badge" ? "角标" : "完整";
-        string text = HintGroup(fontKeys, "字号 " + _config.FontScalePercent + "%") + " · " +
-            HintGroup(ShortcutLabel(_config.HotkeyToggleDanmaku), _config.Enabled ? "弹幕开" : "弹幕关") + " · " +
-            HintGroup(ShortcutLabel(_config.HotkeyCycleSc), "SC" + sc);
-        float em = Math.Max(13f, 9f * dpi / 96f);
+        int available = Math.Max(1, width - margin * 2);
+        float hintEm = Math.Max(9f, Math.Min(17f, 13f / scale)) * scale;
+        float statusEm = Math.Max(10f, Math.Min(19f, 15f / scale)) * scale;
+        int gap = (int)Math.Round(3 * scale);
+        using (var hint = RenderShortcutLine(_config.ShowShortcutHint ? ShortcutHintText() : null, hintEm, scale, available, Color.FromArgb(150, Color.White)))
+        using (var status = RenderShortcutLine(_statusUntil != 0 ? _statusText : null, statusEm, scale, available, Color.FromArgb(200, Color.White)))
+        using (var feedback = RenderShortcutLine(_shortcutFeedback, statusEm, scale, available, Color.FromArgb(255, 214, 102)))
+        {
+            int w = 0, h = 0;
+            foreach (Bitmap line in new[] { hint, status, feedback })
+            {
+                if (line == null) continue;
+                w = Math.Max(w, line.Width);
+                h += line.Height + (line == hint ? 0 : gap);
+            }
+            if (h == 0) return;
+            _hintImage = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            using (var g = Graphics.FromImage(_hintImage))
+            {
+                if (feedback != null) g.DrawImageUnscaled(feedback, 0, 0);
+                if (status != null) g.DrawImageUnscaled(status, 0, feedback == null ? 0 : feedback.Height + gap);
+                if (hint != null) g.DrawImageUnscaled(hint, 0, h - hint.Height);
+            }
+        }
+    }
+
+    private Bitmap RenderShortcutLine(string text, float em, float scale, int available, Color color)
+    {
+        if (String.IsNullOrEmpty(text)) return null;
         using (var font = new Font(_config.FontFamily, em, FontStyle.Regular, GraphicsUnit.Pixel))
         using (var path = new GraphicsPath())
-        using (var outline = new Pen(Color.Black, Math.Max(2f, em / 6f)) { LineJoin = LineJoin.Round })
-        using (var gold = new SolidBrush(Color.FromArgb(255, 214, 102)))
+        using (var shadow = new SolidBrush(Color.FromArgb(230, Color.Black)))
+        using (var foreground = new SolidBrush(color))
         {
-            int margin = Math.Max(4, (int)Math.Round(6f * dpi / 96f));
-            int available = Math.Max(1, width - margin * 2);
+            int padding = (int)Math.Ceiling(scale) + 1;
             // Wrap long user bindings on narrow players; the text bitmap contains only ink.
             path.AddString(text, font.FontFamily, (int)font.Style, em,
-                new RectangleF(0, 0, Math.Max(1, available - 4), em * 8), StringFormat.GenericTypographic);
-            Rectangle bounds = Rectangle.Ceiling(path.GetBounds(null, outline));
-            bounds.Inflate(2, 2);
-            _hintImage = new Bitmap(Math.Min(available, bounds.Width), bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-            using (var graphics = Graphics.FromImage(_hintImage))
+                new RectangleF(0, 0, Math.Max(1, available - 2 * padding), em * 8), StringFormat.GenericTypographic);
+            Rectangle bounds = Rectangle.Ceiling(path.GetBounds());
+            bounds.Inflate(padding, padding);
+            var image = new Bitmap(Math.Min(available, bounds.Width), bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            using (var graphics = Graphics.FromImage(image))
             {
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.TranslateTransform(-bounds.X, -bounds.Y);
-                graphics.DrawPath(outline, path);
-                graphics.FillPath(gold, path);
+                // Match the four outline passes and the lower-right shadow in the classic overlay.
+                foreach (PointF offset in new[] { new PointF(-scale, 0), new PointF(scale, 0),
+                    new PointF(0, -scale), new PointF(0, scale), new PointF(scale, scale) })
+                {
+                    GraphicsState normal = graphics.Save();
+                    graphics.TranslateTransform(offset.X, offset.Y);
+                    graphics.FillPath(shadow, path);
+                    graphics.Restore(normal);
+                }
+                graphics.FillPath(foreground, path);
             }
+            return image;
         }
     }
     private IntPtr _canvasPixels;
@@ -1342,6 +1451,7 @@ internal sealed class DanmakuOverlayForm : Form
             DanmakuItem danmaku = message as DanmakuItem;
             if (danmaku != null)
             {
+                if (!_renderer.DanmakuVisible) continue;
                 if (_config.DanmakuDelayMs > 0 || _pendingDanmaku.Count > 0)
                 {
                     PendingDanmaku pending;
@@ -1367,7 +1477,13 @@ internal sealed class DanmakuOverlayForm : Form
             ScDelete delete = message as ScDelete;
             if (delete != null) { _renderer.RemoveSuperChat(delete.Id); continue; }
             StatusNote note = message as StatusNote;
-            if (note != null) { _statusText = note.Text; continue; }
+            if (note != null)
+            {
+                _statusText = note.Text;
+                _statusUntil = Stopwatch.GetTimestamp() + 5 * Stopwatch.Frequency;
+                _hintInvalid = true;
+                continue;
+            }
             EmoticonsNote emoticons = message as EmoticonsNote;
             if (emoticons != null) { _renderer.SetEmoticons(emoticons.Dict); continue; }
         }
@@ -1391,9 +1507,12 @@ internal sealed class DanmakuOverlayForm : Form
                 _configReloadFailed = true;
                 return; // 不推进成功时间戳，解锁后即使 mtime 不变也会重试。
             }
+            _renderer.ShortcutFontScale = null;
+            _renderer.ShortcutScMode = null;
+            _renderer.ShortcutDanmaku = null;
             CopyInto(_config, fresh);
             ApplyConfigAndHotkeys();
-            _renderer.ShowTransient("弹幕设置已重新加载");
+            ShowShortcutFeedback("设置已更新");
             _lastConfigWrite = stamp;
             _configReloadFailed = false;
         }
@@ -1431,8 +1550,9 @@ internal sealed class DanmakuOverlayForm : Form
     // ------------------------------------------------------------------ 交互
     private void ToggleDanmaku()
     {
-        _config.Enabled = !_config.Enabled;
-        _renderer.ShowTransient(_config.Enabled ? "弹幕已开启" : "弹幕已关闭");
+        _config.Enabled = !_renderer.DanmakuVisible;
+        _renderer.ShortcutDanmaku = null;
+        ShowShortcutFeedback(_config.Enabled ? "弹幕已开启" : "弹幕已关闭");
         SaveConfig();
     }
 
@@ -1440,16 +1560,54 @@ internal sealed class DanmakuOverlayForm : Form
     {
         _userHidden = !_userHidden;
         if (_userHidden) _renderer.ClearSuperChats();
-        _renderer.ShowTransient(_userHidden ? "覆盖层已隐藏" : "覆盖层已显示");
+        ShowShortcutFeedback(_userHidden ? "覆盖层已隐藏" : "覆盖层已显示");
     }
 
     private void CycleSuperChatMode()
     {
         string[] order = new string[] { "full", "compact", "badge", "off" };
-        int index = Array.IndexOf(order, _config.ScMode);
+        string current = _renderer.EffectiveScMode;
+        int index = Array.IndexOf(order, current);
+        if (current != "off") _resumeScMode = current;
+        _renderer.ShortcutScMode = null;
         _config.ScMode = order[(index + 1 + order.Length) % order.Length];
-        _renderer.ShowTransient("SC：" + ScModeName(_config.ScMode));
+        ShowShortcutFeedback("SC：" + ScModeName(_config.ScMode));
         SaveConfig();
+    }
+
+    private void ToggleSessionDanmaku()
+    {
+        lock (_gate)
+        {
+            _renderer.ShortcutDanmaku = !_renderer.DanmakuVisible;
+            if (!_renderer.DanmakuVisible)
+            {
+                int count = _inbox.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    object item = _inbox.Dequeue();
+                    if (!(item is DanmakuItem)) _inbox.Enqueue(item);
+                }
+            }
+        }
+        if (!_renderer.DanmakuVisible)
+        {
+            _pendingDanmaku.Clear();
+            _renderer.ClearAdmissionQueue();
+        }
+        ShowShortcutFeedback(_renderer.DanmakuVisible ? "弹幕已显示" : "弹幕已隐藏（F9 恢复）");
+    }
+
+    private string _resumeScMode = "full";
+    private void ToggleSuperChat()
+    {
+        if (_renderer.EffectiveScMode == "off") _renderer.ShortcutScMode = _resumeScMode;
+        else
+        {
+            _resumeScMode = _renderer.EffectiveScMode;
+            _renderer.ShortcutScMode = "off";
+        }
+        ShowShortcutFeedback(_renderer.EffectiveScMode == "off" ? "SC 卡片已隐藏（F10 恢复）" : "SC 卡片已显示");
     }
 
     private static string ScModeName(string mode)
@@ -1558,7 +1716,7 @@ internal sealed class DanmakuOverlayForm : Form
 
         ToolStripMenuItem toggle = new ToolStripMenuItem("显示弹幕", null,
             delegate { ToggleDanmaku(); });
-        toggle.Checked = _config.Enabled;
+        toggle.Checked = _renderer.DanmakuVisible;
         toggle.CheckOnClick = false;
         menu.Items.Add(toggle);
 
@@ -1566,18 +1724,20 @@ internal sealed class DanmakuOverlayForm : Form
             null, delegate { ToggleOverlay(); });
         menu.Items.Add(overlay);
 
-        ToolStripMenuItem sc = new ToolStripMenuItem("SC 醒目留言： " + ScModeName(_config.ScMode) + "（Ctrl+Alt+S 切换）");
+        ToolStripMenuItem sc = new ToolStripMenuItem("SC 醒目留言： " + ScModeName(_renderer.EffectiveScMode));
         string[] modes = new string[] { "full", "compact", "badge", "off" };
         for (int i = 0; i < modes.Length; i++)
         {
             string mode = modes[i];
             ToolStripMenuItem entry = new ToolStripMenuItem(ScModeName(mode), null, delegate
             {
+                if (_renderer.EffectiveScMode != "off") _resumeScMode = _renderer.EffectiveScMode;
+                _renderer.ShortcutScMode = null;
                 _config.ScMode = mode;
                 _renderer.ShowTransient("SC：" + ScModeName(mode));
                 SaveConfig();
             });
-            entry.Checked = _config.ScMode == mode;
+            entry.Checked = _renderer.EffectiveScMode == mode;
             sc.DropDownItems.Add(entry);
         }
         menu.Items.Add(sc);
@@ -1593,6 +1753,7 @@ internal sealed class DanmakuOverlayForm : Form
             int value = FontSteps[i];
             ToolStripMenuItem entry = new ToolStripMenuItem(FontLabels[i] + "（" + value + "%）", null, delegate
             {
+                _renderer.ShortcutFontScale = null;
                 _config.FontScalePercent = value;
                 _renderer.ApplyConfig();
                 SaveConfig();
@@ -1765,9 +1926,11 @@ internal sealed class DanmakuOverlayForm : Form
         menu.Items.Add(new ToolStripMenuItem("重新加载设置", null, delegate
         {
             DanmakuConfig fresh = DanmakuConfig.Load(_configPath);
+            _renderer.ShortcutScMode = null;
+            _renderer.ShortcutDanmaku = null;
             CopyInto(_config, fresh);
             _renderer.ApplyConfig();
-            _renderer.ShowTransient("弹幕设置已重新加载");
+            ShowShortcutFeedback("设置已更新");
         }));
         menu.Items.Add(new ToolStripMenuItem("退出弹幕", null, delegate { Close(); }));
     }

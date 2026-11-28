@@ -955,12 +955,12 @@ internal sealed partial class DanmakuRenderer : IDisposable
     // and transient notices can extend below it. Keep layout in full player coordinates.
     internal int OverlaySurfaceHeight
     {
-        get { return (_superChats.Count > 0 && _config.ScMode != "off") || (TransientText != null && Now < TransientUntil)
+        get { return (_superChats.Count > 0 && EffectiveScMode != "off") || (TransientText != null && Now < TransientUntil)
             ? _height : Math.Min(_height, _areaHeight + 2); }
     }
     internal bool HasOverlayContent
     {
-        get { return _flying.Count > 0 || (_superChats.Count > 0 && _config.ScMode != "off")
+        get { return (DanmakuVisible && _flying.Count > 0) || (_superChats.Count > 0 && EffectiveScMode != "off")
             || _events.Count > 0 || _liveStatus.Count > 0 || (TransientText != null && Now < TransientUntil); }
     }
     public int ActiveCount { get { return _flying.Count; } }
@@ -972,13 +972,30 @@ internal sealed partial class DanmakuRenderer : IDisposable
         if (_measureGraphics != null) { _measureGraphics.Dispose(); _measureGraphics = null; }
         if (_measureBitmap != null) { _measureBitmap.Dispose(); _measureBitmap = null; }
     }
+    private string _shortcutScMode;
+    internal string ShortcutScMode
+    {
+        set
+        {
+            _shortcutScMode = value;
+            _scHits.Clear(); _scScrollable = _scBarDragging = false;
+            foreach (var item in _superChats) item.CachedHeight = 0f;
+            _layoutDirty = true;
+        }
+    }
+    internal string EffectiveScMode { get { return _shortcutScMode ?? _config.ScMode; } }
+    internal bool? ShortcutDanmaku { get; set; }
+    internal bool DanmakuVisible { get { return ShortcutDanmaku ?? _config.Enabled; } }
+    internal int? ShortcutFontScale { get; set; }
+    internal int EffectiveFontScale { get { return ShortcutFontScale ?? _config.FontScalePercent; } }
+    internal void ClearAdmissionQueue() { _admission.Clear(); }
     public int SuperChatActiveCount { get { return _superChats.Count; } }
     public float UiScale { get { return _uiScale; } }
 
     /// 画面上「标准字号」对应的像素大小：B站 服务端给 25px，再乘用户字号设置与画面缩放。
     private float BaseFontSize()
     {
-        return 25f * (_config.FontScalePercent / 100f) * _uiScale;
+        return 25f * (EffectiveFontScale / 100f) * _uiScale;
     }
 
 
@@ -996,7 +1013,8 @@ internal sealed partial class DanmakuRenderer : IDisposable
         _textCache.Clear();
         ResetFeatures();
         for (int i = _flying.Count - 1; i >= 0; i--)
-            if (IsBlocked(_flying[i].Source)) { ForgetFlying(i); _stats.ReflowRemoved++; }
+            if ((!ShortcutDanmaku.HasValue && !_config.Enabled) || IsBlockedByRules(_flying[i].Source))
+            { ForgetFlying(i); _stats.ReflowRemoved++; }
     }
 
     private int _displayDpi = 96;
@@ -1086,7 +1104,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
     // ---------------------------------------------------------------- 过滤
     public bool IsBlocked(DanmakuItem item)
     {
-        return IsBlockedByRules(item);
+        return !DanmakuVisible || IsBlockedByRules(item);
     }
 
     // ---------------------------------------------------------------- 入队
@@ -1183,7 +1201,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
     private void RefreshFlying(FlyingDanmaku flying, float mergeScale)
     {
         DanmakuItem item = flying.Source;
-        float size = (item.FontSize > 0 ? item.FontSize : 25f) * (_config.FontScalePercent / 100f) * _uiScale;
+        float size = (item.FontSize > 0 ? item.FontSize : 25f) * (EffectiveFontScale / 100f) * _uiScale;
         float densityScale = _config.ShrinkWhenCrowded ? flying.DensityScale : 1f;
         flying.FontSize = Math.Max(8f, Math.Min(_maxSize, Math.Max(8f, size)) * densityScale) * mergeScale;
         flying.AppliedMergeScale = mergeScale;
@@ -1439,7 +1457,11 @@ internal sealed partial class DanmakuRenderer : IDisposable
             PaintBounds = PaintBounds.IsEmpty ? bounds : Rectangle.Union(PaintBounds, bounds);
     }
 
-    internal IList<FlyingDanmaku> CompositionMessages { get { return _flying; } }
+    private static readonly FlyingDanmaku[] NoMessages = new FlyingDanmaku[0];
+    internal IList<FlyingDanmaku> CompositionMessages
+    {
+        get { return DanmakuVisible ? (IList<FlyingDanmaku>)_flying : NoMessages; }
+    }
     internal RectangleF CompositionScReservation { get { return _scReserved; } }
     internal int CompositionTextOpacity { get { return _config.TextOpacityPercent; } }
 
@@ -1464,7 +1486,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
         {
             if (!_scReserved.IsEmpty)
                 using (Region reserved = new Region(_scReserved)) g.ExcludeClip(reserved);
-            DrawFlying(g);
+            if (DanmakuVisible) DrawFlying(g);
         }
         finally { g.Restore(saved); }
         DrawFurniture(g);
@@ -1472,7 +1494,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
 
     internal bool HasFurniture
     {
-        get { return (_superChats.Count > 0 && _config.ScMode != "off") || !_eventReserved.IsEmpty
+        get { return (_superChats.Count > 0 && EffectiveScMode != "off") || !_eventReserved.IsEmpty
             || (TransientText != null && Now < TransientUntil); }
     }
 
@@ -1486,8 +1508,8 @@ internal sealed partial class DanmakuRenderer : IDisposable
     {
         _scHits.Clear(); _scScrollable = false;
         _scBarTrack = _scBarThumb = RectangleF.Empty;
-        if (_config.ScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
-        if (_config.ScMode != "off") DrawSuperChats(g);
+        if (EffectiveScMode == "off" || _superChats.Count == 0) _scBarDragging = false;
+        if (EffectiveScMode != "off") DrawSuperChats(g);
         DrawLiveEvents(g);
         if (!_eventReserved.IsEmpty)
             IncludePaint(_eventReserved.X, _eventReserved.Y, _eventReserved.Width, _eventReserved.Height);
@@ -1657,13 +1679,13 @@ internal sealed partial class DanmakuRenderer : IDisposable
     // 关闭点击不影响避让；折叠、移角、删除和到期会在下一次调度/绘制前更新。
     private RectangleF MeasureScReservation()
     {
-        if (_config.ScMode == "off" || _superChats.Count == 0 || _width == 0) return RectangleF.Empty;
+        if (EffectiveScMode == "off" || _superChats.Count == 0 || _width == 0) return RectangleF.Empty;
         float scale = _config.ScScalePercent / 100f * _uiScale;
         float width = 270f * scale, margin = 10f * scale;
         bool left = _config.ScCorner == "tl" || _config.ScCorner == "bl";
         bool bottom = _config.ScCorner == "br" || _config.ScCorner == "bl";
         float x = left ? margin : _width - width - margin;
-        if (_config.ScMode == "badge")
+        if (EffectiveScMode == "badge")
             return new RectangleF(x - 4f, ScBadgeY(bottom, _height, margin, 40f * scale) - 12f,
                 width + 8f, 12f + 40f * scale);
         float gap = 4f * scale, total = 0f, cap = 0f;
@@ -1673,7 +1695,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
             SuperChatItem item = _superChats[_superChats.Count - 1 - k];
             if (item.CachedHeight <= 0f || Math.Abs(item.CachedScale - scale) > 0.001f)
             {
-                item.CachedHeight = _config.ScMode == "compact" ? MeasureScCompact(item, width, scale)
+                item.CachedHeight = EffectiveScMode == "compact" ? MeasureScCompact(item, width, scale)
                     : MeasureScFull(item, x, width, scale, measure);
                 item.CachedScale = scale;
             }
@@ -1710,7 +1732,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
         bool bottom = _config.ScCorner == "br" || _config.ScCorner == "bl";
         float x = left ? margin : _width - width - margin;
 
-        if (_config.ScMode == "badge")
+        if (EffectiveScMode == "badge")
         {
             _scScrollable = false;
             // ⚠️ 2026-09-28 修：这里原来把 Y 写死成 12f，于是「左下/右下」的角标也贴在画面顶部 ——
@@ -1735,7 +1757,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
             SuperChatItem item = _superChats[count - 1 - k];
             if (item.CachedHeight <= 0f || Math.Abs(item.CachedScale - scale) > 0.001f)
             {
-                item.CachedHeight = _config.ScMode == "compact"
+                item.CachedHeight = EffectiveScMode == "compact"
                     ? MeasureScCompact(item, width, scale)
                     : MeasureScFull(item, x, width, scale, measure);
                 item.CachedScale = scale;
@@ -1788,7 +1810,7 @@ internal sealed partial class DanmakuRenderer : IDisposable
                 SuperChatItem item = _superChats[count - 1 - k];
                 float pad = 4f + 2f * scale;
                 IncludePaint(x - pad, cursor - pad, width + 2 * pad, h + 2 * pad);
-                if (_config.ScMode == "compact") DrawScCompact(g, item, x, cursor, width, scale);
+                if (EffectiveScMode == "compact") DrawScCompact(g, item, x, cursor, width, scale);
                 else DrawScFull(g, item, x, cursor, width, scale, measure);
                 if (_config.ScClickable || _scScrollable)
                     AddScHit(RectangleF.Intersect(new RectangleF(x, cursor, width, h), viewport), 0);

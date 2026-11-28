@@ -170,7 +170,7 @@ internal sealed partial class DanmakuRenderer
     }
     private bool IsBlockedByRules(DanmakuItem item)
     {
-        if (item == null || !_config.Enabled || item.UserLevel < _config.MinUserLevel
+        if (item == null || item.UserLevel < _config.MinUserLevel
             || item.MedalLevel < _config.MinMedalLevel) return true;
         if ((item.Mode <= 3 && !item.AdvancedText && !_config.ShowScrolling) || (item.Mode == 4 && !_config.ShowBottom)
             || (item.Mode == 5 && !_config.ShowTop) || (item.Mode == 6 && !_config.ShowReverse)
