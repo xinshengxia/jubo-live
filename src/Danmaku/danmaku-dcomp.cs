@@ -38,7 +38,8 @@ internal sealed class DanmakuComposition : IDisposable
     }
 
     private const string CompositionWindowClass = "LiveHub.DanmakuVisual";
-    private const uint VisualWindowStyles = 0x082800a0; // NOREDIRECTIONBITMAP | LAYERED | TRANSPARENT | TOOLWINDOW | NOACTIVATE
+    // The layered bitmap supplies a transparent base under the composition visuals.
+    private const uint VisualWindowStyles = 0x080800a0; // LAYERED | TRANSPARENT | TOOLWINDOW | NOACTIVATE
     private const uint VisualWindowFlags = 0x88000000; // WS_POPUP | WS_DISABLED
     private static readonly WindowProc VisualWindowProc = DefWindowProcW;
     private static readonly object WindowClassLock = new object();
@@ -62,7 +63,7 @@ internal sealed class DanmakuComposition : IDisposable
         RegisterVisualWindowClass();
         _window = CreateWindowExW(VisualWindowStyles, CompositionWindowClass, "LiveHub Danmaku Composition", VisualWindowFlags,
             -10000, -10000, 1, 1, owner, IntPtr.Zero, GetModuleHandleW(null), IntPtr.Zero);
-        if (_window == IntPtr.Zero || !SetLayeredWindowAttributes(_window, 0, 255, 2))
+        if (_window == IntPtr.Zero)
             throw new System.ComponentModel.Win32Exception();
 
         int featureLevel;
@@ -133,6 +134,7 @@ internal sealed class DanmakuComposition : IDisposable
             const uint NoZOrderNoActivate = 0x0014;
             if (!SetWindowPos(_window, IntPtr.Zero, bounds.X, bounds.Y, bounds.Width, bounds.Height, NoZOrderNoActivate))
                 throw new System.ComponentModel.Win32Exception();
+            if (_visible && resized) DanmakuOverlayForm.SubmitTransparentBase(_window, bounds);
             _bounds = bounds;
         }
         _rebase = false;
@@ -142,6 +144,7 @@ internal sealed class DanmakuComposition : IDisposable
     {
         if (_visible) return;
         ShowWindow(_window, 4); // SW_SHOWNOACTIVATE
+        DanmakuOverlayForm.SubmitTransparentBase(_window, _bounds);
         _visible = true;
     }
 
@@ -421,7 +424,6 @@ internal sealed class DanmakuComposition : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
     private static extern IntPtr CreateWindowExW(uint ex, string className, string title, uint style, int x, int y, int width,
         int height, IntPtr owner, IntPtr menu, IntPtr instance, IntPtr parameter);
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetLayeredWindowAttributes(IntPtr window, uint color, byte alpha, uint flags);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);

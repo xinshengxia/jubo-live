@@ -872,7 +872,11 @@ internal sealed class DanmakuOverlayForm : Form
             _lastDpi = dpi;
         }
         // Publish a correctly sized transparent frame before exposing the window again.
-        if (composed) _composition.Show();
+        if (composed)
+        {
+            try { _composition.Show(); }
+            catch (Exception ex) { UseLayeredFallback(ex); HideOverlay(); return; }
+        }
         if (!_overlayVisible) { ShowWindow(Handle, SwShowNoActivate); _overlayVisible = true; }
         EnsureZOrder();
 
@@ -1086,6 +1090,38 @@ internal sealed class DanmakuOverlayForm : Form
         _previousBitmap = _canvasDc = _dib = IntPtr.Zero;
         _canvasPixels = IntPtr.Zero;
         _painted = Rectangle.Empty;
+    }
+
+    // Windows retains the submitted bitmap. Allocate it only when this separate
+    // visual window is shown or resized; ordinary animation needs no GDI work.
+    internal static void SubmitTransparentBase(IntPtr window, Rectangle bounds)
+    {
+        var size = new SIZE { cx = bounds.Width, cy = bounds.Height };
+        var target = new POINT { x = bounds.X, y = bounds.Y };
+        var source = new POINT();
+        var blend = new BLENDFUNCTION { SourceAlpha = 255, AlphaFormat = 1 };
+        var header = new BitmapInfoHeader { Size = (uint)Marshal.SizeOf(typeof(BitmapInfoHeader)),
+            Width = size.cx, Height = -size.cy, Planes = 1, BitsPerPixel = 32 };
+        int bytes = checked(size.cx * size.cy * 4);
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero) throw new InvalidOperationException("无法创建透明底图 DC");
+        IntPtr bitmap = IntPtr.Zero;
+        try
+        {
+            IntPtr pixels;
+            bitmap = CreateDIBSection(dc, ref header, 0, out pixels, IntPtr.Zero, 0);
+            if (bitmap == IntPtr.Zero || pixels == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            memset(pixels, 0, (UIntPtr)(uint)bytes);
+            IntPtr previous = SelectObject(dc, bitmap);
+            if (previous == IntPtr.Zero || previous == new IntPtr(-1)) throw new InvalidOperationException("无法选入透明底图");
+            if (!UpdateLayeredWindow(window, IntPtr.Zero, ref target, ref size, dc, ref source, 0, ref blend, UlwAlpha))
+                throw new System.ComponentModel.Win32Exception();
+        }
+        finally
+        {
+            DeleteDC(dc);
+            if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
+        }
     }
 
     internal static int LayerAlpha(DanmakuConfig config)
